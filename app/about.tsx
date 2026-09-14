@@ -4,6 +4,8 @@ import { TopBar } from '../src/components/ui';
 import { MAP_PROVIDER } from '../src/components/mapHtml';
 import { AFFILIATE_NOTE } from '../src/config/affiliates';
 import { lensPoints } from '../src/data/lens';
+import { PLACE_MEDIA } from '../src/data/placeMedia';
+import { placeById } from '../src/data/places';
 import { WALKING_ROUTES_ENABLED } from '../src/lib/directions';
 import { HOURS_EXPORTED } from '../src/lib/hours';
 import { openLink } from '../src/lib/openLink';
@@ -17,6 +19,10 @@ interface Credit {
   license: string;
   url: string;
 }
+
+const PLACE_PHOTO_CREDITS: Credit[] = Object.entries(PLACE_MEDIA)
+  .filter(([, m]) => m.image && m.sourceUrl)
+  .map(([id, m]) => ({ key: `place-${id}`, title: placeById(id)?.name ?? id, credit: m.credit ?? '', license: m.license ?? '', url: m.sourceUrl! }));
 
 const IMAGE_CREDITS: Credit[] = lensPoints.flatMap((p) => [
   ...(p.reference
@@ -96,7 +102,8 @@ export default function About() {
           </Section>
 
           <Section title="Images">
-            {IMAGE_CREDITS.map((c) => (
+            <Text style={s.p}>Place photos and official websites: Wikimedia Commons and Wikidata.</Text>
+            {[...IMAGE_CREDITS, ...PLACE_PHOTO_CREDITS].map((c) => (
               <Pressable key={c.key} accessibilityRole="link" onPress={() => openLink(c.url)} style={s.credit}>
                 <Text style={s.creditTitle}>{c.title}</Text>
                 <Text style={s.creditLine}>

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CityBrief } from '../src/components/CityBrief';
 import LoopMap from '../src/components/LoopMap';
+import { PLACE_MEDIA } from '../src/data/placeMedia';
 import type { MapPoint } from '../src/components/mapHtml';
 import { Button, Chip, Eyebrow, TopBar } from '../src/components/ui';
 import { experiences, places } from '../src/data/places';
@@ -179,6 +181,9 @@ export default function PlanScreen() {
       <TopBar title="Plan my days" />
       <ScrollView contentContainerStyle={s.scroll}>
         <View style={s.col}>
+          <View style={{ marginTop: space.s }}>
+            <CityBrief />
+          </View>
           <Text style={s.q}>How many days are you in Kraków?</Text>
           <View style={s.row}>
             {DAY_OPTIONS.map((n) => (
@@ -321,6 +326,7 @@ export default function PlanScreen() {
             {day.start && day.kind === 'city' ? <Text style={s.leg}>Start at your chosen point</Text> : null}
             {day.stops.map((st, i) => {
               const hours = hoursThatDay(st.place.id, day.date);
+              const photo = PLACE_MEDIA[st.place.id];
               return (
                 <View key={st.place.id}>
                   {st.leg ? <Text style={s.leg}>{legText(st.leg, realMinutes(day, real, i))}</Text> : null}
@@ -331,8 +337,16 @@ export default function PlanScreen() {
                       </View>
                     ) : null}
                     <View style={{ flex: 1 }}>
+                      {photo?.image ? (
+                        <Image source={photo.image} style={s.stopPhoto} resizeMode="cover" accessibilityLabel={`Photo of ${st.place.name}`} />
+                      ) : null}
                       <Text style={s.stopName}>{st.place.name}</Text>
                       <Text style={s.stopBlurb}>{st.place.blurb}</Text>
+                      {photo?.image ? (
+                        <Text style={s.photoCredit} numberOfLines={1}>
+                          Photo: {photo.credit} · {photo.license}
+                        </Text>
+                      ) : null}
                       <Eyebrow style={{ marginTop: 4 }}>
                         About {fmt(st.place.minutes)}
                         {hours ? ` · that day ${hours}` : ''}
@@ -404,8 +418,11 @@ const s = StyleSheet.create({
   mapError: { position: 'absolute', left: space.s, right: space.s, top: space.s, backgroundColor: colors.paper, borderRadius: 12, padding: space.m, gap: space.s },
   stop: { flexDirection: 'row', gap: space.m, backgroundColor: colors.paper, borderRadius: 14, padding: space.m, borderWidth: 1, borderColor: colors.line },
   num: { width: 30, height: 30, borderRadius: 15, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
-  numText: { fontFamily: fonts.monoBold, fontSize: 13, color: colors.gilt },
+  // white is the text-on-ink token in every palette; gilt on ink fails contrast in several
+  numText: { fontFamily: fonts.monoBold, fontSize: 13, color: colors.white },
   stopName: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  stopPhoto: { width: '100%', height: 130, borderRadius: 10, marginBottom: space.s, backgroundColor: colors.line },
+  photoCredit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 4 },
   stopBlurb: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.ink, marginTop: 2 },
   stopLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.m, marginTop: space.s },
   link: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.vistula },

@@ -1,8 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { CityBrief } from '../src/components/CityBrief';
 import LoopMap from '../src/components/LoopMap';
+import { PLACE_MEDIA } from '../src/data/placeMedia';
 import type { MapPoint } from '../src/components/mapHtml';
 import { Button, Chip, Eyebrow, TopBar } from '../src/components/ui';
 import { CATEGORY_LABEL, Category, Place, ZONE_LABEL, placeById, places } from '../src/data/places';
@@ -38,10 +40,12 @@ export default function MapScreen() {
   const [view, setView] = useState<'map' | 'list'>('map');
   const [query, setQuery] = useState('');
   const [focus, setFocus] = useState<Focus>(null);
+  const [threeD, setThreeD] = useState(false);
   const [today] = useState(() => new Date());
   const me = useMyLocation();
 
   const place = selectedId ? placeById(selectedId) : undefined;
+  const media = place ? PLACE_MEDIA[place.id] : undefined;
   const here = me.status === 'ok' ? me.coords : undefined;
   const q = normalise(query.trim());
 
@@ -134,6 +138,14 @@ export default function MapScreen() {
         />
         <Chip label="Map" active={view === 'map'} onPress={() => setView('map')} />
         <Chip label="List" active={view === 'list'} onPress={() => setView('list')} />
+        <Chip
+          label="3D"
+          active={threeD}
+          onPress={() => {
+            setView('map');
+            setThreeD((v) => !v);
+          }}
+        />
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips} style={s.chipRow}>
         {ORDER.map((c) => (
@@ -150,6 +162,7 @@ export default function MapScreen() {
           points={points}
           selectedId={selectedId}
           focus={focus}
+          threeD={threeD}
           onSelect={onSelect}
           onError={onError}
           onWarning={onWarning}
@@ -161,6 +174,11 @@ export default function MapScreen() {
             data={rows}
             keyExtractor={(r) => r.place.id}
             keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={
+              <View style={s.briefWrap}>
+                <CityBrief />
+              </View>
+            }
             ListEmptyComponent={<Text style={s.hint}>Nothing matches. Try another word or turn on more categories.</Text>}
             renderItem={({ item }) => {
               const h = formatHours(hoursOn(item.place.id, today));
@@ -211,6 +229,16 @@ export default function MapScreen() {
               <Text style={s.close}>Close</Text>
             </Pressable>
           </View>
+          {media?.image ? (
+            <View>
+              <Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={`Photo of ${place.name}`} />
+              <Pressable accessibilityRole="link" onPress={() => openLink(media.sourceUrl!)}>
+                <Text style={s.photoCredit} numberOfLines={1}>
+                  Photo: {media.credit} · {media.license} · Wikimedia Commons
+                </Text>
+              </Pressable>
+            </View>
+          ) : null}
           <Text style={s.blurb}>{place.blurb}</Text>
           {hoursToday ? <Text style={s.hours}>Today: {hoursToday} · hours from OpenStreetMap, check before you go</Text> : null}
           <View style={s.actions}>
@@ -219,6 +247,9 @@ export default function MapScreen() {
             ) : null}
             {place.lensId ? (
               <Button label="Time Lens here" kind="quiet" onPress={() => router.push(`/lens/${place.lensId}`)} style={{ flexGrow: 1 }} />
+            ) : null}
+            {media?.website ? (
+              <Button label="Official website" kind="quiet" onPress={() => openLink(media.website!)} style={{ flexGrow: 1 }} />
             ) : null}
           </View>
           {place.booking?.affiliate ? <Text style={s.note}>{AFFILIATE_NOTE}</Text> : null}
@@ -254,6 +285,9 @@ const s = StyleSheet.create({
   mapWrap: { flex: 1 },
   map: { flex: 1 },
   list: { backgroundColor: colors.stone },
+  briefWrap: { marginHorizontal: space.m, marginBottom: space.s },
+  photo: { width: '100%', height: 120, borderRadius: 10, backgroundColor: colors.line },
+  photoCredit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 4 },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',

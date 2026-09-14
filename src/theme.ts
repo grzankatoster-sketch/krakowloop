@@ -1,17 +1,130 @@
-// Palette taken from the city itself: Planty dusk, Jura limestone, copper patina,
-// Wawel brick, Sigismund Chapel gilt, Vistula water.
-export const colors = {
-  ink: '#13322E',
-  stone: '#DCE3E0',
-  paper: '#F4F7F5',
-  patina: '#4F9A8F',
-  brick: '#A5402D',
-  gilt: '#BF9A2F',
-  vistula: '#3E5C76',
-  mute: '#56665F',
-  line: '#B9C6C1',
-  white: '#FFFFFF',
-} as const;
+// Palettes taken from the city itself. EXPO_PUBLIC_THEME picks one (used to compare them);
+// otherwise DEFAULT_THEME applies.
+//
+// Token roles: stone = screen ground, paper = cards, ink = main text AND primary buttons,
+// white = text on ink or on a category colour, mute = secondary text, line = borders.
+
+export type ThemeName = 'planty' | 'mariacki' | 'vistula' | 'wawel';
+
+export interface Palette {
+  label: string;
+  /** a dark ground: light status bar, dark basemap, night lighting on Mapbox */
+  dark: boolean;
+  ink: string;
+  stone: string;
+  paper: string;
+  white: string;
+  mute: string;
+  line: string;
+  patina: string;
+  brick: string;
+  gilt: string;
+  vistula: string;
+  jewish: string;
+  remembrance: string;
+  /** translucent ground behind captions laid over photos */
+  scrim: string;
+  water: string;
+  park: string;
+  building: string;
+}
+
+const PALETTES: Record<ThemeName, Palette> = {
+  // Planty dusk, Jura limestone, copper patina, Wawel brick, Sigismund Chapel gilt, Vistula water.
+  planty: {
+    label: 'Planty (current)',
+    dark: false,
+    ink: '#13322E',
+    stone: '#DCE3E0',
+    paper: '#F4F7F5',
+    white: '#FFFFFF',
+    mute: '#56665F',
+    line: '#B9C6C1',
+    // patina and gilt darkened from #4F9A8F / #BF9A2F so white chip text reaches 4.5:1
+    patina: '#3D7F74',
+    brick: '#A5402D',
+    gilt: '#8A6A12',
+    vistula: '#3E5C76',
+    jewish: '#2F6F68',
+    remembrance: '#707875',
+    scrim: 'rgba(19,50,46,0.72)',
+    water: '#AFC3C6',
+    park: '#C4D6CB',
+    building: '#C9D3CF',
+  },
+  // The vault of St Mary's Basilica: deep cobalt painted with gold stars.
+  mariacki: {
+    label: 'Mariacki vault',
+    dark: true,
+    ink: '#F2E6C4',
+    stone: '#0F1B3D',
+    paper: '#18275A',
+    white: '#0F1B3D',
+    mute: '#AEB8D6',
+    line: '#2E3F78',
+    patina: '#6CC3A8',
+    brick: '#E58A6E',
+    gilt: '#E2B84A',
+    vistula: '#86AEE8',
+    jewish: '#B9A2E8',
+    remembrance: '#A3ABBE',
+    scrim: 'rgba(15,27,61,0.78)',
+    water: '#1C3170',
+    park: '#173A48',
+    building: '#243672',
+  },
+  // Mist over the Vistula at dusk, indigo sky and the last coral light on the boulevards.
+  vistula: {
+    label: 'Vistula dusk',
+    dark: false,
+    ink: '#1C2550',
+    stone: '#DFE4EE',
+    paper: '#F6F8FC',
+    white: '#FFFFFF',
+    mute: '#4F5977',
+    line: '#BCC5D8',
+    patina: '#2A7A6D',
+    brick: '#B24832',
+    gilt: '#986A0C',
+    vistula: '#2B67A0',
+    jewish: '#74549F',
+    remembrance: '#646A80',
+    scrim: 'rgba(28,37,80,0.74)',
+    water: '#A9C0DD',
+    park: '#C9D7CE',
+    building: '#CDD3E1',
+  },
+  // Rose sandstone of the Wawel walls, dark oak doors, patina domes and gilt.
+  wawel: {
+    label: 'Wawel sandstone',
+    dark: false,
+    ink: '#2E1F1A',
+    stone: '#E6D8D5',
+    paper: '#FBF6F4',
+    white: '#FFFFFF',
+    mute: '#66554E',
+    line: '#D0BCB5',
+    patina: '#33806F',
+    brick: '#9E3B2A',
+    gilt: '#8A6614',
+    vistula: '#2F5D7C',
+    jewish: '#5E4B8B',
+    remembrance: '#6E6763',
+    scrim: 'rgba(46,31,26,0.72)',
+    water: '#B9CBD3',
+    park: '#CAD5C0',
+    building: '#D9C7C0',
+  },
+};
+
+export const DEFAULT_THEME: ThemeName = 'planty';
+
+const requested = process.env.EXPO_PUBLIC_THEME;
+export const THEME_NAME: ThemeName =
+  requested && Object.prototype.hasOwnProperty.call(PALETTES, requested) ? (requested as ThemeName) : DEFAULT_THEME;
+
+export const colors: Palette = PALETTES[THEME_NAME];
+export const ALL_PALETTES = PALETTES;
 
 export const fonts = {
   display: 'GrenzeGotisch_600SemiBold',

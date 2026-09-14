@@ -116,7 +116,23 @@ describe('buildPlan options', () => {
     expect(zakopane!.overBudget).toBe(true);
   });
 
-  it('works with every place id known to the data', () => {
+  it('has unique place ids in the data', () => {
     expect(new Set(places.map((p) => p.id)).size).toBe(places.length);
+  });
+
+  it('counts the visit and both legs exactly, and stops at the budget edge', () => {
+    // one place right at the hotel: 1 min there, 1 min back (the minimum leg)
+    const hotel = { lat: 50.06, lon: 19.94 };
+    const place = (minutes: number) => [
+      { id: 'test', name: 'Test', cat: 'history' as const, zone: 'old-town' as const, lat: 50.06, lon: 19.94, minutes, priority: 3 as const, blurb: '' },
+    ];
+    const easy = { days: 1, pace: 'easy' as const, interests: [], dayTrips: false, start: hotel };
+    const fits = buildPlan(easy, place(298));
+    expect(fits).toHaveLength(1);
+    expect(fits[0].stops[0].leg?.minutes).toBe(1);
+    expect(fits[0].returnLeg?.minutes).toBe(1);
+    expect(fits[0].totalMinutes).toBe(300);
+    expect(fits[0].budgetMinutes).toBe(300);
+    expect(buildPlan(easy, place(299))).toHaveLength(0);
   });
 });

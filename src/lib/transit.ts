@@ -2,8 +2,9 @@ import data from '../data/transit.json';
 import { LatLon, distance, walkingMinutes } from './geo';
 
 /** [name, lat, lon] */
-type TramStop = [string, number, number];
-interface Pattern {
+export type TramStop = [string, number, number];
+
+export interface TramPattern {
   /** line number */
   r: string;
   /** headsign */
@@ -18,8 +19,15 @@ interface Pattern {
   n: number;
 }
 
-const stops = data.stops as unknown as TramStop[];
-const patterns = data.patterns as unknown as Pattern[];
+export interface Timetable {
+  stops: TramStop[];
+  patterns: TramPattern[];
+}
+
+const TIMETABLE: Timetable = {
+  stops: data.stops as unknown as TramStop[],
+  patterns: data.patterns as unknown as TramPattern[],
+};
 
 export const TRANSIT_FEED_VERSION = data.feedVersion;
 
@@ -42,36 +50,28 @@ export interface TramRide {
   minutes: number;
 }
 
-const stopAt = (i: number): LatLon => ({ lat: stops[i][1], lon: stops[i][2] });
-
-function nearStops(p: LatLon) {
-  return stops
-    .map((_, i) => ({ i, d: distance(p, stopAt(i)) }))
-    .filter((x) => x.d <= WALK_TO_STOP_METRES)
-    .sort((a, b) => a.d - b.d)
-    .slice(0, STOPS_CONSIDERED);
-}
-
-const cache = new Map<string, TramRide | null>();
-
 /** Monday = 0, matching the weekday bitmask of the timetable. */
 export const weekdayOf = (date: Date) => (date.getDay() + 6) % 7;
 
 /**
- * Fastest single tram ride from a to b (no changes), or null when none is sensible.
- * With a date, only lines running on that weekday are considered.
+ * Fastest single tram ride from a to b (no changes) in the given timetable, or null when none
+ * is sensible. With a date, only lines running on that weekday are considered.
  */
-export function findTram(a: LatLon, b: LatLon, date?: Date | null): TramRide | null {
+export function findTramIn(tt: Timetable, a: LatLon, b: LatLon, date?: Date | null): TramRide | null {
   const weekday = date ? weekdayOf(date) : null;
-  const key = `${a.lat.toFixed(4)},${a.lon.toFixed(4)}>${b.lat.toFixed(4)},${b.lon.toFixed(4)}|${weekday ?? '*'}`;
-  const hit = cache.get(key);
-  if (hit !== undefined) return hit;
+  const stopAt = (i: number): LatLon => ({ lat: tt.stops[i][1], lon: tt.stops[i][2] });
+  const near = (p: LatLon) =>
+    tt.stops
+      .map((_, i) => ({ i, d: distance(p, stopAt(i)) }))
+      .filter((x) => x.d <= WALK_TO_STOP_METRES)
+      .sort((x, y) => x.d - y.d)
+      .slice(0, STOPS_CONSIDERED);
 
-  const fromStops = nearStops(a);
-  const toStops = nearStops(b);
+  const fromStops = near(a);
+  const toStops = near(b);
   let best: TramRide | null = null;
   let bestTrips = 0;
-  for (const p of patterns) {
+  for (const p of tt.patterns) {
     if (weekday !== null && !(p.d & (1 << weekday))) continue;
     for (const f of fromStops) {
       const iFrom = p.s.indexOf(f.i);
@@ -88,8 +88,8 @@ export function findTram(a: LatLon, b: LatLon, date?: Date | null): TramRide | n
           best = {
             line: p.r,
             headsign: p.h,
-            from: stops[f.i][0],
-            to: stops[t.i][0],
+            from: tt.stops[f.i][0],
+            to: tt.stops[t.i][0],
             stopCount: iTo - iFrom,
             walkToMinutes,
             rideMinutes,
@@ -101,6 +101,18 @@ export function findTram(a: LatLon, b: LatLon, date?: Date | null): TramRide | n
       }
     }
   }
-  cache.set(key, best);
   return best;
+}
+
+const cache = new Map<string, TramRide | null>();
+
+/** findTramIn on the ZTP Kraków timetable, cached per pair of points and weekday. */
+export function findTram(a: LatLon, b: LatLon, date?: Date | null): TramRide | null {
+  const weekday = date ? weekdayOf(date) : '*';
+  const key = `${a.lat.toFixed(4)},${a.lon.toFixed(4)}>${b.lat.toFixed(4)},${b.lon.toFixed(4)}|${weekday}`;
+  const hit = cache.get(key);
+  if (hit !== undefined) return hit;
+  const ride = findTramIn(TIMETABLE, a, b, date);
+  cache.set(key, ride);
+  return ride;
 }

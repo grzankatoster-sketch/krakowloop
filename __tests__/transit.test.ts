@@ -2,7 +2,38 @@ import { describe, expect, it } from '@jest/globals';
 import { CITY } from '../src/config/city';
 import { placeById } from '../src/data/places';
 import { leg } from '../src/lib/legs';
-import { TRAM_WAIT_MINUTES, TRANSIT_FEED_VERSION, findTram } from '../src/lib/transit';
+import { TRAM_WAIT_MINUTES, TRANSIT_FEED_VERSION, Timetable, findTram, findTramIn } from '../src/lib/transit';
+
+describe('findTramIn with a controlled timetable', () => {
+  // two stops 2 km apart; the only line runs on Mondays only (bit 0)
+  const tt: Timetable = {
+    stops: [
+      ['North', 50.07, 19.94],
+      ['South', 50.052, 19.94],
+    ],
+    patterns: [{ r: '99', h: 'South', s: [0, 1], t: [0, 10], d: 1, n: 20 }],
+  };
+  const atNorth = { lat: 50.07, lon: 19.94 };
+  const atSouth = { lat: 50.052, lon: 19.94 };
+  const monday = new Date(2026, 9, 12);
+  const sunday = new Date(2026, 9, 18);
+
+  it('rides on a day the line runs, with exact minutes', () => {
+    const ride = findTramIn(tt, atNorth, atSouth, monday);
+    expect(ride).toMatchObject({ line: '99', from: 'North', to: 'South', stopCount: 1, rideMinutes: 10 });
+    expect(ride!.minutes).toBe(1 + TRAM_WAIT_MINUTES + 10 + 1);
+  });
+
+  it('finds nothing on a day the line does not run, whatever the call order', () => {
+    expect(findTramIn(tt, atNorth, atSouth, sunday)).toBeNull();
+    expect(findTramIn(tt, atNorth, atSouth, monday)).not.toBeNull();
+    expect(findTramIn(tt, atNorth, atSouth, sunday)).toBeNull();
+  });
+
+  it('never rides against the direction of travel', () => {
+    expect(findTramIn(tt, atSouth, atNorth, monday)).toBeNull();
+  });
+});
 
 describe('findTram', () => {
   it('uses a real ZTP feed', () => {

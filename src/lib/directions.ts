@@ -9,35 +9,42 @@ export interface WalkingRoute {
 }
 
 /** Mapbox Directions accepts at most 25 points per request. */
-const MAX_POINTS = 25;
+export const MAX_POINTS = 25;
 const TIMEOUT_MS = 10000;
 
 export const WALKING_ROUTES_ENABLED = !!MAPBOX_TOKEN;
 
-const cache = new Map<string, Promise<WalkingRoute | null>>();
+type Fetcher = (url: string, init: { signal: AbortSignal }) => Promise<{ ok: boolean; json: () => Promise<unknown> }>;
 
 const isPair = (c: unknown): c is [number, number] =>
   Array.isArray(c) && c.length >= 2 && Number.isFinite(c[0]) && Number.isFinite(c[1]);
 
-async function request(coords: string): Promise<WalkingRoute | null> {
+/**
+ * One request to Mapbox Directions (walking). Null on a network error, a timeout or any answer
+ * that doesn't describe exactly one leg per pair of points. No cache: see walkingRoute.
+ */
+export async function fetchWalkingRoute(points: LatLon[], token: string, fetcher: Fetcher = fetch): Promise<WalkingRoute | null> {
+  if (points.length < 2 || points.length > MAX_POINTS) return null;
+  const coords = points.map((p) => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   try {
     const url =
       `https://api.mapbox.com/directions/v5/mapbox/walking/${coords}` +
-      `?geometries=geojson&overview=full&access_token=${encodeURIComponent(MAPBOX_TOKEN ?? '')}`;
-    const res = await fetch(url, { signal: controller.signal });
+      `?geometries=geojson&overview=full&access_token=${encodeURIComponent(token)}`;
+    const res = await fetcher(url, { signal: controller.signal });
     if (!res.ok) return null;
-    const body = await res.json();
+    const body = (await res.json()) as { code?: unknown; routes?: { geometry?: { coordinates?: unknown }; legs?: unknown }[] };
     const route = body?.code === 'Ok' ? body.routes?.[0] : null;
     const line = route?.geometry?.coordinates;
     const legs = route?.legs;
-    if (!Array.isArray(line) || !line.every(isPair) || !Array.isArray(legs)) return null;
+    if (!Array.isArray(line) || line.length < 2 || !line.every(isPair)) return null;
+    if (!Array.isArray(legs) || legs.length !== points.length - 1) return null;
     const legMinutes = legs.map((l: { duration?: unknown }) =>
-      typeof l.duration === 'number' ? Math.max(1, Math.round(l.duration / 60)) : NaN,
+      typeof l?.duration === 'number' && Number.isFinite(l.duration) && l.duration >= 0 ? Math.max(1, Math.round(l.duration / 60)) : NaN,
     );
-    if (legMinutes.some((m: number) => Number.isNaN(m))) return null;
-    return { coordinates: line.map((c: [number, number]) => [c[0], c[1]]), legMinutes };
+    if (legMinutes.some((m) => Number.isNaN(m))) return null;
+    return { coordinates: line.map((c) => [c[0], c[1]]), legMinutes };
   } catch {
     return null;
   } finally {
@@ -45,19 +52,21 @@ async function request(coords: string): Promise<WalkingRoute | null> {
   }
 }
 
+const cache = new Map<string, Promise<WalkingRoute | null>>();
+
 /**
- * Real walking route through the points, in order. Resolves to null without a token, on a
- * network error or a bad answer, so callers keep their estimates. Successful answers are cached.
+ * Real walking route through the points, in order. Resolves to null without a token or on any
+ * failure, so callers keep their estimates. Successful answers are cached; failures are retried.
  */
 export function walkingRoute(points: LatLon[]): Promise<WalkingRoute | null> {
-  if (!MAPBOX_TOKEN || points.length < 2 || points.length > MAX_POINTS) return Promise.resolve(null);
-  const coords = points.map((p) => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
-  const cached = cache.get(coords);
+  if (!MAPBOX_TOKEN) return Promise.resolve(null);
+  const key = points.map((p) => `${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join(';');
+  const cached = cache.get(key);
   if (cached) return cached;
-  const pending = request(coords).then((r) => {
-    if (!r) cache.delete(coords);
+  const pending = fetchWalkingRoute(points, MAPBOX_TOKEN).then((r) => {
+    if (!r) cache.delete(key);
     return r;
   });
-  cache.set(coords, pending);
+  cache.set(key, pending);
   return pending;
 }

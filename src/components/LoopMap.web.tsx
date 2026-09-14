@@ -8,9 +8,9 @@ const send = (frame: HTMLIFrameElement | null, payload: string) =>
   frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), window.location.origin);
 
 // Web preview: same map document, hosted in an iframe instead of a WebView.
-export default function LoopMap({ points, route, selectedId, fit, focus, style, ...handlers }: LoopMapProps) {
+export default function LoopMap({ points, route, selectedId, fit, focus, threeD, style, ...handlers }: LoopMapProps) {
   const frame = useRef<HTMLIFrameElement | null>(null);
-  const payload = JSON.stringify({ points, route, selectedId, fit, focus });
+  const payload = JSON.stringify({ points, route, selectedId, fit, focus, threeD });
   const latest = useRef(payload);
   const handlersRef = useRef<MapHandlers>(handlers);
 

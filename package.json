@@ -44,7 +44,8 @@
     "test": "jest",
     "check": "npm run typecheck && npm run lint && npm test",
     "data:hours": "node scripts/build-hours.mjs",
-    "data:transit": "node scripts/build-transit.mjs"
+    "data:transit": "node scripts/build-transit.mjs",
+    "data:media": "node scripts/build-media.mjs"
   },
   "jest": {
     "preset": "jest-expo"

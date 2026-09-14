@@ -186,7 +186,7 @@ const s = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 11,
     color: colors.white,
-    backgroundColor: 'rgba(19,50,46,0.7)',
+    backgroundColor: colors.scrim,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,

@@ -20,10 +20,13 @@ export interface MapPayload {
   fit?: boolean;
   /** the map flies here whenever `key` changes */
   focus?: { lat: number; lon: number; key: number } | null;
+  /** tilted view with buildings in 3D */
+  threeD?: boolean;
 }
 
 // Provider switch. With a public Mapbox token the map uses Mapbox Standard with 3D buildings;
-// without one it falls back to MapLibre + OpenFreeMap, which needs no account.
+// without one it falls back to MapLibre + OpenFreeMap, which needs no account. OpenFreeMap tiles
+// carry OSM building heights (render_height), which we extrude for the 3D view.
 const MAPBOX_GL_VERSION = '3.15.0';
 const MAPLIBRE_GL_VERSION = '4.7.1';
 /** covers the library download too: the watchdog starts before anything is fetched */
@@ -46,12 +49,21 @@ const config = MAPBOX_TOKEN
       global: 'maplibregl',
       css: `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.css`,
       js: `https://cdn.jsdelivr.net/npm/maplibre-gl@${MAPLIBRE_GL_VERSION}/dist/maplibre-gl.js`,
-      style: 'https://tiles.openfreemap.org/styles/positron',
+      style: `https://tiles.openfreemap.org/styles/${colors.dark ? 'dark' : 'positron'}`,
       token: null,
       font: ['Noto Sans Bold'],
     };
 
-const palette = { stone: colors.stone, ink: colors.ink, gilt: colors.gilt, white: colors.white };
+const palette = {
+  stone: colors.stone,
+  ink: colors.ink,
+  gilt: colors.gilt,
+  white: colors.white,
+  water: colors.water,
+  park: colors.park,
+  building: colors.building,
+  dark: colors.dark,
+};
 const view = { center: [CITY.mapCentre.lon, CITY.mapCentre.lat], zoom: CITY.mapZoom, timeout: LOAD_TIMEOUT_MS };
 
 // One HTML document runs the map inside a WebView (iOS/Android) and an iframe (web preview).
@@ -65,7 +77,7 @@ export const MAP_HTML = `<!doctype html>
   function post(msg){var s=JSON.stringify(msg);
     if(window.ReactNativeWebView){window.ReactNativeWebView.postMessage(s)}else if(window.parent!==window){window.parent.postMessage(s,'*')}}
 
-  var map=null,lib=null,ready=false,failed=false,warned=false,lastError='',pending=null,lastFocus=null;
+  var map=null,lib=null,ready=false,failed=false,warned=false,lastError='',pending=null,lastFocus=null,threeD=false;
   function fail(message){if(ready||failed)return;failed=true;post({type:'error',message:message})}
   var timer=setTimeout(function(){
     fail(lastError?'The map took too long to load ('+lastError+').':'The map took too long to load.')},VIEW.timeout);
@@ -82,12 +94,18 @@ export const MAP_HTML = `<!doctype html>
       return Array.isArray(c)&&num(c[0],-180,180)&&num(c[1],-90,90)}):[];
     var f=d.focus;
     var focus=f&&typeof f==='object'&&num(f.lat,-90,90)&&num(f.lon,-180,180)&&num(f.key,0,1e9)?{lat:f.lat,lon:f.lon,key:f.key}:null;
-    return{points:pts,route:route,selectedId:typeof d.selectedId==='string'?d.selectedId:null,fit:d.fit===true,focus:focus};
+    return{points:pts,route:route,selectedId:typeof d.selectedId==='string'?d.selectedId:null,fit:d.fit===true,focus:focus,threeD:d.threeD===true};
   }
   function fc(d){return{type:'FeatureCollection',features:d.points.map(function(p){
     return{type:'Feature',geometry:{type:'Point',coordinates:[p.lon,p.lat]},
       properties:{id:p.id,color:p.color,order:p.order==null?'':String(p.order),sel:p.id===d.selectedId?1:0,me:p.kind==='me'?1:0}}})}}
   function line(d){return{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:d.route.length>1?d.route:[]}}}
+  function setThreeD(on){
+    if(on===threeD)return;
+    threeD=on;
+    if(map.getLayer('krk-buildings-3d'))map.setLayoutProperty('krk-buildings-3d','visibility',on?'visible':'none');
+    map.easeTo({pitch:on?58:0,bearing:on?-20:0,zoom:on?Math.max(map.getZoom(),15.6):map.getZoom(),duration:900});
+  }
   function apply(d){
     if(!ready){pending=d;return}
     map.getSource('pts').setData(fc(d));
@@ -100,6 +118,7 @@ export const MAP_HTML = `<!doctype html>
       lastFocus=d.focus.key;
       map.flyTo({center:[d.focus.lon,d.focus.lat],zoom:Math.max(map.getZoom(),15.5),duration:700});
     }
+    setThreeD(d.threeD);
   }
   window.__apply=function(d){var c=clean(d);if(c)apply(c)};
 
@@ -108,7 +127,7 @@ export const MAP_HTML = `<!doctype html>
     if(!lib){fail('The map library could not be downloaded.');return}
     if(CFG.token)lib.accessToken=CFG.token;
     var opts={container:'m',style:CFG.style,center:VIEW.center,zoom:VIEW.zoom};
-    if(CFG.provider==='mapbox'){opts.pitch=40;opts.config={basemap:{lightPreset:'day',showPointOfInterestLabels:false}}}
+    if(CFG.provider==='mapbox'){opts.config={basemap:{lightPreset:C.dark?'night':'day',showPointOfInterestLabels:false}}}
     else{opts.attributionControl={compact:true}}
     try{map=new lib.Map(opts)}catch(err){fail('The map could not start: '+(err&&err.message));return}
 
@@ -124,9 +143,18 @@ export const MAP_HTML = `<!doctype html>
       if(CFG.provider!=='mapbox'){
         map.getStyle().layers.forEach(function(l){try{
           if(l.type==='background')map.setPaintProperty(l.id,'background-color',C.stone);
-          if(l.id.indexOf('water')===0&&l.type==='fill')map.setPaintProperty(l.id,'fill-color','#AFC3C6');
-          if(l.id.indexOf('park')===0&&l.type==='fill')map.setPaintProperty(l.id,'fill-color','#C4D6CB');
+          if(l.id.indexOf('water')===0&&l.type==='fill')map.setPaintProperty(l.id,'fill-color',C.water);
+          if(l.id.indexOf('park')===0&&l.type==='fill')map.setPaintProperty(l.id,'fill-color',C.park);
         }catch(e){}});
+        // 3D buildings from OSM heights, hidden until the 3D view is switched on
+        try{
+          map.addLayer({id:'krk-buildings-3d',type:'fill-extrusion',source:'openmaptiles','source-layer':'building',minzoom:13,
+            layout:{visibility:'none'},
+            paint:{'fill-extrusion-color':C.building,
+              'fill-extrusion-height':['coalesce',['get','render_height'],8],
+              'fill-extrusion-base':['coalesce',['get','render_min_height'],0],
+              'fill-extrusion-opacity':0.92}});
+        }catch(e){}
       }
       var top=CFG.provider==='mapbox'?{slot:'top'}:{};
       function layer(def){for(var k in top)def[k]=top[k];map.addLayer(def)}

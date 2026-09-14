@@ -1,6 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import type { WalkingRoute } from '../src/lib/directions';
-import { buildPlan } from '../src/lib/planner';
+import { PlanDay, buildPlan } from '../src/lib/planner';
 import { realMinutes, shownTotal, walkTotal, walkedEndToEnd } from '../src/lib/planView';
 
 /** a fake Mapbox answer with a different, recognisable time for every leg */
@@ -43,6 +43,40 @@ describe('real walking times per leg', () => {
     expect(shownTotal(day, route)).toBe(day.visitMinutes + day.transitMinutes + expectedWalk);
     // 100+ minutes per leg must push an easy day over its budget
     expect(shownTotal(day, route)).toBeGreaterThan(day.budgetMinutes);
+  });
+
+  it('replaces only walking minutes on a mixed day, keeping estimates for missing legs', () => {
+    const stop = (id: string, leg: PlanDay['stops'][number]['leg']) => ({
+      place: { id, name: id, cat: 'history' as const, zone: 'old-town' as const, lat: 50, lon: 19, minutes: 20, priority: 1 as const, blurb: '' },
+      leg,
+    });
+    const day: PlanDay = {
+      index: 1,
+      title: 'Test',
+      kind: 'city',
+      stops: [
+        stop('a', null),
+        stop('b', { mode: 'walk', minutes: 5, onFootMinutes: 5 }),
+        stop('c', { mode: 'tram', minutes: 10, onFootMinutes: 40 }),
+      ],
+      returnLeg: { mode: 'walk', minutes: 7, onFootMinutes: 7 },
+      walkMinutes: 12,
+      transitMinutes: 10,
+      visitMinutes: 60,
+      travelMinutes: 0,
+      totalMinutes: 82,
+      budgetMinutes: 420,
+      overBudget: false,
+      closed: [],
+      route: [],
+    };
+    // Mapbox answered only the first leg (a → b)
+    const partial: WalkingRoute = { coordinates: [], legMinutes: [9] };
+    expect(walkTotal(day, partial)).toBe(16);
+    expect(shownTotal(day, partial)).toBe(86);
+    expect(walkedEndToEnd(day)).toBe(false);
+    // a trip day keeps its own total
+    expect(shownTotal({ ...day, kind: 'trip', totalMinutes: 500 }, partial)).toBe(500);
   });
 
   it('does not treat a day with a tram or taxi leg as walked end to end', () => {
