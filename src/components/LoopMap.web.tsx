@@ -8,9 +8,9 @@ const send = (frame: HTMLIFrameElement | null, payload: string) =>
   frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), window.location.origin);
 
 // Web preview: same map document, hosted in an iframe instead of a WebView.
-export default function LoopMap({ points, route, selectedId, fit, fitKey, focus, threeD, style, ...handlers }: LoopMapProps) {
+export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, style, ...handlers }: LoopMapProps) {
   const frame = useRef<HTMLIFrameElement | null>(null);
-  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, focus, threeD });
+  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD });
   const latest = useRef(payload);
   const handlersRef = useRef<MapHandlers>(handlers);
 
@@ -48,6 +48,9 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, focus,
       {createElement('iframe', {
         ref: frame,
         title: 'Map',
+        // aria-hidden alone doesn't stop the Tab key: a covered map also leaves the focus order
+        tabIndex: inactive ? -1 : 0,
+        'aria-hidden': inactive ? 'true' : undefined,
         // Not sandboxed on purpose: Mapbox GL reads the embedding page's location and fails with
         // "Blocked a frame with origin null" inside sandbox="allow-scripts" (tested 14.09.2026).
         // The libraries are protected by Subresource Integrity instead (mapHtml.ts).

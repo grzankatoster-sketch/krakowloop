@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -87,9 +87,11 @@ export default function MapScreen() {
   const [focus, setFocus] = useState<Focus>(null);
   const [threeD, setThreeD] = useState(false);
   const [showTrams, setShowTrams] = useState(false);
-  const [fitKey, setFitKey] = useState(0);
+  const [fit, setFit] = useState<{ key: number; target: 'route' | 'points' }>({ key: 0, target: 'points' });
   const [walk, setWalk] = useState<WalkPreview | null>(null);
   const [walkNote, setWalkNote] = useState<string | null>(null);
+  /** bumped whenever a pending walking route stops being wanted (another place, card closed) */
+  const walkRequest = useRef(0);
   const [today] = useState(() => new Date());
   const me = useMyLocation();
 
@@ -121,6 +123,7 @@ export default function MapScreen() {
     [visible, here],
   );
   const route = walk && walk.placeId === selectedId ? walk.coordinates : undefined;
+  const refit = (target: 'route' | 'points') => setFit((f) => ({ key: f.key + 1, target }));
 
   const toggle = (c: Category) => {
     const next = new Set(active);
@@ -132,7 +135,7 @@ export default function MapScreen() {
     // day trips are far away: zoom out to show them
     if (c === 'daytrip' && next.has(c)) {
       setView('map');
-      setFitKey((k) => k + 1);
+      refit('points');
     }
   };
 
@@ -143,6 +146,7 @@ export default function MapScreen() {
         router.push(`/lens/${id.slice(LENS_PREFIX.length)}`);
         return;
       }
+      walkRequest.current += 1;
       setSelectedId(id);
       setDetails(false);
       setWalk(null);
@@ -174,14 +178,19 @@ export default function MapScreen() {
     flyTo(p.lat, p.lon);
   };
   const close = () => {
+    walkRequest.current += 1;
     setSelectedId(null);
     setWalk(null);
     setWalkNote(null);
   };
 
   const walkHere = async (p: Place) => {
+    // a slower answer for an earlier request must never replace a newer one
+    const request = ++walkRequest.current;
+    const stale = () => request !== walkRequest.current;
     setWalkNote('Finding you…');
     const loc = await me.locate();
+    if (stale()) return;
     if (loc.status !== 'ok' || !loc.coords) {
       setWalkNote(loc.message ?? 'Your location is needed for a walking route.');
       return;
@@ -193,6 +202,7 @@ export default function MapScreen() {
     const from = loc.coords;
     setWalkNote('Finding the way…');
     const real = await walkingRoute([from, p]);
+    if (stale()) return;
     const straight = distance(from, p) * DETOUR;
     setWalk(
       real
@@ -200,8 +210,7 @@ export default function MapScreen() {
         : { placeId: p.id, coordinates: [[from.lon, from.lat], [p.lon, p.lat]], minutes: walkingMinutes(from, p), metres: straight, source: 'estimate' },
     );
     setWalkNote(null);
-    setView('map');
-    setFitKey((k) => k + 1);
+    refit('route');
   };
 
   const locationNote =
@@ -264,18 +273,22 @@ export default function MapScreen() {
             route={route}
             selectedId={selectedId}
             focus={focus}
-            fitKey={fitKey}
+            fitKey={fit.key}
+            fitTarget={fit.target}
             threeD={threeD}
+            inactive={listOpen}
             onSelect={select}
             onError={onError}
             onWarning={onWarning}
             onReady={onReady}
           />
-          <View style={s.mapButtons}>
-            <MapButton label="3D" active={threeD} onPress={() => setThreeD((v) => !v)} hint="3D buildings" />
-            <MapButton label="Trams" active={showTrams} onPress={() => setShowTrams((v) => !v)} hint="Show tram stops" />
-            <MapButton label="Near me" onPress={nearMe} hint="Show where I am" />
-          </View>
+          {listOpen ? null : (
+            <View style={s.mapButtons}>
+              <MapButton label="3D" active={threeD} onPress={() => setThreeD((v) => !v)} hint="3D buildings" />
+              <MapButton label="Trams" active={showTrams} onPress={() => setShowTrams((v) => !v)} hint="Show tram stops" />
+              <MapButton label="Near me" onPress={nearMe} hint="Show where I am" />
+            </View>
+          )}
           {mapError ? (
             <View style={s.error}>
               <Text style={s.errorTitle}>The map didn’t load</Text>
@@ -427,7 +440,8 @@ const s = StyleSheet.create({
   locNote: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, paddingHorizontal: space.m, paddingBottom: space.s },
   mapWrap: { flex: 1 },
   map: { flex: 1 },
-  mapButtons: { position: 'absolute', right: space.m, bottom: space.l, gap: space.s, alignItems: 'flex-end' },
+  // above the map's own attribution button in the bottom corner, which must stay reachable
+  mapButtons: { position: 'absolute', right: space.m, bottom: 56, gap: space.s, alignItems: 'flex-end' },
   mapButton: {
     minWidth: 52,
     minHeight: 44,

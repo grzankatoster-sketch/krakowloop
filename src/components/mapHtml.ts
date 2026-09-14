@@ -26,6 +26,8 @@ export interface MapPayload {
   fit?: boolean;
   /** fit the view once each time this number changes (map screen) */
   fitKey?: number;
+  /** what that fit shows: the route (default when there is one) or all places */
+  fitTarget?: 'route' | 'points';
   /** the map flies here whenever `key` changes */
   focus?: { lat: number; lon: number; key: number } | null;
   /** tilted view with buildings in 3D */
@@ -111,17 +113,17 @@ export const MAP_HTML = `<!doctype html>
     var f=d.focus;
     var focus=f&&typeof f==='object'&&num(f.lat,-90,90)&&num(f.lon,-180,180)&&num(f.key,0,1e9)?{lat:f.lat,lon:f.lon,key:f.key}:null;
     return{points:pts,route:route,selectedId:typeof d.selectedId==='string'?d.selectedId:null,fit:d.fit===true,
-      fitKey:num(d.fitKey,0,1e9)?d.fitKey:null,focus:focus,threeD:d.threeD===true};
+      fitKey:num(d.fitKey,0,1e9)?d.fitKey:null,fitTarget:d.fitTarget==='points'?'points':'route',focus:focus,threeD:d.threeD===true};
   }
   function fc(d){return{type:'FeatureCollection',features:d.points.map(function(p){
     return{type:'Feature',geometry:{type:'Point',coordinates:[p.lon,p.lat]},
       properties:{id:p.id,color:p.color,order:p.order==null?'':String(p.order),sel:p.id===d.selectedId?1:0,
         kind:p.kind||'place',label:p.label||''}}})}}
   function line(d){return{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:d.route.length>1?d.route:[]}}}
-  /** the route when there is one, otherwise the places (tram stops and the traveller left out) */
-  function fitTo(d){
+  /** the route when asked for and present, otherwise the places (tram stops left out) */
+  function fitTo(d,target){
     var b=new lib.LngLatBounds(),n=0;
-    if(d.route.length>1){d.route.forEach(function(c){b.extend(c);n++})}
+    if(target!=='points'&&d.route.length>1){d.route.forEach(function(c){b.extend(c);n++})}
     else{d.points.forEach(function(p){if(p.kind!=='stop'){b.extend([p.lon,p.lat]);n++}})}
     if(n)map.fitBounds(b,{padding:{top:80,bottom:80,left:48,right:48},maxZoom:16,duration:600});
   }
@@ -129,22 +131,30 @@ export const MAP_HTML = `<!doctype html>
     if(!ready){pending=d;return}
     map.getSource('pts').setData(fc(d));
     map.getSource('route').setData(line(d));
-    if(d.fit)fitTo(d);
-    if(d.fitKey!==null&&d.fitKey!==lastFit){var first=lastFit===null;lastFit=d.fitKey;if(!first||d.fitKey>0)fitTo(d)}
-    // A new focus and a 3D switch arriving together become one camera move, so neither cancels the other.
+    var fitted=false;
+    if(d.fit){fitTo(d,'route');fitted=true}
+    if(d.fitKey!==null&&d.fitKey!==lastFit){
+      var first=lastFit===null;lastFit=d.fitKey;
+      if(!first||d.fitKey>0){fitTo(d,d.fitTarget);fitted=true}
+    }
+    // Camera requests arriving together: a fit is the newest user action, so a focus in the same
+    // update doesn't fly away from it, and a 3D switch waits for the fit to finish.
     var cam={},move=false;
     if(d.focus&&d.focus.key!==lastFocus){
       lastFocus=d.focus.key;
-      cam.center=[d.focus.lon,d.focus.lat];cam.zoom=Math.max(map.getZoom(),15.5);move=true;
+      if(!fitted){cam.center=[d.focus.lon,d.focus.lat];cam.zoom=Math.max(map.getZoom(),15.5);move=true}
     }
     if(d.threeD!==threeD){
       threeD=d.threeD;
       if(map.getLayer('krk-buildings-3d'))map.setLayoutProperty('krk-buildings-3d','visibility',threeD?'visible':'none');
       cam.pitch=threeD?58:0;cam.bearing=threeD?-20:0;
-      if(threeD)cam.zoom=Math.max(cam.zoom||map.getZoom(),15.6);
+      if(threeD&&!fitted)cam.zoom=Math.max(cam.zoom||map.getZoom(),15.6);
       move=true;
     }
-    if(move)map.easeTo(Object.assign({duration:800},cam));
+    if(move){
+      if(fitted)map.once('moveend',function(){map.easeTo(Object.assign({duration:600},cam))});
+      else map.easeTo(Object.assign({duration:800},cam));
+    }
   }
   window.__apply=function(d){var c=clean(d);if(c)apply(c)};
 

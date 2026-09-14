@@ -8,11 +8,13 @@ import { MapHandlers, dispatchMapMessage, parseMapMessage } from './mapMessages'
 
 export interface LoopMapProps extends MapPayload, MapHandlers {
   style?: StyleProp<ViewStyle>;
+  /** covered by another view: hidden from screen readers and keyboard focus */
+  inactive?: boolean;
 }
 
-export default function LoopMap({ points, route, selectedId, fit, fitKey, focus, threeD, style, ...handlers }: LoopMapProps) {
+export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, style, ...handlers }: LoopMapProps) {
   const ref = useRef<WebView>(null);
-  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, focus, threeD });
+  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD });
   const latest = useRef(payload);
   const handlersRef = useRef<MapHandlers>(handlers);
 
@@ -36,6 +38,8 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, focus,
     <WebView
       ref={ref}
       style={style}
+      accessibilityElementsHidden={inactive}
+      importantForAccessibility={inactive ? 'no-hide-descendants' : 'auto'}
       originWhitelist={['*']}
       source={{ html: MAP_HTML, baseUrl: APP.webViewBaseUrl }}
       onMessage={onMessage}

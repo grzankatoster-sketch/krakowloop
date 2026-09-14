@@ -109,17 +109,47 @@ async function getJson(url) {
   return res.json();
 }
 
-/** Official links use HTTPS whenever the site answers on it. */
+/** Reads a response body but stops as soon as it grows past the limit. */
+async function readLimited(res, limit, id) {
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > limit) {
+      await reader.cancel();
+      throw new Error(`${id}: thumbnail larger than ${limit} bytes`);
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks);
+}
+
+/** Only ordinary public host names: no localhost, local names or raw IP addresses. */
+function isPublicHost(host) {
+  if (host === 'localhost' || /\.(local|internal|lan|home|localdomain)$/i.test(host)) return false;
+  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(':') || host.startsWith('[')) return false;
+  return host.includes('.');
+}
+
+/**
+ * Official links use HTTPS whenever the site answers on it. Called only for hosts already approved,
+ * and redirects are not followed, so an edited Wikidata value can't make this script call elsewhere.
+ */
 async function preferHttps(url) {
   if (!url.startsWith('http://')) return url;
   const secure = `https://${url.slice('http://'.length)}`;
   try {
-    const res = await fetchLimited(secure, { method: 'HEAD', redirect: 'follow' });
+    const res = await fetchLimited(secure, { method: 'HEAD', redirect: 'manual' });
     return res.status < 400 ? secure : url;
   } catch {
     return url;
   }
 }
+
+const acceptWebsiteChanges = process.argv.includes('--accept-website-changes');
 
 // Websites come from Wikidata, which anyone can edit, and the app calls them "official". A changed
 // domain stops the build until someone has looked at it and reruns with --accept-website-changes.
@@ -155,7 +185,13 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
   }
   const entry = { wikidata: qid };
   const website = firstValue(claims, 'P856');
-  if (typeof website === 'string' && /^https?:\/\//.test(website)) entry.website = await preferHttps(website);
+  if (typeof website === 'string' && /^https?:\/\//.test(website)) {
+    const host = new URL(website).hostname;
+    const approved = !previousHosts.has(id) || previousHosts.get(id) === host || acceptWebsiteChanges;
+    if (!isPublicHost(host)) report.push(`${id}: website ignored (not a public host: ${host})`);
+    // no request goes to a changed, not yet approved domain; the check below stops the build
+    else entry.website = approved ? await preferHttps(website) : website;
+  }
 
   const file = firstValue(claims, 'P18');
   let note = 'no image';
@@ -172,8 +208,7 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
       const type = res.headers.get('content-type') ?? '';
       if (!res.ok || !type.startsWith('image/')) throw new Error(`${id}: thumbnail download failed (${res.status}, ${type})`);
       if (Number(res.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) throw new Error(`${id}: thumbnail larger than 3 MB`);
-      const bytes = Buffer.from(await res.arrayBuffer());
-      if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error(`${id}: thumbnail larger than 3 MB`);
+      const bytes = await readLimited(res, MAX_IMAGE_BYTES, id);
       downloads.push({ name: `${id}${ext}`, bytes });
       // the full attribution is kept; screens shorten it only on display
       Object.assign(entry, { file: `${id}${ext}`, credit: artist, license: licence, sourceUrl: info.descriptionurl });
@@ -193,7 +228,7 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
 const changedSites = Object.entries(media)
   .filter(([id, e]) => e.website && previousHosts.has(id) && previousHosts.get(id) !== new URL(e.website).hostname)
   .map(([id, e]) => `${id}: ${previousHosts.get(id)} -> ${new URL(e.website).hostname}`);
-if (changedSites.length && !process.argv.includes('--accept-website-changes')) {
+if (changedSites.length && !acceptWebsiteChanges) {
   console.error(`Official website domains changed. Check them, then rerun with --accept-website-changes:\n${changedSites.join('\n')}`);
   process.exit(1);
 }
