@@ -4,10 +4,8 @@ import { MAP_HTML } from './mapHtml';
 import type { LoopMapProps } from './LoopMap';
 import { MapHandlers, dispatchMapMessage, parseMapMessage } from './mapMessages';
 
-// The frame is sandboxed (opaque origin), so its origin can't be named; the message goes to this
-// frame's own window object only, which is the protection that matters.
 const send = (frame: HTMLIFrameElement | null, payload: string) =>
-  frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), '*');
+  frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), window.location.origin);
 
 // Web preview: same map document, hosted in an iframe instead of a WebView.
 export default function LoopMap({ points, route, selectedId, fit, fitKey, focus, threeD, style, ...handlers }: LoopMapProps) {
@@ -50,8 +48,9 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, focus,
       {createElement('iframe', {
         ref: frame,
         title: 'Map',
-        // scripts only: the map document can't reach this page, its storage or its URL
-        sandbox: 'allow-scripts',
+        // Not sandboxed on purpose: Mapbox GL reads the embedding page's location and fails with
+        // "Blocked a frame with origin null" inside sandbox="allow-scripts" (tested 14.09.2026).
+        // The libraries are protected by Subresource Integrity instead (mapHtml.ts).
         style: { border: 0, width: '100%', height: '100%', display: 'block' },
       })}
     </View>
