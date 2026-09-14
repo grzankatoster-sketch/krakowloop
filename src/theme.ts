@@ -1,5 +1,6 @@
-// Palettes taken from the city itself. EXPO_PUBLIC_THEME picks one (used to compare them);
-// otherwise DEFAULT_THEME applies.
+import { THEME_CHOICE } from './config/themeChoice';
+
+// Palettes taken from the city itself. src/config/themeChoice.ts picks the one the app uses.
 //
 // Token roles: stone = screen ground, paper = cards, ink = main text AND primary buttons,
 // white = text on ink or on a category colour, mute = secondary text, line = borders.
@@ -24,6 +25,8 @@ export interface Palette {
   remembrance: string;
   /** translucent ground behind captions laid over photos */
   scrim: string;
+  /** text on the scrim */
+  onScrim: string;
   water: string;
   park: string;
   building: string;
@@ -48,6 +51,7 @@ const PALETTES: Record<ThemeName, Palette> = {
     jewish: '#2F6F68',
     remembrance: '#707875',
     scrim: 'rgba(19,50,46,0.72)',
+    onScrim: '#FFFFFF',
     water: '#AFC3C6',
     park: '#C4D6CB',
     building: '#C9D3CF',
@@ -69,6 +73,7 @@ const PALETTES: Record<ThemeName, Palette> = {
     jewish: '#B9A2E8',
     remembrance: '#A3ABBE',
     scrim: 'rgba(15,27,61,0.78)',
+    onScrim: '#F2E6C4',
     water: '#1C3170',
     park: '#173A48',
     building: '#243672',
@@ -90,6 +95,7 @@ const PALETTES: Record<ThemeName, Palette> = {
     jewish: '#74549F',
     remembrance: '#646A80',
     scrim: 'rgba(28,37,80,0.74)',
+    onScrim: '#FFFFFF',
     water: '#A9C0DD',
     park: '#C9D7CE',
     building: '#CDD3E1',
@@ -111,17 +117,16 @@ const PALETTES: Record<ThemeName, Palette> = {
     jewish: '#5E4B8B',
     remembrance: '#6E6763',
     scrim: 'rgba(46,31,26,0.72)',
+    onScrim: '#FFFFFF',
     water: '#B9CBD3',
     park: '#CAD5C0',
     building: '#D9C7C0',
   },
 };
 
-export const DEFAULT_THEME: ThemeName = 'planty';
-
-const requested = process.env.EXPO_PUBLIC_THEME;
-export const THEME_NAME: ThemeName =
-  requested && Object.prototype.hasOwnProperty.call(PALETTES, requested) ? (requested as ThemeName) : DEFAULT_THEME;
+export const THEME_NAME: ThemeName = Object.prototype.hasOwnProperty.call(PALETTES, THEME_CHOICE)
+  ? (THEME_CHOICE as ThemeName)
+  : 'planty';
 
 export const colors: Palette = PALETTES[THEME_NAME];
 export const ALL_PALETTES = PALETTES;

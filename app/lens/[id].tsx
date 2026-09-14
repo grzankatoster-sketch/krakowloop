@@ -185,7 +185,7 @@ const s = StyleSheet.create({
     alignSelf: 'center',
     fontFamily: fonts.mono,
     fontSize: 11,
-    color: colors.white,
+    color: colors.onScrim,
     backgroundColor: colors.scrim,
     paddingHorizontal: 10,
     paddingVertical: 4,

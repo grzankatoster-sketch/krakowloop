@@ -100,12 +100,6 @@ export const MAP_HTML = `<!doctype html>
     return{type:'Feature',geometry:{type:'Point',coordinates:[p.lon,p.lat]},
       properties:{id:p.id,color:p.color,order:p.order==null?'':String(p.order),sel:p.id===d.selectedId?1:0,me:p.kind==='me'?1:0}}})}}
   function line(d){return{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:d.route.length>1?d.route:[]}}}
-  function setThreeD(on){
-    if(on===threeD)return;
-    threeD=on;
-    if(map.getLayer('krk-buildings-3d'))map.setLayoutProperty('krk-buildings-3d','visibility',on?'visible':'none');
-    map.easeTo({pitch:on?58:0,bearing:on?-20:0,zoom:on?Math.max(map.getZoom(),15.6):map.getZoom(),duration:900});
-  }
   function apply(d){
     if(!ready){pending=d;return}
     map.getSource('pts').setData(fc(d));
@@ -114,11 +108,20 @@ export const MAP_HTML = `<!doctype html>
       var b=new lib.LngLatBounds();d.points.forEach(function(p){b.extend([p.lon,p.lat])});
       map.fitBounds(b,{padding:{top:70,bottom:70,left:40,right:40},maxZoom:16,duration:600});
     }
+    // A new focus and a 3D switch arriving together become one camera move, so neither cancels the other.
+    var cam={},move=false;
     if(d.focus&&d.focus.key!==lastFocus){
       lastFocus=d.focus.key;
-      map.flyTo({center:[d.focus.lon,d.focus.lat],zoom:Math.max(map.getZoom(),15.5),duration:700});
+      cam.center=[d.focus.lon,d.focus.lat];cam.zoom=Math.max(map.getZoom(),15.5);move=true;
     }
-    setThreeD(d.threeD);
+    if(d.threeD!==threeD){
+      threeD=d.threeD;
+      if(map.getLayer('krk-buildings-3d'))map.setLayoutProperty('krk-buildings-3d','visibility',threeD?'visible':'none');
+      cam.pitch=threeD?58:0;cam.bearing=threeD?-20:0;
+      if(threeD)cam.zoom=Math.max(cam.zoom||map.getZoom(),15.6);
+      move=true;
+    }
+    if(move)map.easeTo(Object.assign({duration:800},cam));
   }
   window.__apply=function(d){var c=clean(d);if(c)apply(c)};
 

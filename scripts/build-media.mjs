@@ -104,7 +104,9 @@ async function getJson(url) {
   return res.json();
 }
 
-mkdirSync(ASSETS, { recursive: true });
+// Nothing is written until every request has succeeded, so photos and their credits never mix
+// two different runs. Any failed download stops the script with an error.
+const downloads = [];
 const media = {};
 const register = [];
 const report = [];
@@ -139,9 +141,12 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
     const artist = stripHtml(meta.Artist?.value) || (/public domain/i.test(licence) ? 'Unknown author' : '');
     if (info?.thumburl && ALLOWED_LICENCE.test(licence) && artist) {
       const ext = path.extname(new URL(info.thumburl).pathname).toLowerCase() === '.png' ? '.png' : '.jpg';
-      const bytes = Buffer.from(await (await fetch(info.thumburl, { headers: HEADERS })).arrayBuffer());
-      writeFileSync(path.join(ASSETS, `${id}${ext}`), bytes);
-      Object.assign(entry, { file: `${id}${ext}`, credit: artist.slice(0, 120), license: licence, sourceUrl: info.descriptionurl });
+      const res = await fetch(info.thumburl, { headers: HEADERS });
+      const type = res.headers.get('content-type') ?? '';
+      if (!res.ok || !type.startsWith('image/')) throw new Error(`${id}: thumbnail download failed (${res.status}, ${type})`);
+      downloads.push({ name: `${id}${ext}`, bytes: Buffer.from(await res.arrayBuffer()) });
+      // the full attribution is kept; screens shorten it only on display
+      Object.assign(entry, { file: `${id}${ext}`, credit: artist, license: licence, sourceUrl: info.descriptionurl });
       register.push({ id, wikidata: qid, commonsFile: file, license: licence, licenseUrl: stripHtml(meta.LicenseUrl?.value), artist, sourceUrl: info.descriptionurl, checked: new Date().toISOString().slice(0, 10) });
       note = `photo ${licence}`;
     } else {
@@ -154,6 +159,9 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
   report.push(`${id}: ok ${qid} "${label}" ${dist.toFixed(2)} km, ${note}${entry.website ? ', website' : ''}`);
   await sleep(150);
 }
+
+mkdirSync(ASSETS, { recursive: true });
+for (const d of downloads) writeFileSync(path.join(ASSETS, d.name), d.bytes);
 
 const q = (s) => JSON.stringify(s);
 const lines = Object.entries(media).map(([id, e]) => {
