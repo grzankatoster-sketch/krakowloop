@@ -52,6 +52,9 @@ export default function Home() {
           <Text style={s.foot}>
             Map data © OpenStreetMap contributors. Historic images: public domain, via Wikimedia Commons.
           </Text>
+          <Pressable accessibilityRole="link" onPress={() => router.push('/about')} hitSlop={8}>
+            <Text style={s.footLink}>About, sources and privacy</Text>
+          </Pressable>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -73,4 +76,5 @@ const s = StyleSheet.create({
   doorTitle: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
   doorLine: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute, marginTop: 4 },
   foot: { fontFamily: fonts.body, fontSize: 12, color: colors.mute, paddingHorizontal: space.m, marginTop: space.l },
+  footLink: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.vistula, paddingHorizontal: space.m, marginTop: space.s },
 });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Image, PanResponder, PanResponderGestureState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -6,50 +6,13 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Button, Eyebrow, TopBar } from '../../src/components/ui';
 import { EpochRuler } from '../../src/components/EpochRuler';
 import { DragSlider } from '../../src/components/DragSlider';
-import { lensById } from '../../src/data/lens';
+import { LensPoint, lensById } from '../../src/data/lens';
 import { openLink } from '../../src/lib/openLink';
 import { colors, fonts, space } from '../../src/theme';
 
 export default function LensScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const point = lensById(String(id));
-  const [permission, requestPermission] = useCameraPermissions();
-  const [useCamera, setUseCamera] = useState(false);
-  const [cameraError, setCameraError] = useState<string | null>(null);
-  const [layerIdx, setLayerIdx] = useState(0);
-  const [opacity, setOpacity] = useState(0.6);
-  const [scale, setScale] = useState(1);
-  const [offset, setOffset] = useState({ x: 0, y: 0 });
-  const base = useRef({ x: 0, y: 0 });
-
-  const resetOverlay = useCallback(() => {
-    base.current = { x: 0, y: 0 };
-    setOffset({ x: 0, y: 0 });
-    setScale(1);
-  }, []);
-
-  // A new viewpoint starts from its first layer with the overlay centred.
-  useEffect(() => {
-    setLayerIdx(0);
-    resetOverlay();
-  }, [id, resetOverlay]);
-
-  // Release the camera whenever this screen is not the one in front.
-  useFocusEffect(useCallback(() => () => setUseCamera(false), []));
-
-  const drag = useMemo(() => {
-    const commit = (g: PanResponderGestureState) => {
-      base.current = { x: base.current.x + g.dx, y: base.current.y + g.dy };
-      setOffset(base.current);
-    };
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, g) => setOffset({ x: base.current.x + g.dx, y: base.current.y + g.dy }),
-      onPanResponderRelease: (_, g) => commit(g),
-      onPanResponderTerminate: (_, g) => commit(g),
-    });
-  }, []);
 
   if (!point) {
     return (
@@ -59,22 +22,72 @@ export default function LensScreen() {
       </SafeAreaView>
     );
   }
+  // A new viewpoint gets a fresh viewer: first layer, overlay centred.
+  return <LensViewer key={point.id} point={point} />;
+}
+
+const ORIGIN = { x: 0, y: 0 };
+
+function LensViewer({ point }: { point: LensPoint }) {
+  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraWanted, setCameraWanted] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [layerIdx, setLayerIdx] = useState(0);
+  const [opacity, setOpacity] = useState(0.6);
+  const [scale, setScale] = useState(1);
+  const [placed, setPlaced] = useState(ORIGIN);
+  const [dragging, setDragging] = useState(ORIGIN);
+  const focused = useRef(true);
+
+  // Release the camera whenever this screen is not the one in front.
+  useFocusEffect(
+    useCallback(() => {
+      focused.current = true;
+      return () => {
+        focused.current = false;
+        setCameraWanted(false);
+      };
+    }, []),
+  );
+
+  const drag = useMemo(() => {
+    const commit = (g: PanResponderGestureState) => {
+      setPlaced((p) => ({ x: p.x + g.dx, y: p.y + g.dy }));
+      setDragging(ORIGIN);
+    };
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderMove: (_, g) => setDragging({ x: g.dx, y: g.dy }),
+      onPanResponderRelease: (_, g) => commit(g),
+      onPanResponderTerminate: (_, g) => commit(g),
+    });
+  }, []);
+
+  const resetOverlay = () => {
+    setPlaced(ORIGIN);
+    setDragging(ORIGIN);
+    setScale(1);
+  };
 
   const layer = point.layers[Math.min(layerIdx, point.layers.length - 1)];
-  const cameraOn = useCamera && !!permission?.granted;
+  const cameraOn = cameraWanted && !!permission?.granted;
   const referenceVisible = !cameraOn && !!point.reference;
+  const offset = { x: placed.x + dragging.x, y: placed.y + dragging.y };
 
   const startCamera = async () => {
     try {
       const res = permission?.granted ? permission : await requestPermission();
+      // the permission dialog can outlive the screen: never start a camera nobody sees
+      if (!focused.current) return;
       if (res.granted) {
         setCameraError(null);
-        setUseCamera(true);
+        setCameraWanted(true);
       } else {
         setCameraError('Camera access was not allowed, so the reference photo is shown instead.');
       }
     } catch {
-      setCameraError('The camera could not be started on this device.');
+      if (focused.current) setCameraError('The camera could not be started on this device.');
     }
   };
 
@@ -87,7 +100,7 @@ export default function LensScreen() {
             style={StyleSheet.absoluteFill}
             facing="back"
             onMountError={(e) => {
-              setUseCamera(false);
+              setCameraWanted(false);
               setCameraError(`The camera could not start: ${e.message}`);
             }}
           />
@@ -149,7 +162,7 @@ export default function LensScreen() {
         ) : null}
 
         {cameraOn ? (
-          <Button label="Stop the camera" kind="quiet" onPress={() => setUseCamera(false)} />
+          <Button label="Stop the camera" kind="quiet" onPress={() => setCameraWanted(false)} />
         ) : (
           <Button label="Use my camera" onPress={startCamera} />
         )}

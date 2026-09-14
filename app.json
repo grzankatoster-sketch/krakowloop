@@ -30,6 +30,14 @@
       "expo-status-bar",
       "expo-font",
       [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "KrakowLoop uses your location to sort places by distance and, when you ask, to start your walking loop where you are.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "KrakowLoop uses the camera to show historic views over the buildings in front of you. Nothing is recorded or uploaded.",
