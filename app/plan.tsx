@@ -16,7 +16,8 @@ import { formatHours, hoursOn } from '../src/lib/hours';
 import type { Leg } from '../src/lib/legs';
 import { openLink } from '../src/lib/openLink';
 import { paramsToPlan, planToParams, shareableParams } from '../src/lib/planParams';
-import { Interest, MAX_PLAN_DAYS, Pace, PlanDay, PlanOptions, buildPlan } from '../src/lib/planner';
+import { Interest, MAX_PLAN_DAYS, Pace, PlanOptions, buildPlan } from '../src/lib/planner';
+import { realMinutes, shownTotal, walkTotal, walkedEndToEnd } from '../src/lib/planView';
 import { shareLink } from '../src/lib/share';
 import { TRANSIT_FEED_VERSION } from '../src/lib/transit';
 import { useMyLocation } from '../src/lib/useMyLocation';
@@ -50,20 +51,10 @@ function legText(l: Leg, realWalkMinutes: number | null): string {
   return `Taxi, about ${fmt(l.minutes)} (${fmt(l.onFootMinutes)} on foot)`;
 }
 
-/** Real walking minutes for the leg into stop i; i === stops.length is the return leg. */
-function realMinutes(day: PlanDay, route: WalkingRoute | null, i: number): number | null {
-  if (!route) return null;
-  const k = day.start ? i : i - 1;
-  return k >= 0 && k < route.legMinutes.length ? route.legMinutes[k] : null;
-}
-
-function walkTotal(day: PlanDay, route: WalkingRoute | null): number {
-  let total = 0;
-  day.stops.forEach((st, i) => {
-    if (st.leg?.mode === 'walk') total += realMinutes(day, route, i) ?? st.leg.minutes;
-  });
-  if (day.returnLeg?.mode === 'walk') total += realMinutes(day, route, day.stops.length) ?? day.returnLeg.minutes;
-  return total;
+/** "Mon 12 Oct", or the raw value if it isn't a valid date */
+function dayLabel(iso: string | undefined): string {
+  const d = parseISODate(iso);
+  return d ? formatDay(d) : iso ?? '';
 }
 
 function hoursThatDay(placeId: string, date: string | undefined): string | null {
@@ -88,7 +79,12 @@ export default function PlanScreen() {
   const plan = useMemo(() => (options ? buildPlan(options) : null), [options]);
   const planKey = options ? JSON.stringify(options) : '';
 
-  const [form, setForm] = useState<PlanOptions>(() => options ?? DEFAULT_FORM);
+  // The form belongs to the plan in the URL: a different plan arriving (a shared link, a skipped
+  // stop, a rebuild) refills it, so "Rebuild" never overwrites it with stale choices.
+  const [formState, setFormState] = useState(() => ({ key: planKey, form: options ?? DEFAULT_FORM }));
+  if (options && formState.key !== planKey) setFormState({ key: planKey, form: { ...options, exclude: [] } });
+  const form = formState.form;
+  const setForm = (update: (f: PlanOptions) => PlanOptions) => setFormState((s) => ({ key: s.key, form: update(s.form) }));
   const [today] = useState(() => toISODate(new Date()));
   const [daySel, setDaySel] = useState({ key: '', index: 0 });
   const [walk, setWalk] = useState<{ key: string; route: WalkingRoute } | null>(null);
@@ -130,7 +126,10 @@ export default function PlanScreen() {
     if (day.start && day.kind === 'city') stops.push({ id: '__start', lat: day.start.lat, lon: day.start.lon, color: colors.vistula, kind: 'me' });
     return stops;
   }, [day]);
-  const route = real ? real.coordinates : day?.kind === 'city' ? day.route : undefined;
+  // Mapbox draws a walk; a day with a tram or taxi leg keeps its straight stop-to-stop lines.
+  const realLine = real && day && walkedEndToEnd(day) ? real.coordinates : null;
+  const route = realLine ?? (day?.kind === 'city' ? day.route : undefined);
+  const dayTotal = day ? shownTotal(day, real) : 0;
 
   const anyAffiliate = experiences.some((x) => x.booking.affiliate);
   const remembrance = form.interests.includes('remembrance');
@@ -193,7 +192,7 @@ export default function PlanScreen() {
             {form.startDate ? (
               <>
                 <Chip label="‹ Earlier" active={false} onPress={() => shiftDate(-1)} />
-                <Chip label={formatDay(parseISODate(form.startDate)!)} active onPress={() => undefined} />
+                <Chip label={dayLabel(form.startDate)} active onPress={() => undefined} />
                 <Chip label="Later ›" active={false} onPress={() => shiftDate(1)} />
               </>
             ) : (
@@ -257,7 +256,7 @@ export default function PlanScreen() {
               {plan.map((d, i) => (
                 <Chip
                   key={d.index}
-                  label={d.date ? `Day ${d.index} · ${formatDay(parseISODate(d.date)!)}` : `Day ${d.index}`}
+                  label={d.date ? `Day ${d.index} · ${dayLabel(d.date)}` : `Day ${d.index}`}
                   active={i === dayIdx}
                   onPress={() => setDaySel({ key: planKey, index: i })}
                 />
@@ -284,9 +283,9 @@ export default function PlanScreen() {
             ) : (
               <Eyebrow>Full day out of Kraków · about {fmt(day.travelMinutes)} each way by road</Eyebrow>
             )}
-            {day.overBudget ? (
+            {dayTotal > day.budgetMinutes ? (
               <Text style={s.warn}>
-                A long day: about {fmt(day.totalMinutes)} with travel, more than the {options.pace} pace allows ({fmt(day.budgetMinutes)}).
+                A long day: about {fmt(dayTotal)} with travel, more than the {options.pace} pace allows ({fmt(day.budgetMinutes)}).
               </Text>
             ) : null}
             {day.closed.length ? (
@@ -364,7 +363,9 @@ export default function PlanScreen() {
 
             <Text style={s.small}>
               {real
-                ? 'Walking route and times: Mapbox.'
+                ? realLine
+                  ? 'Walking route and times: Mapbox.'
+                  : 'Walking times: Mapbox.'
                 : `Walking times are estimates: straight-line distance plus ${Math.round((DETOUR - 1) * 100)}%.`}{' '}
               Trams: ZTP Kraków timetable ({TRANSIT_FEED_VERSION}), without live delays. Day-trip travel is an estimate. Opening
               hours: OpenStreetMap, public holidays not included. Check before you go.

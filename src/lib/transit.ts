@@ -12,6 +12,8 @@ interface Pattern {
   s: number[];
   /** minutes from the first stop */
   t: number[];
+  /** weekdays it runs on, bitmask with Monday = bit 0 */
+  d: number;
   /** trips per timetable period */
   n: number;
 }
@@ -52,9 +54,16 @@ function nearStops(p: LatLon) {
 
 const cache = new Map<string, TramRide | null>();
 
-/** Fastest single tram ride from a to b (no changes), or null when none is sensible. */
-export function findTram(a: LatLon, b: LatLon): TramRide | null {
-  const key = `${a.lat.toFixed(4)},${a.lon.toFixed(4)}>${b.lat.toFixed(4)},${b.lon.toFixed(4)}`;
+/** Monday = 0, matching the weekday bitmask of the timetable. */
+export const weekdayOf = (date: Date) => (date.getDay() + 6) % 7;
+
+/**
+ * Fastest single tram ride from a to b (no changes), or null when none is sensible.
+ * With a date, only lines running on that weekday are considered.
+ */
+export function findTram(a: LatLon, b: LatLon, date?: Date | null): TramRide | null {
+  const weekday = date ? weekdayOf(date) : null;
+  const key = `${a.lat.toFixed(4)},${a.lon.toFixed(4)}>${b.lat.toFixed(4)},${b.lon.toFixed(4)}|${weekday ?? '*'}`;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
 
@@ -63,6 +72,7 @@ export function findTram(a: LatLon, b: LatLon): TramRide | null {
   let best: TramRide | null = null;
   let bestTrips = 0;
   for (const p of patterns) {
+    if (weekday !== null && !(p.d & (1 << weekday))) continue;
     for (const f of fromStops) {
       const iFrom = p.s.indexOf(f.i);
       if (iFrom < 0) continue;

@@ -110,11 +110,11 @@ function orderAsLoop(stops: Place[], start?: LatLon): Place[] {
   return ordered;
 }
 
-function measure(ordered: Place[], start?: LatLon) {
-  const legs = ordered.map((p, i) => (i === 0 ? (start ? leg(start, p) : null) : leg(ordered[i - 1], p)));
+function measure(ordered: Place[], start: LatLon | undefined, date: Date | null) {
+  const legs = ordered.map((p, i) => (i === 0 ? (start ? leg(start, p, date) : null) : leg(ordered[i - 1], p, date)));
   const home = start ?? ordered[0];
   const returnLeg =
-    ordered.length > 0 && (start || ordered.length >= 2) ? leg(ordered[ordered.length - 1], home) : null;
+    ordered.length > 0 && (start || ordered.length >= 2) ? leg(ordered[ordered.length - 1], home, date) : null;
   const all = [...legs, returnLeg].filter((l): l is Leg => l !== null);
   const walkMinutes = all.filter((l) => l.mode === 'walk').reduce((s, l) => s + l.minutes, 0);
   const transitMinutes = all.filter((l) => l.mode !== 'walk').reduce((s, l) => s + l.minutes, 0);
@@ -122,7 +122,14 @@ function measure(ordered: Place[], start?: LatLon) {
   return { legs, returnLeg, walkMinutes, transitMinutes, visitMinutes, totalMinutes: walkMinutes + transitMinutes + visitMinutes };
 }
 
-function pickCityDay(pool: Place[], zones: Zone[], wanted: Set<Category>, pace: Pace, start?: LatLon): Place[] {
+function pickCityDay(
+  pool: Place[],
+  zones: Zone[],
+  wanted: Set<Category>,
+  pace: Pace,
+  start: LatLon | undefined,
+  date: Date | null,
+): Place[] {
   const { maxStops, budgetMinutes } = PACE[pace];
   const inGroup = pool.filter((p) => zones.includes(p.zone)).sort((a, b) => score(b, wanted) - score(a, wanted));
   const c = centre(inGroup.length ? inGroup : pool);
@@ -137,7 +144,7 @@ function pickCityDay(pool: Place[], zones: Zone[], wanted: Set<Category>, pace: 
     // keep a day in one part of town: nothing too far from its first chosen stop
     if (anchor && distance(anchor, candidate) > MAX_DAY_SPREAD_METRES) continue;
     const trial = orderAsLoop([...chosen, candidate], start);
-    if (measure(trial, start).totalMinutes <= budgetMinutes) {
+    if (measure(trial, start, date).totalMinutes <= budgetMinutes) {
       chosen = trial;
       anchor ??= candidate;
     }
@@ -146,7 +153,7 @@ function pickCityDay(pool: Place[], zones: Zone[], wanted: Set<Category>, pace: 
 }
 
 function cityDay(index: number, ordered: Place[], pace: Pace, start: LatLon | undefined, date: Date | null, closed: Place[]): PlanDay {
-  const m = measure(ordered, start);
+  const m = measure(ordered, start, date);
   const route: [number, number][] = [
     ...(start ? [[start.lon, start.lat] as [number, number]] : []),
     ...ordered.map((p) => [p.lon, p.lat] as [number, number]),
@@ -227,16 +234,18 @@ export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanD
 
   let pool = usable.filter((p) => CITY_ZONES.includes(p.zone) && !p.trip && (p.cat !== 'remembrance' || remembrance));
   const plan: PlanDay[] = [];
+  // City days take the first dates of the stay, day trips the last ones. A date with nothing
+  // open is skipped, and the following days keep their real dates.
   for (let d = 0; d < cityDays && pool.length; d++) {
-    const date = dateOf(plan.length);
+    const date = dateOf(d);
     const zones = cityDays === 1 ? ONE_DAY_GROUP : DAY_GROUPS[d] ?? CITY_ZONES;
     const open = date ? pool.filter((p) => opensLongEnough(p.id, date, p.minutes)) : pool;
-    const stops = pickCityDay(open, zones, wanted, opts.pace, opts.start);
-    if (!stops.length) break;
+    const stops = pickCityDay(open, zones, wanted, opts.pace, opts.start, date);
+    if (!stops.length) continue;
     const closed = date ? pool.filter((p) => zones.includes(p.zone) && p.priority >= 2 && !open.includes(p)) : [];
     plan.push(cityDay(plan.length + 1, stops, opts.pace, opts.start, date, closed));
     pool = pool.filter((p) => !stops.includes(p));
   }
-  for (const t of trips) plan.push(tripDay(plan.length + 1, t, opts.pace, opts.start, dateOf(plan.length)));
+  trips.forEach((t, i) => plan.push(tripDay(plan.length + 1, t, opts.pace, opts.start, dateOf(cityDays + i))));
   return plan;
 }

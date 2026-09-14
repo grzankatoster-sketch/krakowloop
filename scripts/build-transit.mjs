@@ -3,7 +3,8 @@
 // and unzips it into ../02_dane/gtfs_ztp/T)
 //
 // Output: tram stops merged by name (platforms of one stop lie within ~260 m) and the distinct
-// stop sequences of every line with typical minutes from the first stop. The app uses it to
+// stop sequences of every line with typical minutes from the first stop and the weekdays they
+// run on. The app uses it to
 // suggest "Tram 8 from A to B" instead of a vague "tram or taxi".
 import { readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -65,7 +66,26 @@ const stops = names.map((n) => {
 });
 
 const routeName = new Map(parseCsv('routes.txt').map((r) => [r.route_id, r.route_short_name]));
-const trips = new Map(parseCsv('trips.txt').map((t) => [t.trip_id, { route: routeName.get(t.route_id), headsign: t.trip_headsign }]));
+const trips = new Map(
+  parseCsv('trips.txt').map((t) => [t.trip_id, { route: routeName.get(t.route_id), headsign: t.trip_headsign, service: t.service_id }]),
+);
+
+// Weekdays each service runs on, as a bitmask with Monday = bit 0. Built from calendar.txt and
+// the added dates in calendar_dates.txt (ZTP publishes the timetable as dated services).
+// Single removed dates (holidays) are not modelled at this weekday level.
+const WEEKDAY_NAMES = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const serviceDays = new Map();
+const addDay = (service, weekday) => serviceDays.set(service, (serviceDays.get(service) ?? 0) | (1 << weekday));
+for (const c of parseCsv('calendar.txt')) {
+  WEEKDAY_NAMES.forEach((name, i) => {
+    if (c[name] === '1') addDay(c.service_id, i);
+  });
+}
+for (const e of parseCsv('calendar_dates.txt')) {
+  if (e.exception_type !== '1') continue;
+  const day = new Date(Date.UTC(+e.date.slice(0, 4), +e.date.slice(4, 6) - 1, +e.date.slice(6, 8)));
+  addDay(e.service_id, (day.getUTCDay() + 6) % 7);
+}
 
 // stop_times is large: read raw lines, keep only what we need
 const stopTimes = new Map();
@@ -102,8 +122,11 @@ for (const [tripId, list] of stopTimes) {
   if (seq.length < 2) continue;
   const key = `${trip.route}|${seq.join('.')}`;
   const p = patterns.get(key);
-  if (p) p.n += 1;
-  else patterns.set(key, { r: trip.route, h: trip.headsign, s: seq, t: times, n: 1 });
+  const days = serviceDays.get(trip.service) ?? 0;
+  if (p) {
+    p.n += 1;
+    p.d |= days;
+  } else patterns.set(key, { r: trip.route, h: trip.headsign, s: seq, t: times, d: days, n: 1 });
 }
 
 const kept = [...patterns.values()].filter((p) => p.n >= MIN_TRIPS).sort((a, b) => a.r.localeCompare(b.r, 'pl', { numeric: true }));

@@ -44,7 +44,8 @@ export default function LoopMap({ points, route, selectedId, fit, focus, style, 
       onShouldStartLoadWithRequest={(req) => {
         const url = req.url;
         if (url === 'about:blank' || url.startsWith(APP.webViewBaseUrl) || url.startsWith('data:')) return true;
-        openLink(url);
+        // only web pages leave the map; other schemes could launch arbitrary apps
+        if (/^https?:\/\//i.test(url)) openLink(url);
         return false;
       }}
       javaScriptEnabled

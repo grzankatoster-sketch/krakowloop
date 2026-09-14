@@ -16,11 +16,12 @@ export interface Leg {
   tram?: TramRide;
 }
 
-export function leg(a: LatLon, b: LatLon): Leg {
+/** With a date, the tram suggestion only uses lines running on that weekday. */
+export function leg(a: LatLon, b: LatLon, date?: Date | null): Leg {
   const onFootMinutes = walkingMinutes(a, b);
   if (onFootMinutes <= TRANSIT_OVER_MINUTES) return { mode: 'walk', minutes: onFootMinutes, onFootMinutes };
 
-  const tram = findTram(a, b);
+  const tram = findTram(a, b, date);
   if (tram && tram.minutes < onFootMinutes) return { mode: 'tram', minutes: tram.minutes, onFootMinutes, tram };
 
   const taxi = Math.round((distance(a, b) * DETOUR) / METRES_PER_MINUTE_BY_TAXI) + TAXI_WAIT_MINUTES;

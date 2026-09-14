@@ -1,7 +1,7 @@
 // A plan lives in the URL: it survives going back, and the same link rebuilds the same plan
 // on another phone. Everything read from a URL is validated before it reaches the planner.
 import { CITY } from '../config/city';
-import { parseISODate } from './dates';
+import { MAX_YEAR, parseISODate } from './dates';
 import { LatLon, distance } from './geo';
 import { INTEREST_KEYS, MAX_PLAN_DAYS, PACE_KEYS, PlanOptions } from './planner';
 
@@ -52,13 +52,15 @@ export function paramsToPlan(raw: RawParams, knownIds: ReadonlySet<string>): Pla
   const paceValue = first(raw.pace);
   const likes = (first(raw.likes) ?? '').split(',');
   const date = first(raw.date);
+  // leave room for the last day of the plan, which must still be a valid date
+  const startDate = parseISODate(date) && Number(date!.slice(0, 4)) <= MAX_YEAR - 1 ? date : undefined;
   const skip = [...new Set((first(raw.skip) ?? '').split(','))].filter((id) => knownIds.has(id)).slice(0, MAX_SKIPPED);
   return {
     days,
     pace: PACE_KEYS.find((k) => k === paceValue) ?? 'steady',
     interests: INTEREST_KEYS.filter((k) => likes.includes(k)),
     dayTrips: first(raw.trips) !== '0',
-    startDate: parseISODate(date) ? date : undefined,
+    startDate,
     start: parseStart(first(raw.from)),
     exclude: skip,
   };

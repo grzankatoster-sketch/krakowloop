@@ -40,6 +40,14 @@ describe('plan params', () => {
     expect(cleaned).toEqual({ days: 2, pace: 'steady', interests: ['history'], dayTrips: true, startDate: undefined, start: undefined, exclude: ['barbican'] });
   });
 
+  it('only accepts start dates whose whole plan stays valid', () => {
+    for (const date of ['0100-01-01', '0999-10-12', '9999-12-31', '2100-12-31']) {
+      const o = paramsToPlan({ days: '4', date }, ids);
+      expect(o?.startDate).toBeUndefined();
+    }
+    expect(paramsToPlan({ days: '4', date: '2099-12-31' }, ids)?.startDate).toBe('2099-12-31');
+  });
+
   it('reads the first value when a param repeats', () => {
     expect(paramsToPlan({ days: ['2', '4'] }, ids)?.days).toBe(2);
   });

@@ -19,6 +19,14 @@ describe('findTram', () => {
     expect(ride!.minutes).toBe(ride!.walkToMinutes + TRAM_WAIT_MINUTES + ride!.rideMinutes + ride!.walkFromMinutes);
   });
 
+  it('only uses lines running on the date, and still finds a Sunday tram', () => {
+    const nowaHuta = placeById('nowa-huta')!;
+    const sunday = new Date(2026, 9, 18);
+    expect(sunday.getDay()).toBe(0);
+    const ride = findTram(CITY.centre, nowaHuta, sunday);
+    expect(ride).not.toBeNull();
+  });
+
   it('finds nothing far from any tram stop', () => {
     expect(findTram(CITY.centre, placeById('zakopane')!)).toBeNull();
   });

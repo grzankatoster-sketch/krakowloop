@@ -81,6 +81,21 @@ describe('buildPlan options', () => {
     expect(plan[0].closed.map((p) => p.id)).toContain('czartoryski');
   });
 
+  it('skips a date with nothing open and keeps planning the next ones', () => {
+    // only the Czartoryski Museum, closed on Mondays: Monday is skipped, Tuesday still planned
+    const czartoryski = places.filter((p) => p.id === 'czartoryski');
+    const plan = buildPlan({ ...base, days: 2, startDate: '2026-10-12' }, czartoryski);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].date).toBe('2026-10-13');
+    expect(plan[0].stops[0].place.id).toBe('czartoryski');
+  });
+
+  it('gives day trips the last dates of the stay', () => {
+    const plan = buildPlan({ days: 3, pace: 'steady', interests: ['history'], dayTrips: true, startDate: '2026-10-12' });
+    const trip = plan.find((d) => d.kind === 'trip')!;
+    expect(trip.date).toBe('2026-10-14');
+  });
+
   it('starts and ends every city day at the start point', () => {
     const plan = buildPlan({ ...base, start: OLD_TOWN_HOTEL });
     for (const d of plan.filter((x) => x.kind === 'city')) {
