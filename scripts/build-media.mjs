@@ -98,10 +98,37 @@ const firstValue = (claims, p) => {
   return preferred?.mainsnak.datavalue.value;
 };
 
+const TIMEOUT_MS = 20000;
+const MAX_IMAGE_BYTES = 3 * 1024 * 1024;
+
+const fetchLimited = (url, init = {}) => fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(TIMEOUT_MS), ...init });
+
 async function getJson(url) {
-  const res = await fetch(url, { headers: HEADERS });
+  const res = await fetchLimited(url);
   if (!res.ok) throw new Error(`${res.status} for ${url}`);
   return res.json();
+}
+
+/** Official links use HTTPS whenever the site answers on it. */
+async function preferHttps(url) {
+  if (!url.startsWith('http://')) return url;
+  const secure = `https://${url.slice('http://'.length)}`;
+  try {
+    const res = await fetchLimited(secure, { method: 'HEAD', redirect: 'follow' });
+    return res.status < 400 ? secure : url;
+  } catch {
+    return url;
+  }
+}
+
+// Websites come from Wikidata, which anyone can edit, and the app calls them "official". A changed
+// domain stops the build until someone has looked at it and reruns with --accept-website-changes.
+const previousHosts = new Map();
+try {
+  const previous = readFileSync(OUT, 'utf8');
+  for (const m of previous.matchAll(/"([a-z0-9-]+)": \{[^}]*website: "([^"]+)"/g)) previousHosts.set(m[1], new URL(m[2]).hostname);
+} catch {
+  // first run: nothing to compare with
 }
 
 // Nothing is written until every request has succeeded, so photos and their credits never mix
@@ -128,7 +155,7 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
   }
   const entry = { wikidata: qid };
   const website = firstValue(claims, 'P856');
-  if (typeof website === 'string' && /^https?:\/\//.test(website)) entry.website = website;
+  if (typeof website === 'string' && /^https?:\/\//.test(website)) entry.website = await preferHttps(website);
 
   const file = firstValue(claims, 'P18');
   let note = 'no image';
@@ -141,10 +168,13 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
     const artist = stripHtml(meta.Artist?.value) || (/public domain/i.test(licence) ? 'Unknown author' : '');
     if (info?.thumburl && ALLOWED_LICENCE.test(licence) && artist) {
       const ext = path.extname(new URL(info.thumburl).pathname).toLowerCase() === '.png' ? '.png' : '.jpg';
-      const res = await fetch(info.thumburl, { headers: HEADERS });
+      const res = await fetchLimited(info.thumburl);
       const type = res.headers.get('content-type') ?? '';
       if (!res.ok || !type.startsWith('image/')) throw new Error(`${id}: thumbnail download failed (${res.status}, ${type})`);
-      downloads.push({ name: `${id}${ext}`, bytes: Buffer.from(await res.arrayBuffer()) });
+      if (Number(res.headers.get('content-length') ?? 0) > MAX_IMAGE_BYTES) throw new Error(`${id}: thumbnail larger than 3 MB`);
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error(`${id}: thumbnail larger than 3 MB`);
+      downloads.push({ name: `${id}${ext}`, bytes });
       // the full attribution is kept; screens shorten it only on display
       Object.assign(entry, { file: `${id}${ext}`, credit: artist, license: licence, sourceUrl: info.descriptionurl });
       register.push({ id, wikidata: qid, commonsFile: file, license: licence, licenseUrl: stripHtml(meta.LicenseUrl?.value), artist, sourceUrl: info.descriptionurl, checked: new Date().toISOString().slice(0, 10) });
@@ -158,6 +188,14 @@ for (const [id, [qid, maxKm]] of Object.entries(LINKS)) {
   media[id] = entry;
   report.push(`${id}: ok ${qid} "${label}" ${dist.toFixed(2)} km, ${note}${entry.website ? ', website' : ''}`);
   await sleep(150);
+}
+
+const changedSites = Object.entries(media)
+  .filter(([id, e]) => e.website && previousHosts.has(id) && previousHosts.get(id) !== new URL(e.website).hostname)
+  .map(([id, e]) => `${id}: ${previousHosts.get(id)} -> ${new URL(e.website).hostname}`);
+if (changedSites.length && !process.argv.includes('--accept-website-changes')) {
+  console.error(`Official website domains changed. Check them, then rerun with --accept-website-changes:\n${changedSites.join('\n')}`);
+  process.exit(1);
 }
 
 mkdirSync(ASSETS, { recursive: true });

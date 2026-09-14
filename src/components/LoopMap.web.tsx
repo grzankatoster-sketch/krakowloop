@@ -4,13 +4,15 @@ import { MAP_HTML } from './mapHtml';
 import type { LoopMapProps } from './LoopMap';
 import { MapHandlers, dispatchMapMessage, parseMapMessage } from './mapMessages';
 
+// The frame is sandboxed (opaque origin), so its origin can't be named; the message goes to this
+// frame's own window object only, which is the protection that matters.
 const send = (frame: HTMLIFrameElement | null, payload: string) =>
-  frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), window.location.origin);
+  frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), '*');
 
 // Web preview: same map document, hosted in an iframe instead of a WebView.
-export default function LoopMap({ points, route, selectedId, fit, focus, threeD, style, ...handlers }: LoopMapProps) {
+export default function LoopMap({ points, route, selectedId, fit, fitKey, focus, threeD, style, ...handlers }: LoopMapProps) {
   const frame = useRef<HTMLIFrameElement | null>(null);
-  const payload = JSON.stringify({ points, route, selectedId, fit, focus, threeD });
+  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, focus, threeD });
   const latest = useRef(payload);
   const handlersRef = useRef<MapHandlers>(handlers);
 
@@ -48,6 +50,8 @@ export default function LoopMap({ points, route, selectedId, fit, focus, threeD,
       {createElement('iframe', {
         ref: frame,
         title: 'Map',
+        // scripts only: the map document can't reach this page, its storage or its URL
+        sandbox: 'allow-scripts',
         style: { border: 0, width: '100%', height: '100%', display: 'block' },
       })}
     </View>

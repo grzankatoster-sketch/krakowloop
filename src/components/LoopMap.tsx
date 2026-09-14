@@ -10,9 +10,9 @@ export interface LoopMapProps extends MapPayload, MapHandlers {
   style?: StyleProp<ViewStyle>;
 }
 
-export default function LoopMap({ points, route, selectedId, fit, focus, threeD, style, ...handlers }: LoopMapProps) {
+export default function LoopMap({ points, route, selectedId, fit, fitKey, focus, threeD, style, ...handlers }: LoopMapProps) {
   const ref = useRef<WebView>(null);
-  const payload = JSON.stringify({ points, route, selectedId, fit, focus, threeD });
+  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, focus, threeD });
   const latest = useRef(payload);
   const handlersRef = useRef<MapHandlers>(handlers);
 

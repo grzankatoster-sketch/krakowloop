@@ -6,7 +6,7 @@ import { realMinutes, shownTotal, walkTotal, walkedEndToEnd } from '../src/lib/p
 /** a fake Mapbox answer with a different, recognisable time for every leg */
 const fakeRoute = (legs: number): WalkingRoute => ({
   coordinates: [],
-  legMinutes: Array.from({ length: legs }, (_, k) => 100 + k),
+  distanceMetres: null, legMinutes:Array.from({ length: legs }, (_, k) => 100 + k),
 });
 
 describe('real walking times per leg', () => {
@@ -71,7 +71,7 @@ describe('real walking times per leg', () => {
       route: [],
     };
     // Mapbox answered only the first leg (a → b)
-    const partial: WalkingRoute = { coordinates: [], legMinutes: [9] };
+    const partial: WalkingRoute = { coordinates: [], distanceMetres: null, legMinutes:[9] };
     expect(walkTotal(day, partial)).toBe(16);
     expect(shownTotal(day, partial)).toBe(86);
     expect(walkedEndToEnd(day)).toBe(false);

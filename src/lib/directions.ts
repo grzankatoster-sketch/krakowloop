@@ -6,6 +6,8 @@ export interface WalkingRoute {
   coordinates: [number, number][];
   /** minutes for each leg between consecutive points */
   legMinutes: number[];
+  /** whole route length, when Mapbox reports it */
+  distanceMetres: number | null;
 }
 
 /** Mapbox Directions accepts at most 25 points per request. */
@@ -34,7 +36,10 @@ export async function fetchWalkingRoute(points: LatLon[], token: string, fetcher
       `?geometries=geojson&overview=full&access_token=${encodeURIComponent(token)}`;
     const res = await fetcher(url, { signal: controller.signal });
     if (!res.ok) return null;
-    const body = (await res.json()) as { code?: unknown; routes?: { geometry?: { coordinates?: unknown }; legs?: unknown }[] };
+    const body = (await res.json()) as {
+      code?: unknown;
+      routes?: { geometry?: { coordinates?: unknown }; legs?: unknown; distance?: unknown }[];
+    };
     const route = body?.code === 'Ok' ? body.routes?.[0] : null;
     const line = route?.geometry?.coordinates;
     const legs = route?.legs;
@@ -44,7 +49,9 @@ export async function fetchWalkingRoute(points: LatLon[], token: string, fetcher
       typeof l?.duration === 'number' && Number.isFinite(l.duration) && l.duration >= 0 ? Math.max(1, Math.round(l.duration / 60)) : NaN,
     );
     if (legMinutes.some((m) => Number.isNaN(m))) return null;
-    return { coordinates: line.map((c) => [c[0], c[1]]), legMinutes };
+    const d = route?.distance;
+    const distanceMetres = typeof d === 'number' && Number.isFinite(d) && d >= 0 ? d : null;
+    return { coordinates: line.map((c) => [c[0], c[1]]), legMinutes, distanceMetres };
   } catch {
     return null;
   } finally {

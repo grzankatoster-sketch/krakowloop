@@ -27,6 +27,8 @@ export default function LensScreen() {
 }
 
 const ORIGIN = { x: 0, y: 0 };
+/** one tap of a move button, in points */
+const STEP = 16;
 
 function LensViewer({ point }: { point: LensPoint }) {
   const [permission, requestPermission] = useCameraPermissions();
@@ -37,6 +39,7 @@ function LensViewer({ point }: { point: LensPoint }) {
   const [scale, setScale] = useState(1);
   const [placed, setPlaced] = useState(ORIGIN);
   const [dragging, setDragging] = useState(ORIGIN);
+  const [more, setMore] = useState(false);
   const focused = useRef(true);
 
   // Release the camera whenever this screen is not the one in front.
@@ -64,6 +67,7 @@ function LensViewer({ point }: { point: LensPoint }) {
     });
   }, []);
 
+  const move = (dx: number, dy: number) => setPlaced((p) => ({ x: p.x + dx, y: p.y + dy }));
   const resetOverlay = () => {
     setPlaced(ORIGIN);
     setDragging(ORIGIN);
@@ -123,62 +127,96 @@ function LensViewer({ point }: { point: LensPoint }) {
             />
           </View>
         ) : null}
+        <Text style={s.standAt}>Stand at: {point.where}</Text>
         {layer.image ? <Text style={s.dragHint}>Drag the picture to line it up</Text> : null}
       </View>
 
-      <ScrollView style={s.panel} contentContainerStyle={s.panelInner}>
-        <Eyebrow>Stand at: {point.where}</Eyebrow>
-        <EpochRuler items={point.layers} index={layerIdx} onChange={setLayerIdx} />
-
-        {layer.image ? (
-          <Pressable accessibilityRole="link" onPress={() => openLink(layer.sourceUrl)}>
-            <Text style={s.title}>{layer.title}</Text>
-            <Text style={s.credit}>
-              {layer.credit} · {layer.license} · Wikimedia Commons
+      {/* Everything needed while framing stays within thumb reach; the rest opens on demand. */}
+      <View style={s.panel}>
+        <View style={s.panelInner}>
+          <EpochRuler items={point.layers} index={layerIdx} onChange={setLayerIdx} />
+          <Text style={s.title} numberOfLines={1}>
+            {layer.image ? layer.title : 'Today'}
+          </Text>
+          {layer.image ? <DragSlider label="See-through" value={opacity} onChange={setOpacity} /> : null}
+          <View style={s.row}>
+            {cameraOn ? (
+              <Button label="Stop the camera" kind="quiet" onPress={() => setCameraWanted(false)} style={s.grow} />
+            ) : (
+              <Button label="Use my camera" onPress={startCamera} style={s.grow} />
+            )}
+            <Button label={more ? 'Less' : 'Adjust & sources'} kind="quiet" onPress={() => setMore((v) => !v)} style={s.grow} />
+          </View>
+          {cameraError ? (
+            <Text style={s.error} accessibilityLiveRegion="polite">
+              {cameraError}
             </Text>
-          </Pressable>
-        ) : (
-          <Text style={s.title}>Today</Text>
-        )}
+          ) : null}
+          {permission && !permission.granted && !permission.canAskAgain ? (
+            <Text style={s.credit}>Camera access is off. Turn it on for KrakowLoop in your phone’s settings.</Text>
+          ) : null}
+        </View>
 
-        {cameraOn ? <Text style={s.credit}>Live camera. Nothing is recorded or uploaded.</Text> : null}
-        {referenceVisible && point.reference ? (
-          <Pressable accessibilityRole="link" onPress={() => openLink(point.reference!.sourceUrl)}>
-            <Text style={s.credit}>
-              {layer.image ? 'Behind it: ' : ''}photo by {point.reference.credit} · {point.reference.license} · Wikimedia Commons
-            </Text>
-          </Pressable>
-        ) : null}
+        {more ? (
+          <ScrollView style={s.more} contentContainerStyle={s.moreInner}>
+            {layer.image ? (
+              <>
+                <Eyebrow>Line up the picture</Eyebrow>
+                <View style={s.row}>
+                  <Button label="←" kind="quiet" onPress={() => move(-STEP, 0)} style={s.grow} />
+                  <Button label="↑" kind="quiet" onPress={() => move(0, -STEP)} style={s.grow} />
+                  <Button label="↓" kind="quiet" onPress={() => move(0, STEP)} style={s.grow} />
+                  <Button label="→" kind="quiet" onPress={() => move(STEP, 0)} style={s.grow} />
+                </View>
+                <View style={s.row}>
+                  <Button label="Smaller" kind="quiet" onPress={() => setScale((v) => Math.max(0.4, +(v - 0.1).toFixed(2)))} style={s.grow} />
+                  <Button label="Bigger" kind="quiet" onPress={() => setScale((v) => Math.min(3, +(v + 0.1).toFixed(2)))} style={s.grow} />
+                  <Button label="Reset" kind="quiet" onPress={resetOverlay} style={s.grow} />
+                </View>
+              </>
+            ) : null}
 
-        {layer.image ? (
-          <>
-            <DragSlider label="See-through" value={opacity} onChange={setOpacity} />
-            <View style={s.row}>
-              <Button label="Smaller" kind="quiet" onPress={() => setScale((v) => Math.max(0.4, +(v - 0.1).toFixed(2)))} style={s.flex} />
-              <Button label="Bigger" kind="quiet" onPress={() => setScale((v) => Math.min(3, +(v + 0.1).toFixed(2)))} style={s.flex} />
-              <Button label="Reset" kind="quiet" onPress={resetOverlay} style={s.flex} />
-            </View>
-          </>
+            <Eyebrow>Sources</Eyebrow>
+            {layer.image ? (
+              <Pressable accessibilityRole="link" onPress={() => openLink(layer.sourceUrl)}>
+                <Text style={s.credit}>
+                  {layer.title}: {layer.credit} · {layer.license} · Wikimedia Commons
+                </Text>
+              </Pressable>
+            ) : null}
+            {cameraOn ? <Text style={s.credit}>Live camera. Nothing is recorded or uploaded.</Text> : null}
+            {referenceVisible && point.reference ? (
+              <Pressable accessibilityRole="link" onPress={() => openLink(point.reference!.sourceUrl)}>
+                <Text style={s.credit}>
+                  {layer.image ? 'Behind it: ' : ''}photo by {point.reference.credit} · {point.reference.license} · Wikimedia Commons
+                </Text>
+              </Pressable>
+            ) : null}
+          </ScrollView>
         ) : null}
-
-        {cameraOn ? (
-          <Button label="Stop the camera" kind="quiet" onPress={() => setCameraWanted(false)} />
-        ) : (
-          <Button label="Use my camera" onPress={startCamera} />
-        )}
-        {cameraError ? <Text style={s.error}>{cameraError}</Text> : null}
-        {permission && !permission.granted && !permission.canAskAgain ? (
-          <Text style={s.credit}>Camera access is off. Turn it on for KrakowLoop in your phone’s settings.</Text>
-        ) : null}
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
-  stage: { flex: 1, minHeight: 280, backgroundColor: colors.ink, overflow: 'hidden', justifyContent: 'center' },
+  stage: { flex: 1, minHeight: 240, backgroundColor: colors.ink, overflow: 'hidden', justifyContent: 'center' },
   stageHint: { fontFamily: fonts.body, fontSize: 15, color: colors.stone, textAlign: 'center', padding: space.l },
+  standAt: {
+    position: 'absolute',
+    top: space.s,
+    left: space.s,
+    right: space.s,
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    color: colors.onScrim,
+    backgroundColor: colors.scrim,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
   dragHint: {
     position: 'absolute',
     bottom: space.s,
@@ -192,12 +230,14 @@ const s = StyleSheet.create({
     borderRadius: 999,
     overflow: 'hidden',
   },
-  panel: { flexGrow: 0, maxHeight: '48%', backgroundColor: colors.paper, borderTopWidth: 1, borderColor: colors.line },
-  panelInner: { padding: space.m, gap: space.m, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  title: { fontFamily: fonts.bodyBold, fontSize: 18, color: colors.ink },
-  credit: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, marginTop: 2 },
+  panel: { backgroundColor: colors.paper, borderTopWidth: 1, borderColor: colors.line },
+  panelInner: { padding: space.m, gap: space.s, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  more: { maxHeight: 220, borderTopWidth: 1, borderColor: colors.line },
+  moreInner: { padding: space.m, gap: space.s, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  title: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  credit: { fontFamily: fonts.body, fontSize: 13, color: colors.mute },
   error: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.brick },
   row: { flexDirection: 'row', gap: space.s },
-  flex: { flex: 1, paddingHorizontal: 8 },
+  grow: { flex: 1, paddingHorizontal: 8 },
   empty: { fontFamily: fonts.body, fontSize: 16, color: colors.ink, padding: space.m },
 });

@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { AccessibilityInfo, Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CityBrief } from '../src/components/CityBrief';
 import LoopMap from '../src/components/LoopMap';
-import { PLACE_MEDIA } from '../src/data/placeMedia';
 import type { MapPoint } from '../src/components/mapHtml';
 import { Button, Chip, Eyebrow, TopBar } from '../src/components/ui';
-import { experiences, places } from '../src/data/places';
-import { CATEGORY_COLOR } from '../src/data/categoryColor';
 import { AFFILIATE_NOTE } from '../src/config/affiliates';
+import { CATEGORY_COLOR } from '../src/data/categoryColor';
+import { PLACE_MEDIA } from '../src/data/placeMedia';
+import { experiences, places } from '../src/data/places';
 import { addDays, formatDay, parseISODate, toISODate } from '../src/lib/dates';
 import { WALKING_ROUTES_ENABLED, WalkingRoute, walkingRoute } from '../src/lib/directions';
 import { DETOUR } from '../src/lib/geo';
@@ -64,6 +64,18 @@ function hoursThatDay(placeId: string, date: string | undefined): string | null 
   return d ? formatHours(hoursOn(placeId, d)) : null;
 }
 
+/** "2 days · Steady · History, Museums · from Mon 12 Oct" */
+function summary(o: PlanOptions): string {
+  const parts = [
+    o.days === 1 ? '1 day' : `${o.days} days`,
+    PACES.find((p) => p.key === o.pace)?.label ?? o.pace,
+    o.interests.length ? INTERESTS.filter((i) => o.interests.includes(i.key)).map((i) => i.label).join(', ') : 'Top sights',
+  ];
+  if (o.startDate) parts.push(`from ${dayLabel(o.startDate)}`);
+  if (o.start) parts.push('from your start point');
+  return parts.join(' · ');
+}
+
 export default function PlanScreen() {
   const { days, pace, likes, trips, date, from, skip } = useLocalSearchParams<{
     days?: string;
@@ -80,6 +92,7 @@ export default function PlanScreen() {
   );
   const plan = useMemo(() => (options ? buildPlan(options) : null), [options]);
   const planKey = options ? JSON.stringify(options) : '';
+  const hasPlan = !!plan && plan.length > 0;
 
   // The form belongs to the plan in the URL: a different plan arriving (a shared link, a skipped
   // stop, a rebuild) refills it, so "Rebuild" never overwrites it with stale choices.
@@ -87,14 +100,18 @@ export default function PlanScreen() {
   if (options && formState.key !== planKey) setFormState({ key: planKey, form: { ...options, exclude: [] } });
   const form = formState.form;
   const setForm = (update: (f: PlanOptions) => PlanOptions) => setFormState((s) => ({ key: s.key, form: update(s.form) }));
+
+  const [editing, setEditing] = useState(false);
   const [today] = useState(() => toISODate(new Date()));
   const [daySel, setDaySel] = useState({ key: '', index: 0 });
   const [walk, setWalk] = useState<{ key: string; route: WalkingRoute } | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapKey, setMapKey] = useState(0);
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const me = useMyLocation();
 
+  const showForm = !hasPlan || editing;
   const dayIdx = plan && daySel.key === planKey ? Math.min(daySel.index, plan.length - 1) : 0;
   const day = plan?.[dayIdx];
 
@@ -124,6 +141,7 @@ export default function PlanScreen() {
       lon: st.place.lon,
       color: day.kind === 'city' ? colors.ink : CATEGORY_COLOR[st.place.cat],
       order: day.kind === 'city' ? i + 1 : undefined,
+      label: st.place.name,
     }));
     if (day.start && day.kind === 'city') stops.push({ id: '__start', lat: day.start.lat, lon: day.start.lon, color: colors.vistula, kind: 'me' });
     return stops;
@@ -138,16 +156,19 @@ export default function PlanScreen() {
 
   const toggle = (k: Interest) =>
     setForm((f) => ({ ...f, interests: f.interests.includes(k) ? f.interests.filter((x) => x !== k) : [...f.interests, k] }));
-  const show = (o: PlanOptions) => {
+  const show = (o: PlanOptions, announcement: string) => {
     setShareNote(null);
+    setEditing(false);
     router.setParams({ ...planToParams(o) });
+    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    AccessibilityInfo.announceForAccessibility(announcement);
   };
-  const build = () => show({ ...form, exclude: [] });
-  const skipStop = (id: string) => {
-    if (options) show({ ...options, exclude: [...(options.exclude ?? []), id] });
+  const build = () => show({ ...form, exclude: [] }, 'Your plan is ready.');
+  const skipStop = (id: string, name: string) => {
+    if (options) show({ ...options, exclude: [...(options.exclude ?? []), id] }, `${name} skipped. The plan was rebuilt.`);
   };
   const restoreSkipped = () => {
-    if (options) show({ ...options, exclude: [] });
+    if (options) show({ ...options, exclude: [] }, 'Skipped stops are back in the plan.');
   };
   const startHere = async () => {
     const loc = await me.locate();
@@ -166,7 +187,9 @@ export default function PlanScreen() {
     if (!options) return;
     const url = Linking.createURL('/plan', { queryParams: shareableParams(options) });
     const result = await shareLink('My Kraków walking plan', url);
-    setShareNote(result === 'copied' ? 'Link copied.' : result === 'failed' ? `Copy this link: ${url}` : null);
+    const note = result === 'copied' ? 'Link copied.' : result === 'failed' ? `Copy this link: ${url}` : null;
+    setShareNote(note);
+    if (note) AccessibilityInfo.announceForAccessibility(note);
   };
 
   const locationNote =
@@ -179,86 +202,98 @@ export default function PlanScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <TopBar title="Plan my days" />
-      <ScrollView contentContainerStyle={s.scroll}>
-        <View style={s.col}>
-          <View style={{ marginTop: space.s }}>
-            <CityBrief />
+      <ScrollView ref={scrollRef} contentContainerStyle={s.scroll}>
+        {hasPlan && !editing && options ? (
+          <View style={[s.col, s.summaryBar]}>
+            <View style={{ flex: 1 }}>
+              <Eyebrow>Your plan</Eyebrow>
+              <Text style={s.summaryText}>{summary(options)}</Text>
+            </View>
+            <Button label="Change" kind="quiet" onPress={() => setEditing(true)} />
           </View>
-          <Text style={s.q}>How many days are you in Kraków?</Text>
-          <View style={s.row}>
-            {DAY_OPTIONS.map((n) => (
-              <Chip key={n} label={n === 1 ? '1 day' : `${n} days`} active={form.days === n} onPress={() => setForm((f) => ({ ...f, days: n }))} />
-            ))}
-          </View>
+        ) : null}
 
-          <Text style={s.q}>When do you arrive?</Text>
-          <View style={s.row}>
-            <Chip label="No dates yet" active={!form.startDate} onPress={() => setForm((f) => ({ ...f, startDate: undefined }))} />
-            {form.startDate ? (
-              <>
-                <Chip label="‹ Earlier" active={false} onPress={() => shiftDate(-1)} />
-                <Chip label={dayLabel(form.startDate)} active onPress={() => undefined} />
-                <Chip label="Later ›" active={false} onPress={() => shiftDate(1)} />
-              </>
-            ) : (
-              <Chip label="Pick a date" active={false} onPress={() => shiftDate(0)} />
-            )}
-          </View>
-          {form.startDate ? (
-            <Text style={s.note}>Places closed on the day are left out, using opening hours from OpenStreetMap.</Text>
-          ) : null}
-
-          <Text style={s.q}>What do you enjoy?</Text>
-          <View style={s.row}>
-            {INTERESTS.map((i) => (
-              <Chip key={i.key} label={i.label} active={form.interests.includes(i.key)} onPress={() => toggle(i.key)} />
-            ))}
-          </View>
-          {remembrance ? (
-            <Text style={s.note}>
-              {form.dayTrips && form.days >= 2
-                ? 'Auschwitz-Birkenau takes a full day. Entry cards come only from the official website, visit.auschwitz.org.'
-                : 'To add a day at Auschwitz-Birkenau, choose 2 or more days and turn on day trips.'}
-            </Text>
-          ) : null}
-
-          <Text style={s.q}>How much in a day?</Text>
-          <View style={s.row}>
-            {PACES.map((p) => (
-              <Chip key={p.key} label={p.label} active={form.pace === p.key} onPress={() => setForm((f) => ({ ...f, pace: p.key }))} />
-            ))}
-          </View>
-
-          <Text style={s.q}>Where do your days start?</Text>
-          <View style={s.row}>
-            <Chip label="At the first sight" active={!form.start} onPress={() => setForm((f) => ({ ...f, start: undefined }))} />
-            <Chip label={me.status === 'asking' ? 'Finding you…' : 'Where I am now'} active={!!form.start} onPress={startHere} />
-          </View>
-          {locationNote ? <Text style={s.note}>{locationNote}</Text> : null}
-          {form.start ? (
-            <Text style={s.note}>Each day starts and ends here, for example at your hotel. A shared link shows this point to about 100 m.</Text>
-          ) : null}
-
-          <View style={s.switchRow}>
-            <Text style={[s.q, { marginTop: 0, flex: 1 }]}>Include day trips out of the city</Text>
-            <Switch
-              value={form.dayTrips}
-              onValueChange={(v) => setForm((f) => ({ ...f, dayTrips: v }))}
-              trackColor={{ true: colors.ink, false: colors.line }}
-              thumbColor={colors.paper}
-              accessibilityLabel="Include day trips out of the city"
-            />
-          </View>
-
-          <Button label={plan ? 'Rebuild my loops' : 'Build my loops'} onPress={build} style={{ marginTop: space.l }} />
-        </View>
-
-        {plan && !day ? <Text style={[s.col, s.note]}>Nothing fits these choices. Try another pace or more interests.</Text> : null}
-
-        {plan && day && options ? (
-          <View style={[s.col, { marginTop: space.l }]}>
+        {showForm ? (
+          <View style={s.col}>
+            <Text style={s.q}>How many days are you in Kraków?</Text>
             <View style={s.row}>
-              {plan.map((d, i) => (
+              {DAY_OPTIONS.map((n) => (
+                <Chip key={n} label={n === 1 ? '1 day' : `${n} days`} active={form.days === n} onPress={() => setForm((f) => ({ ...f, days: n }))} />
+              ))}
+            </View>
+
+            <Text style={s.q}>When do you arrive?</Text>
+            <View style={s.row}>
+              <Chip label="No dates yet" active={!form.startDate} onPress={() => setForm((f) => ({ ...f, startDate: undefined }))} />
+              {form.startDate ? (
+                <>
+                  <Chip label="‹ Earlier" active={false} onPress={() => shiftDate(-1)} />
+                  <Chip label={dayLabel(form.startDate)} active onPress={() => undefined} />
+                  <Chip label="Later ›" active={false} onPress={() => shiftDate(1)} />
+                </>
+              ) : (
+                <Chip label="Pick a date" active={false} onPress={() => shiftDate(0)} />
+              )}
+            </View>
+            {form.startDate ? (
+              <Text style={s.note}>Places closed on the day are left out, using opening hours from OpenStreetMap.</Text>
+            ) : null}
+
+            <Text style={s.q}>What do you enjoy?</Text>
+            <View style={s.row}>
+              {INTERESTS.map((i) => (
+                <Chip key={i.key} label={i.label} active={form.interests.includes(i.key)} onPress={() => toggle(i.key)} />
+              ))}
+            </View>
+            {remembrance ? (
+              <Text style={s.note}>
+                {form.dayTrips && form.days >= 2
+                  ? 'Auschwitz-Birkenau takes a full day. Entry cards come only from the official website, visit.auschwitz.org.'
+                  : 'To add a day at Auschwitz-Birkenau, choose 2 or more days and turn on day trips.'}
+              </Text>
+            ) : null}
+
+            <Text style={s.q}>How much in a day?</Text>
+            <View style={s.row}>
+              {PACES.map((p) => (
+                <Chip key={p.key} label={p.label} active={form.pace === p.key} onPress={() => setForm((f) => ({ ...f, pace: p.key }))} />
+              ))}
+            </View>
+
+            <Text style={s.q}>Where do your days start?</Text>
+            <View style={s.row}>
+              <Chip label="At the first sight" active={!form.start} onPress={() => setForm((f) => ({ ...f, start: undefined }))} />
+              <Chip label={me.status === 'asking' ? 'Finding you…' : 'Where I am now'} active={!!form.start} onPress={startHere} />
+            </View>
+            {locationNote ? <Text style={s.note}>{locationNote}</Text> : null}
+            {form.start ? (
+              <Text style={s.note}>Each day starts and ends here, for example at your hotel. A shared link shows this point to about 100 m.</Text>
+            ) : null}
+
+            <View style={s.switchRow}>
+              <Text style={[s.q, { marginTop: 0, flex: 1 }]}>Include day trips out of the city</Text>
+              <Switch
+                value={form.dayTrips}
+                onValueChange={(v) => setForm((f) => ({ ...f, dayTrips: v }))}
+                trackColor={{ true: colors.ink, false: colors.line }}
+                thumbColor={colors.paper}
+                accessibilityLabel="Include day trips out of the city"
+              />
+            </View>
+
+            <View style={s.formActions}>
+              <Button label={hasPlan ? 'Rebuild my loops' : 'Build my loops'} onPress={build} style={{ flexGrow: 2 }} />
+              {editing ? <Button label="Keep my plan" kind="quiet" onPress={() => setEditing(false)} style={{ flexGrow: 1 }} /> : null}
+            </View>
+          </View>
+        ) : null}
+
+        {plan && !hasPlan ? <Text style={[s.col, s.note]}>Nothing fits these choices. Try another pace or more interests.</Text> : null}
+
+        {hasPlan && !editing && day && options ? (
+          <View style={[s.col, { marginTop: space.m }]}>
+            <View style={s.row}>
+              {plan!.map((d, i) => (
                 <Chip
                   key={d.index}
                   label={d.date ? `Day ${d.index} · ${dayLabel(d.date)}` : `Day ${d.index}`}
@@ -267,19 +302,10 @@ export default function PlanScreen() {
                 />
               ))}
             </View>
-            <View style={[s.row, { marginTop: space.s }]}>
-              <Button label="Share this plan" kind="quiet" onPress={share} />
-              {options.exclude?.length ? (
-                <Button label={`Bring back skipped (${options.exclude.length})`} kind="quiet" onPress={restoreSkipped} />
-              ) : null}
-            </View>
-            {shareNote ? (
-              <Text style={s.note} selectable>
-                {shareNote}
-              </Text>
-            ) : null}
 
-            <Text style={s.dayTitle}>{day.title}</Text>
+            <Text style={s.dayTitle} accessibilityRole="header">
+              {day.title}
+            </Text>
             {day.kind === 'city' ? (
               <Eyebrow>
                 {day.stops.length} stops · {fmt(walkTotal(day, real))} walking
@@ -323,6 +349,18 @@ export default function PlanScreen() {
               ) : null}
             </View>
 
+            <View style={s.row}>
+              <Button label="Share this plan" kind="quiet" onPress={share} />
+              {options.exclude?.length ? (
+                <Button label={`Bring back skipped (${options.exclude.length})`} kind="quiet" onPress={restoreSkipped} />
+              ) : null}
+            </View>
+            {shareNote ? (
+              <Text style={s.note} selectable>
+                {shareNote}
+              </Text>
+            ) : null}
+
             {day.start && day.kind === 'city' ? <Text style={s.leg}>Start at your chosen point</Text> : null}
             {day.stops.map((st, i) => {
               const hours = hoursThatDay(st.place.id, day.date);
@@ -342,15 +380,15 @@ export default function PlanScreen() {
                       ) : null}
                       <Text style={s.stopName}>{st.place.name}</Text>
                       <Text style={s.stopBlurb}>{st.place.blurb}</Text>
+                      <Eyebrow style={{ marginTop: 4 }}>
+                        About {fmt(st.place.minutes)}
+                        {hours ? ` · that day ${hours}` : ''}
+                      </Eyebrow>
                       {photo?.image ? (
                         <Text style={s.photoCredit} numberOfLines={1}>
                           Photo: {photo.credit} · {photo.license}
                         </Text>
                       ) : null}
-                      <Eyebrow style={{ marginTop: 4 }}>
-                        About {fmt(st.place.minutes)}
-                        {hours ? ` · that day ${hours}` : ''}
-                      </Eyebrow>
                       <View style={s.stopLinks}>
                         {st.place.booking ? (
                           <Pressable accessibilityRole="link" onPress={() => openLink(st.place.booking!.url)}>
@@ -360,7 +398,12 @@ export default function PlanScreen() {
                             </Text>
                           </Pressable>
                         ) : null}
-                        <Pressable accessibilityRole="button" onPress={() => skipStop(st.place.id)} hitSlop={6}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Skip ${st.place.name}`}
+                          onPress={() => skipStop(st.place.id, st.place.name)}
+                          hitSlop={6}
+                        >
                           <Text style={s.skip}>Skip this stop</Text>
                         </Pressable>
                       </View>
@@ -398,6 +441,10 @@ export default function PlanScreen() {
             {anyAffiliate ? <Text style={s.small}>{AFFILIATE_NOTE}</Text> : null}
           </View>
         ) : null}
+
+        <View style={[s.col, { marginTop: space.xl }]}>
+          <CityBrief />
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -407,9 +454,12 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
   scroll: { paddingBottom: space.xl },
   col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m },
+  summaryBar: { flexDirection: 'row', alignItems: 'center', gap: space.m, paddingTop: space.s },
+  summaryText: { fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 21, color: colors.ink, marginTop: 2 },
   q: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink, marginTop: space.l, marginBottom: space.s },
   row: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s },
   switchRow: { flexDirection: 'row', alignItems: 'center', marginTop: space.l, gap: space.m },
+  formActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.l },
   note: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.mute, marginTop: space.s },
   warn: { fontFamily: fonts.bodyBold, fontSize: 14, lineHeight: 20, color: colors.brick, marginTop: space.s },
   dayTitle: { fontFamily: fonts.bodyBold, fontSize: 24, color: colors.ink, marginTop: space.m, marginBottom: 4 },

@@ -19,7 +19,7 @@ export function TopBar({ title, right }: { title: string; right?: ReactNode }) {
       >
         <Text style={s.backText}>Back</Text>
       </Pressable>
-      <Text style={s.barTitle} numberOfLines={1}>
+      <Text style={s.barTitle} numberOfLines={1} accessibilityRole="header">
         {title}
       </Text>
       <View style={s.barRight}>{right}</View>
@@ -53,20 +53,31 @@ export function Chip({
   );
 }
 
+/** Screen-reader names for buttons whose visible label is a symbol. */
+const SYMBOL_NAMES: Record<string, string> = {
+  '←': 'Move picture left',
+  '→': 'Move picture right',
+  '↑': 'Move picture up',
+  '↓': 'Move picture down',
+};
+
 export function Button({
   label,
   onPress,
   kind = 'primary',
   style,
+  accessibilityLabel,
 }: {
   label: string;
   onPress: () => void;
   kind?: 'primary' | 'quiet';
   style?: StyleProp<ViewStyle>;
+  accessibilityLabel?: string;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? SYMBOL_NAMES[label]}
       onPress={onPress}
       style={({ pressed }) => [s.button, kind === 'quiet' && s.buttonQuiet, pressed && s.pressed, style]}
     >

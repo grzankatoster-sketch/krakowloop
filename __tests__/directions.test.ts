@@ -21,7 +21,12 @@ describe('fetchWalkingRoute', () => {
       return { ok: true, json: async () => route(LINE, [{ duration: 120 }, { duration: 610 }]) };
     };
     const r = await fetchWalkingRoute([A, B, C], 'pk.test', fetcher);
-    expect(r).toEqual({ coordinates: LINE, legMinutes: [2, 10] });
+    expect(r).toEqual({ coordinates: LINE, legMinutes: [2, 10], distanceMetres: null });
+    const withDistance = async () => ({
+      ok: true,
+      json: async () => ({ ...route(LINE, [{ duration: 120 }, { duration: 610 }]), routes: [{ geometry: { coordinates: LINE }, legs: [{ duration: 120 }, { duration: 610 }], distance: 1234.5 }] }),
+    });
+    expect((await fetchWalkingRoute([A, B, C], 'pk.test', withDistance))?.distanceMetres).toBe(1234.5);
     expect(calledWith).toContain('/mapbox/walking/19.93740,50.06150;19.93550,50.05470;19.94860,50.05130');
     expect(calledWith).toContain('access_token=pk.test');
   });

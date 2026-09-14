@@ -30,6 +30,8 @@ const TIMETABLE: Timetable = {
 };
 
 export const TRANSIT_FEED_VERSION = data.feedVersion;
+/** tram stops for the map layer */
+export const TRAM_STOPS: readonly TramStop[] = TIMETABLE.stops;
 
 /** how far someone is asked to walk to or from a tram stop */
 const WALK_TO_STOP_METRES = 600;

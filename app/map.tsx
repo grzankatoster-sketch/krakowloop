@@ -4,20 +4,41 @@ import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CityBrief } from '../src/components/CityBrief';
 import LoopMap from '../src/components/LoopMap';
-import { PLACE_MEDIA } from '../src/data/placeMedia';
 import type { MapPoint } from '../src/components/mapHtml';
 import { Button, Chip, Eyebrow, TopBar } from '../src/components/ui';
-import { CATEGORY_LABEL, Category, Place, ZONE_LABEL, placeById, places } from '../src/data/places';
-import { CATEGORY_COLOR } from '../src/data/categoryColor';
 import { AFFILIATE_NOTE } from '../src/config/affiliates';
-import { distance, formatDistance } from '../src/lib/geo';
+import { CATEGORY_COLOR } from '../src/data/categoryColor';
+import { lensPoints } from '../src/data/lens';
+import { PLACE_MEDIA } from '../src/data/placeMedia';
+import { CATEGORY_LABEL, Category, Place, ZONE_LABEL, placeById, places } from '../src/data/places';
+import { walkingRoute } from '../src/lib/directions';
+import { DETOUR, distance, formatDistance, walkingMinutes } from '../src/lib/geo';
 import { formatHours, hoursOn } from '../src/lib/hours';
 import { openLink } from '../src/lib/openLink';
+import { TRAM_STOPS } from '../src/lib/transit';
 import { useMyLocation } from '../src/lib/useMyLocation';
 import { colors, fonts, space } from '../src/theme';
 
 const ORDER: Category[] = ['history', 'museum', 'jewish', 'view', 'food', 'daytrip', 'remembrance'];
 const ME = '__me';
+const LENS_PREFIX = 'lens:';
+
+const LENS_MARKERS: MapPoint[] = lensPoints.map((l) => ({
+  id: `${LENS_PREFIX}${l.id}`,
+  lat: l.lat,
+  lon: l.lon,
+  color: colors.gilt,
+  kind: 'lens',
+  label: `Time Lens: ${l.name}`,
+}));
+const STOP_MARKERS: MapPoint[] = TRAM_STOPS.map(([name, lat, lon], i) => ({
+  id: `stop:${i}`,
+  lat,
+  lon,
+  color: colors.ink,
+  kind: 'stop',
+  label: name,
+}));
 
 /** case and accent insensitive, so "wawel" finds "Wawel" and "krakow" finds "Kraków" */
 const normalise = (s: string) =>
@@ -30,10 +51,34 @@ const normalise = (s: string) =>
 
 type Focus = { lat: number; lon: number; key: number } | null;
 
+interface WalkPreview {
+  placeId: string;
+  coordinates: [number, number][];
+  minutes: number;
+  metres: number;
+  source: 'mapbox' | 'estimate';
+}
+
+function MapButton({ label, active, onPress, hint }: { label: string; active?: boolean; onPress: () => void; hint: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={hint}
+      accessibilityState={active === undefined ? undefined : { selected: active }}
+      onPress={onPress}
+      hitSlop={6}
+      style={({ pressed }) => [s.mapButton, active && s.mapButtonOn, pressed && { opacity: 0.8 }]}
+    >
+      <Text style={[s.mapButtonText, active && s.mapButtonTextOn]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function MapScreen() {
   const router = useRouter();
   const [active, setActive] = useState<Set<Category>>(() => new Set(ORDER.filter((c) => c !== 'daytrip')));
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [details, setDetails] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapWarning, setMapWarning] = useState<string | null>(null);
   const [mapKey, setMapKey] = useState(0);
@@ -41,6 +86,10 @@ export default function MapScreen() {
   const [query, setQuery] = useState('');
   const [focus, setFocus] = useState<Focus>(null);
   const [threeD, setThreeD] = useState(false);
+  const [showTrams, setShowTrams] = useState(false);
+  const [fitKey, setFitKey] = useState(0);
+  const [walk, setWalk] = useState<WalkPreview | null>(null);
+  const [walkNote, setWalkNote] = useState<string | null>(null);
   const [today] = useState(() => new Date());
   const me = useMyLocation();
 
@@ -54,10 +103,12 @@ export default function MapScreen() {
     [active, q],
   );
   const points = useMemo<MapPoint[]>(() => {
-    const pts: MapPoint[] = visible.map((p) => ({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat] }));
+    const pts: MapPoint[] = showTrams ? [...STOP_MARKERS] : [];
+    for (const p of visible) pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat], label: p.name });
+    pts.push(...LENS_MARKERS);
     if (here) pts.push({ id: ME, lat: here.lat, lon: here.lon, color: colors.vistula, kind: 'me' });
     return pts;
-  }, [visible, here]);
+  }, [visible, here, showTrams]);
   const rows = useMemo(
     () =>
       visible
@@ -69,6 +120,7 @@ export default function MapScreen() {
         ),
     [visible, here],
   );
+  const route = walk && walk.placeId === selectedId ? walk.coordinates : undefined;
 
   const toggle = (c: Category) => {
     const next = new Set(active);
@@ -77,11 +129,27 @@ export default function MapScreen() {
     setActive(next);
     // a hidden pin can't stay selected
     if (place && !next.has(place.cat)) setSelectedId(null);
+    // day trips are far away: zoom out to show them
+    if (c === 'daytrip' && next.has(c)) {
+      setView('map');
+      setFitKey((k) => k + 1);
+    }
   };
 
-  const onSelect = useCallback((id: string) => {
-    if (id !== ME) setSelectedId(id);
-  }, []);
+  const select = useCallback(
+    (id: string) => {
+      if (id === ME) return;
+      if (id.startsWith(LENS_PREFIX)) {
+        router.push(`/lens/${id.slice(LENS_PREFIX.length)}`);
+        return;
+      }
+      setSelectedId(id);
+      setDetails(false);
+      setWalk(null);
+      setWalkNote(null);
+    },
+    [router],
+  );
   const onError = useCallback((message: string) => setMapError(message), []);
   const onWarning = useCallback((message: string) => setMapWarning(message), []);
   // a map that loads after an error (slow network) clears the message by itself
@@ -101,9 +169,39 @@ export default function MapScreen() {
     }
   };
   const openFromList = (p: Place) => {
-    setSelectedId(p.id);
+    select(p.id);
     setView('map');
     flyTo(p.lat, p.lon);
+  };
+  const close = () => {
+    setSelectedId(null);
+    setWalk(null);
+    setWalkNote(null);
+  };
+
+  const walkHere = async (p: Place) => {
+    setWalkNote('Finding you…');
+    const loc = await me.locate();
+    if (loc.status !== 'ok' || !loc.coords) {
+      setWalkNote(loc.message ?? 'Your location is needed for a walking route.');
+      return;
+    }
+    if (loc.outsideCity) {
+      setWalkNote('You seem to be outside Kraków, so there is no walking route to show.');
+      return;
+    }
+    const from = loc.coords;
+    setWalkNote('Finding the way…');
+    const real = await walkingRoute([from, p]);
+    const straight = distance(from, p) * DETOUR;
+    setWalk(
+      real
+        ? { placeId: p.id, coordinates: real.coordinates, minutes: real.legMinutes[0], metres: real.distanceMetres ?? straight, source: 'mapbox' }
+        : { placeId: p.id, coordinates: [[from.lon, from.lat], [p.lon, p.lat]], minutes: walkingMinutes(from, p), metres: straight, source: 'estimate' },
+    );
+    setWalkNote(null);
+    setView('map');
+    setFitKey((k) => k + 1);
   };
 
   const locationNote =
@@ -113,38 +211,35 @@ export default function MapScreen() {
         ? 'You seem to be outside Kraków, so the map stays on the city.'
         : me.message ?? null;
   const hoursToday = place ? formatHours(hoursOn(place.id, today)) : null;
+  const walkShown = walk && place && walk.placeId === place.id ? walk : null;
+  const listOpen = view === 'list';
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <TopBar
         title="Map"
         right={
-          <Pressable accessibilityRole="button" onPress={nearMe} hitSlop={8} style={({ pressed }) => [s.nearMe, pressed && { opacity: 0.75 }]}>
-            <Text style={s.nearMeText}>Near me</Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setView(listOpen ? 'map' : 'list')}
+            hitSlop={8}
+            style={({ pressed }) => [s.viewSwitch, pressed && { opacity: 0.75 }]}
+          >
+            <Text style={s.viewSwitchText}>{listOpen ? 'Show map' : 'Show list'}</Text>
           </Pressable>
         }
       />
-      <View style={s.tools}>
+      <View style={s.searchRow}>
         <TextInput
           value={query}
           onChangeText={setQuery}
-          placeholder="Search places"
+          placeholder="Search sights and museums"
           placeholderTextColor={colors.mute}
           style={s.search}
           accessibilityLabel="Search places"
           autoCorrect={false}
           returnKeyType="search"
           clearButtonMode="while-editing"
-        />
-        <Chip label="Map" active={view === 'map'} onPress={() => setView('map')} />
-        <Chip label="List" active={view === 'list'} onPress={() => setView('list')} />
-        <Chip
-          label="3D"
-          active={threeD}
-          onPress={() => {
-            setView('map');
-            setThreeD((v) => !v);
-          }}
         />
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips} style={s.chipRow}>
@@ -155,20 +250,43 @@ export default function MapScreen() {
       {locationNote ? <Text style={s.locNote}>{locationNote}</Text> : null}
 
       <View style={s.mapWrap}>
-        {/* the map stays mounted under the list, so switching views doesn't reload it */}
-        <LoopMap
-          key={mapKey}
+        {/* the map stays mounted under the list (no reload), but is hidden from screen readers there */}
+        <View
           style={s.map}
-          points={points}
-          selectedId={selectedId}
-          focus={focus}
-          threeD={threeD}
-          onSelect={onSelect}
-          onError={onError}
-          onWarning={onWarning}
-          onReady={onReady}
-        />
-        {view === 'list' ? (
+          aria-hidden={listOpen}
+          accessibilityElementsHidden={listOpen}
+          importantForAccessibility={listOpen ? 'no-hide-descendants' : 'auto'}
+        >
+          <LoopMap
+            key={mapKey}
+            style={s.map}
+            points={points}
+            route={route}
+            selectedId={selectedId}
+            focus={focus}
+            fitKey={fitKey}
+            threeD={threeD}
+            onSelect={select}
+            onError={onError}
+            onWarning={onWarning}
+            onReady={onReady}
+          />
+          <View style={s.mapButtons}>
+            <MapButton label="3D" active={threeD} onPress={() => setThreeD((v) => !v)} hint="3D buildings" />
+            <MapButton label="Trams" active={showTrams} onPress={() => setShowTrams((v) => !v)} hint="Show tram stops" />
+            <MapButton label="Near me" onPress={nearMe} hint="Show where I am" />
+          </View>
+          {mapError ? (
+            <View style={s.error}>
+              <Text style={s.errorTitle}>The map didn’t load</Text>
+              <Text style={s.errorText}>{mapError} Check your internet connection and try again.</Text>
+              <Button label="Try again" onPress={retry} />
+            </View>
+          ) : null}
+          {mapWarning && !mapError ? <Text style={s.warning}>Some map details didn’t load. Check your connection.</Text> : null}
+        </View>
+
+        {listOpen ? (
           <FlatList
             style={[StyleSheet.absoluteFill, s.list]}
             data={rows}
@@ -182,18 +300,23 @@ export default function MapScreen() {
             ListEmptyComponent={<Text style={s.hint}>Nothing matches. Try another word or turn on more categories.</Text>}
             renderItem={({ item }) => {
               const h = formatHours(hoursOn(item.place.id, today));
+              const photo = PLACE_MEDIA[item.place.id]?.image;
               return (
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => openFromList(item.place)}
                   style={({ pressed }) => [s.row, pressed && { opacity: 0.8 }]}
                 >
-                  <View style={[s.rowDot, { backgroundColor: CATEGORY_COLOR[item.place.cat] }]} />
+                  {photo ? (
+                    <Image source={photo} style={s.rowPhoto} resizeMode="cover" accessibilityIgnoresInvertColors />
+                  ) : (
+                    <View style={[s.rowPhoto, { backgroundColor: CATEGORY_COLOR[item.place.cat] }]} />
+                  )}
                   <View style={{ flex: 1 }}>
                     <Text style={s.rowName}>{item.place.name}</Text>
                     <Eyebrow>
-                      {CATEGORY_LABEL[item.place.cat]} · {ZONE_LABEL[item.place.zone]}
-                      {item.metres !== null ? ` · ${formatDistance(item.metres)}` : ''}
+                      {CATEGORY_LABEL[item.place.cat]}
+                      {item.metres !== null ? ` · ${formatDistance(item.metres)}` : ` · ${ZONE_LABEL[item.place.zone]}`}
                     </Eyebrow>
                     {h ? <Text style={s.rowHours}>Today: {h}</Text> : null}
                   </View>
@@ -202,60 +325,82 @@ export default function MapScreen() {
             }}
           />
         ) : null}
-        {mapError && view === 'map' ? (
-          <View style={s.error}>
-            <Text style={s.errorTitle}>The map didn’t load</Text>
-            <Text style={s.errorText}>{mapError} Check your internet connection and try again.</Text>
-            <Button label="Try again" onPress={retry} />
-          </View>
-        ) : null}
-        {mapWarning && !mapError && view === 'map' ? (
-          <Text style={s.warning}>Some map details didn’t load. Check your connection.</Text>
-        ) : null}
       </View>
 
-      {place ? (
+      {place && !listOpen ? (
         <View style={s.card}>
           <View style={s.cardHead}>
             <View style={{ flex: 1 }}>
               <Eyebrow>
-                {CATEGORY_LABEL[place.cat]} · {ZONE_LABEL[place.zone]} · {place.minutes} min
+                {CATEGORY_LABEL[place.cat]} · {place.minutes} min visit
                 {here ? ` · ${formatDistance(distance(here, place))}` : ''}
               </Eyebrow>
-              <Text style={s.name}>{place.name}</Text>
-              {place.local ? <Text style={s.local}>{place.local}</Text> : null}
+              <Text style={s.name} accessibilityRole="header">
+                {place.name}
+              </Text>
+              {hoursToday ? <Text style={s.hours}>Today: {hoursToday}</Text> : null}
             </View>
-            <Pressable accessibilityRole="button" accessibilityLabel="Close" onPress={() => setSelectedId(null)} hitSlop={10}>
+            <Pressable accessibilityRole="button" accessibilityLabel={`Close ${place.name}`} onPress={close} hitSlop={10}>
               <Text style={s.close}>Close</Text>
             </Pressable>
           </View>
-          {media?.image ? (
-            <View>
-              <Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={`Photo of ${place.name}`} />
-              <Pressable accessibilityRole="link" onPress={() => openLink(media.sourceUrl!)}>
-                <Text style={s.photoCredit} numberOfLines={1}>
-                  Photo: {media.credit} · {media.license} · Wikimedia Commons
-                </Text>
+          {walkShown ? (
+            <View style={s.walkRow}>
+              <Text style={s.walkText}>
+                {walkShown.minutes} min walk · {formatDistance(walkShown.metres)}
+                {walkShown.source === 'estimate' ? ' (estimate)' : ''}
+              </Text>
+              <Pressable accessibilityRole="button" onPress={() => setWalk(null)} hitSlop={8}>
+                <Text style={s.close}>Clear route</Text>
               </Pressable>
             </View>
           ) : null}
-          <Text style={s.blurb}>{place.blurb}</Text>
-          {hoursToday ? <Text style={s.hours}>Today: {hoursToday} · hours from OpenStreetMap, check before you go</Text> : null}
+          {walkNote ? (
+            <Text style={s.hours} accessibilityLiveRegion="polite">
+              {walkNote}
+            </Text>
+          ) : null}
           <View style={s.actions}>
-            {place.booking ? (
-              <Button label={place.booking.label} onPress={() => openLink(place.booking!.url)} style={{ flexGrow: 1 }} />
-            ) : null}
-            {place.lensId ? (
-              <Button label="Time Lens here" kind="quiet" onPress={() => router.push(`/lens/${place.lensId}`)} style={{ flexGrow: 1 }} />
-            ) : null}
-            {media?.website ? (
-              <Button label="Official website" kind="quiet" onPress={() => openLink(media.website!)} style={{ flexGrow: 1 }} />
-            ) : null}
+            <Button label="Walk here" onPress={() => walkHere(place)} style={s.actionMain} />
+            <Button
+              label={details ? 'Less' : 'More'}
+              kind="quiet"
+              onPress={() => setDetails((v) => !v)}
+              style={s.actionSide}
+            />
           </View>
-          {place.booking?.affiliate ? <Text style={s.note}>{AFFILIATE_NOTE}</Text> : null}
+          {details ? (
+            <ScrollView style={s.details} contentContainerStyle={s.detailsInner}>
+              {media?.image ? (
+                <View>
+                  <Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={`Photo of ${place.name}`} />
+                  <Pressable accessibilityRole="link" onPress={() => openLink(media.sourceUrl!)}>
+                    <Text style={s.photoCredit} numberOfLines={2}>
+                      Photo: {media.credit} · {media.license} · Wikimedia Commons
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {place.local ? <Text style={s.local}>{place.local} · {ZONE_LABEL[place.zone]}</Text> : null}
+              <Text style={s.blurb}>{place.blurb}</Text>
+              {hoursToday ? <Text style={s.hours}>Opening hours from OpenStreetMap. Check before you go.</Text> : null}
+              <View style={s.actions}>
+                {place.lensId ? (
+                  <Button label="Time Lens here" kind="quiet" onPress={() => router.push(`/lens/${place.lensId}`)} style={{ flexGrow: 1 }} />
+                ) : null}
+                {place.booking ? (
+                  <Button label={place.booking.label} kind="quiet" onPress={() => openLink(place.booking!.url)} style={{ flexGrow: 1 }} />
+                ) : null}
+                {media?.website ? (
+                  <Button label="Official website" kind="quiet" onPress={() => openLink(media.website!)} style={{ flexGrow: 1 }} />
+                ) : null}
+              </View>
+              {place.booking?.affiliate ? <Text style={s.note}>{AFFILIATE_NOTE}</Text> : null}
+            </ScrollView>
+          ) : null}
         </View>
-      ) : view === 'map' ? (
-        <Text style={s.hint}>Tap a pin to see what it is.</Text>
+      ) : !listOpen ? (
+        <Text style={s.hint}>Tap a pin to see what it is. Gold pins open Time Lens.</Text>
       ) : null}
     </SafeAreaView>
   );
@@ -263,12 +408,10 @@ export default function MapScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
-  nearMe: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: colors.ink },
-  nearMeText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
-  tools: { flexDirection: 'row', alignItems: 'center', gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
+  viewSwitch: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: colors.ink },
+  viewSwitchText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
+  searchRow: { paddingHorizontal: space.m, paddingBottom: space.s },
   search: {
-    flex: 1,
-    minWidth: 0,
     fontFamily: fonts.body,
     fontSize: 16,
     color: colors.ink,
@@ -276,33 +419,47 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
   chipRow: { flexGrow: 0 },
   chips: { gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
   locNote: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, paddingHorizontal: space.m, paddingBottom: space.s },
   mapWrap: { flex: 1 },
   map: { flex: 1 },
+  mapButtons: { position: 'absolute', right: space.m, bottom: space.l, gap: space.s, alignItems: 'flex-end' },
+  mapButton: {
+    minWidth: 52,
+    minHeight: 44,
+    paddingHorizontal: 14,
+    borderRadius: 22,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mapButtonOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  mapButtonText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
+  mapButtonTextOn: { color: colors.white },
   list: { backgroundColor: colors.stone },
   briefWrap: { marginHorizontal: space.m, marginBottom: space.s },
-  photo: { width: '100%', height: 120, borderRadius: 10, backgroundColor: colors.line },
-  photoCredit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 4 },
   row: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: space.m,
     marginHorizontal: space.m,
     marginBottom: space.s,
-    padding: space.m,
+    padding: space.s,
+    paddingRight: space.m,
     borderRadius: 14,
     backgroundColor: colors.paper,
     borderWidth: 1,
     borderColor: colors.line,
   },
-  rowDot: { width: 12, height: 12, borderRadius: 6, marginTop: 5 },
+  rowPhoto: { width: 64, height: 64, borderRadius: 10 },
   rowName: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink, marginBottom: 2 },
-  rowHours: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, marginTop: 4 },
+  rowHours: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, marginTop: 2 },
   error: {
     position: 'absolute',
     left: space.m,
@@ -320,7 +477,7 @@ const s = StyleSheet.create({
   warning: {
     position: 'absolute',
     left: space.m,
-    right: space.m,
+    right: 96,
     bottom: space.s,
     fontFamily: fonts.body,
     fontSize: 13,
@@ -329,16 +486,31 @@ const s = StyleSheet.create({
     borderRadius: 10,
     padding: space.s,
     overflow: 'hidden',
-    textAlign: 'center',
   },
-  card: { backgroundColor: colors.paper, padding: space.m, borderTopWidth: 1, borderColor: colors.line, gap: space.s },
+  card: {
+    backgroundColor: colors.paper,
+    paddingHorizontal: space.m,
+    paddingTop: space.m,
+    paddingBottom: space.s,
+    borderTopWidth: 1,
+    borderColor: colors.line,
+    gap: space.s,
+  },
   cardHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.s },
-  name: { fontFamily: fonts.bodyBold, fontSize: 22, color: colors.ink, marginTop: 4 },
-  local: { fontFamily: fonts.mono, fontSize: 12, color: colors.mute, marginTop: 2 },
+  name: { fontFamily: fonts.bodyBold, fontSize: 21, color: colors.ink, marginTop: 2 },
+  local: { fontFamily: fonts.mono, fontSize: 12, color: colors.mute },
   close: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.vistula, paddingVertical: 4 },
+  walkRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.s },
+  walkText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s },
+  actionMain: { flexGrow: 2 },
+  actionSide: { flexGrow: 1 },
+  details: { maxHeight: 280 },
+  detailsInner: { gap: space.s, paddingBottom: space.s },
+  photo: { width: '100%', height: 130, borderRadius: 10, backgroundColor: colors.line },
+  photoCredit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 4 },
   blurb: { fontFamily: fonts.body, fontSize: 16, lineHeight: 23, color: colors.ink },
   hours: { fontFamily: fonts.body, fontSize: 13, color: colors.mute },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s },
   note: { fontFamily: fonts.body, fontSize: 12, color: colors.mute },
   hint: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, padding: space.m, textAlign: 'center' },
 });
