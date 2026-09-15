@@ -292,7 +292,8 @@ test.describe('planner', () => {
   test('a plan link opens the plan first, with dated days and closures', async ({ page }) => {
     await page.goto(MONDAY_PLAN);
     await expect(page.getByText(SUMMARY, { exact: true })).toBeVisible();
-    await expect(page.getByText('Closed that day, so left out: Czartoryski Museum.')).toBeVisible();
+    // other museums closed on Mondays may be listed too; the Czartoryski Museum must be among them
+    await expect(page.getByText(/^Closed that day, so left out: .*\bCzartoryski Museum\b/)).toBeVisible();
     await expect(page.getByText('How many days are you in Kraków?')).toHaveCount(0);
   });
 

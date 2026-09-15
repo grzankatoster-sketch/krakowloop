@@ -34,6 +34,27 @@ const LINKS = {
   'kosciuszko-mound': 'Muzeum Kościuszkowskie',
   'national-museum': 'Muzeum Narodowe w Krakowie',
   'aviation-museum': 'Muzeum Lotnictwa Polskiego',
+  // museums added 15.09.2026 (each name checked unique with hours in the export)
+  'bunkier-sztuki': 'Bunkier Sztuki',
+  'mehoffer-house': 'Dom Józefa Mehoffera',
+  cogiteon: 'Małopolskie Centrum Nauki Cogiteon',
+  mufo: 'MuFo Rakowicka',
+  'archaeological-museum': 'Muzeum Archeologiczne',
+  'home-army-museum': 'Muzeum Armii Krajowej',
+  'ethnographic-museum': 'Muzeum Etnograficzne',
+  'engineering-museum': 'Muzeum Inżynierii i Techniki',
+  'cathedral-museum': 'Muzeum Katedralne im. Jana Pawła II',
+  'natural-history-museum': 'Muzeum Przyrodnicze PAN',
+  // not 'stained-glass-museum': OSM says Tu-Sa 11:30-18:00, the museum's own site Tu-Fr 11:30-13:30 and 14:30-16:30, Sa 10-17
+  'hutten-czapski': 'Muzeum im. Emeryka Hutten-Czapskiego',
+  rydlowka: 'Rydlówka',
+  'pomorska-street': 'Ulica Pomorska',
+  celestat: 'Celestat',
+  krzysztofory: 'Pałac Krzysztofory',
+  'szolayski-house': 'Kamienica Szołayskich',
+  'podgorze-museum': 'Muzeum Podgórza',
+  'nowa-huta-underground': 'Podziemna Nowa Huta',
+  'ciolek-palace': 'Pałac Biskupa Erazma Ciołka',
 };
 
 const features = JSON.parse(readFileSync(SOURCE, 'utf8')).features;
