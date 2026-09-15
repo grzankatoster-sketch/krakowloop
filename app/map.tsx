@@ -399,6 +399,7 @@ export default function MapScreen() {
               <Text style={s.blurb}>{place.blurb}</Text>
               {hoursToday ? <Text style={s.hours}>Opening hours from OpenStreetMap. Check before you go.</Text> : null}
               <View style={s.actions}>
+                <Button label="Open place page" kind="quiet" onPress={() => router.push(`/place/${place.id}`)} style={{ flexGrow: 1 }} />
                 {place.lensId ? (
                   <Button label="Time Lens here" kind="quiet" onPress={() => router.push(`/lens/${place.lensId}`)} style={{ flexGrow: 1 }} />
                 ) : null}

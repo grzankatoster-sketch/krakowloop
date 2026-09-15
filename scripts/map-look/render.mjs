@@ -32,6 +32,13 @@ const PINS = [
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const original = readFileSync(CHOICE, 'utf8');
+// Ctrl+C or a kill skips `finally`: put the real choice back on those signals too
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGBREAK']) {
+  process.on(signal, () => {
+    writeFileSync(CHOICE, original);
+    process.exit(130);
+  });
+}
 mkdirSync(OUT, { recursive: true });
 mkdirSync(TMP, { recursive: true });
 
@@ -39,16 +46,24 @@ function setLook(style, pins) {
   writeFileSync(CHOICE, original.replace(/\{ style: '[^']*', pins: '[^']*' \}/, `{ style: '${style}', pins: '${pins}' }`));
 }
 
+async function portAnswers() {
+  try {
+    await fetch(`http://localhost:${PORT}/`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function serve(dir) {
+  // a server already on the port would answer instead of ours, and its build would be photographed
+  if (await portAnswers()) throw new Error(`port ${PORT} is already in use: stop that server first`);
   const child = spawn('npx', ['--yes', 'serve', '-s', dir, '-l', String(PORT)], { shell: true, stdio: 'ignore' });
   for (let i = 0; i < 60; i++) {
-    try {
-      if ((await fetch(`http://localhost:${PORT}/`)).ok) return child;
-    } catch {
-      /* not up yet */
-    }
+    if (await portAnswers()) return child;
     await sleep(500);
   }
+  stop(child);
   throw new Error('preview server did not start');
 }
 

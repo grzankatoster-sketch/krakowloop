@@ -3,7 +3,7 @@
 //   no argument: renders every variant into ../05_podglad/ikony/ plus a comparison board
 //   with a variant name (loop | spire | monogram): also writes that variant into assets/
 import { chromium } from '@playwright/test';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import path from 'node:path';
 
@@ -61,7 +61,17 @@ if (install) {
   await shot(install, 'mono', path.join(assets, 'android-icon-monochrome.png'), 1024, true);
   await shot(install, 'foreground', path.join(assets, 'splash-icon.png'), 1024, true);
   await shot(install, 'icon', path.join(assets, 'favicon.png'), 48);
-  console.log(`installed "${install}" into assets/ (Android background colour ${GROUND[install]})`);
+  // Android puts the foreground over android-icon-background.png, which wins over backgroundColor:
+  // write a plain ground in the variant's colour and keep app.json's colour in step
+  const ground = await browser.newPage({ viewport: { width: 1024, height: 1024 } });
+  await ground.setContent(`<body style="margin:0;background:${GROUND[install]}"></body>`);
+  await ground.screenshot({ path: path.join(assets, 'android-icon-background.png') });
+  await ground.close();
+  const appJsonPath = path.join(APP, 'app.json');
+  const appJson = JSON.parse(readFileSync(appJsonPath, 'utf8'));
+  appJson.expo.android.adaptiveIcon.backgroundColor = GROUND[install];
+  writeFileSync(appJsonPath, JSON.stringify(appJson, null, 2) + '\n');
+  console.log(`installed "${install}" into assets/ and app.json (Android background ${GROUND[install]})`);
 }
 
 await browser.close();

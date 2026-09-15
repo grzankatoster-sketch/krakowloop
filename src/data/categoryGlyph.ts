@@ -6,8 +6,8 @@ import type { Category } from './places';
 export type Glyph = Category | 'lens';
 
 export const GLYPH_PATHS: Record<Glyph, string> = {
-  // castle with a gate
-  history: 'M4 21V9h2.5V6.5H9V9h2V6.5h2V9h2V6.5h2.5V9H20v12h-5.5v-4.5a2.5 2.5 0 0 0-5 0V21z',
+  // a crown: the royal city (a castle outline read as a house at pin size)
+  history: 'M3 17.5 4.2 7l4.8 4.2L12 4.5l3 6.7L19.8 7 21 17.5zM3 19h18v2.5H3z',
   // classical columns under a pediment
   museum: 'M12 3 3 8v2h18V8zM5 11.5h2.5v6.5H5zm4.25 0h2.5v6.5h-2.5zm3 0h2.5v6.5h-2.5zm4.25 0H19v6.5h-2.5zM3 19.5h18V22H3z',
   // a building with an arched doorway (neutral, no religious symbol)

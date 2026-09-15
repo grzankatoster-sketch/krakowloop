@@ -117,6 +117,13 @@ export const MAP_HTML = `<!doctype html>
 
   var map=null,lib=null,ready=false,failed=false,warned=false,lastError='',pending=null;
   var lastFocus=null,lastFit=null,threeD=false;
+  // Read-only state for the end-to-end tests: whether the style loaded, how many points were
+  // drawn, and where a coordinate sits on screen (to tap a real pin). Changes nothing on the map.
+  var debug={ready:false,points:0,
+    project:function(lon,lat){if(!map)return null;var p=map.project([lon,lat]);return{x:p.x,y:p.y}},
+    hit:function(x,y){if(!map||!ready)return[];
+      return map.queryRenderedFeatures([x,y],{layers:['pts-icon','pts-circle']}).map(function(f){return String(f.properties.id)})}};
+  window.__krk=debug;
   function fail(message){if(ready||failed)return;failed=true;post({type:'error',message:message})}
   var timer=setTimeout(function(){
     fail(lastError?'The map took too long to load ('+lastError+').':'The map took too long to load.')},VIEW.timeout);
@@ -171,7 +178,7 @@ export const MAP_HTML = `<!doctype html>
   }
   function apply(d){
     if(!ready){pending=d;return}
-    map.getSource('pts').setData(fc(d));
+    map.getSource('pts').setData(fc(d));debug.points=d.points.length;
     map.getSource('route').setData(line(d));
     var fitted=false;
     if(d.fit){fitTo(d,'route');fitted=true}
@@ -289,7 +296,7 @@ export const MAP_HTML = `<!doctype html>
         map.on('mouseleave',id,function(){map.getCanvas().style.cursor=''});
       });
       // a late load still counts: the app clears its error message on "ready"
-      ready=true;clearTimeout(timer);
+      ready=true;debug.ready=true;clearTimeout(timer);
       if(pending){apply(pending);pending=null}
       post({type:'ready'});
     });

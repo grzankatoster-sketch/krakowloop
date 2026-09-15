@@ -1,4 +1,31 @@
+import { readFileSync } from 'node:fs';
 import { Page, expect, test } from '@playwright/test';
+
+/** Exact Directions answers only reach the app when the build has a Mapbox token (.env). */
+const HAS_MAPBOX_TOKEN = (() => {
+  try {
+    return /EXPO_PUBLIC_MAPBOX_TOKEN=pk\./.test(readFileSync('.env', 'utf8'));
+  } catch {
+    return !!process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+  }
+})();
+
+type MapDebug = {
+  ready: boolean;
+  points: number;
+  project: (lon: number, lat: number) => { x: number; y: number } | null;
+  hit: (x: number, y: number) => string[];
+};
+
+/** State the map document exposes for tests (window.__krk in mapHtml.ts). */
+async function mapState(page: Page): Promise<{ ready: boolean; points: number }> {
+  const frame = page.frames().find((f) => f.url().startsWith('blob:'));
+  if (!frame) return { ready: false, points: 0 };
+  return frame.evaluate(() => {
+    const k = (window as unknown as { __krk?: MapDebug }).__krk;
+    return { ready: !!k?.ready, points: k?.points ?? 0 };
+  });
+}
 
 // Main Square, Kraków: a traveller standing in the Old Town
 const IN_KRAKOW = { latitude: 50.0617, longitude: 19.9373 };
@@ -51,10 +78,47 @@ test.describe('home', () => {
 });
 
 test.describe('map', () => {
-  test('the map really draws, without an error message', async ({ page }) => {
+  test('the map loads its style and draws the places, without an error message', async ({ page }) => {
     await page.goto('/map');
     await expect(page.frameLocator('iframe[title="Map"]').locator('canvas').first()).toBeVisible({ timeout: 30_000 });
+    await expect.poll(async () => (await mapState(page)).ready, { timeout: 30_000 }).toBe(true);
+    // every visible place plus the Time Lens markers reached the map
+    await expect.poll(async () => (await mapState(page)).points).toBeGreaterThan(40);
     await expect(page.getByText('The map didn’t load')).toHaveCount(0);
+  });
+
+  test('tapping a pin on the map opens that place', async ({ page }) => {
+    await page.goto('/map');
+    await expect.poll(async () => (await mapState(page)).points, { timeout: 30_000 }).toBeGreaterThan(40);
+    await page.waitForTimeout(1500); // let the camera settle before asking where pins are
+
+    // Candidates spread over the Old Town. The test taps the first one that is on screen, clear of
+    // the edges and the floating buttons, and alone under its point, so it doesn't depend on the
+    // start view or on neighbouring pins.
+    const candidates = [
+      { id: 'barbican', name: 'Barbican', lon: 19.94163, lat: 50.06546 },
+      { id: 'slowacki-theatre', name: 'Słowacki Theatre', lon: 19.94305, lat: 50.06395 },
+      { id: 'planty', name: 'Planty Park', lon: 19.94191, lat: 50.06021 },
+      { id: 'franciscan', name: 'Franciscan Basilica', lon: 19.9361, lat: 50.05921 },
+      { id: 'dominican', name: 'Dominican Basilica', lon: 19.93943, lat: 50.0593 },
+      { id: 'dragons-den', name: "Dragon's Den", lon: 19.93358, lat: 50.05342 },
+    ];
+    const frame = page.frames().find((f) => f.url().startsWith('blob:'))!;
+    const pick = await frame.evaluate((list) => {
+      const k = (window as unknown as { __krk: MapDebug }).__krk;
+      for (const c of list) {
+        const p = k.project(c.lon, c.lat);
+        if (!p || p.x < 40 || p.y < 40 || p.x > innerWidth - 110 || p.y > innerHeight - 190) continue;
+        const hits = k.hit(p.x, p.y);
+        if (hits.length === 1 && hits[0] === c.id) return { ...c, x: p.x, y: p.y };
+      }
+      return null;
+    }, candidates);
+    expect(pick, 'no candidate pin was alone and on screen at the start view').not.toBeNull();
+
+    const box = (await page.locator('iframe[title="Map"]').boundingBox())!;
+    await page.mouse.click(box.x + pick!.x, box.y + pick!.y);
+    await expect(page.getByRole('heading', { name: pick!.name })).toBeVisible();
   });
 
   test('switches to the list and takes the covered map out of the focus order', async ({ page }) => {
@@ -86,6 +150,7 @@ test.describe('map', () => {
   });
 
   test('walk here shows the route answer: exact minutes and distance, from the traveller', async ({ browser }) => {
+    test.skip(!HAS_MAPBOX_TOKEN, 'needs a Mapbox token in .env: without one the app never asks for a route');
     const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
     const page = await context.newPage();
     const requests = await answerDirections(page);
@@ -220,6 +285,45 @@ test.describe('planner', () => {
     await reopened.goto(copied);
     await expect(reopened.getByText(SUMMARY, { exact: true })).toBeVisible();
     await context.close();
+  });
+});
+
+test.describe('place page', () => {
+  test('shows the week of opening hours, trams nearby and links', async ({ page }) => {
+    await page.goto('/place/czartoryski');
+    await expect(page.getByRole('heading', { name: 'Czartoryski Museum' }).last()).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Opening hours' })).toBeVisible();
+    // closed on Mondays in every month of the data
+    const monday = page.getByText(/^Monday/).locator('..');
+    await expect(monday).toContainText('Closed');
+    await expect(page.getByText('Tuesday', { exact: false }).locator('..')).toContainText('10:00–18:00');
+    await expect(page.getByRole('heading', { name: 'Trams nearby' })).toBeVisible();
+    await expect(page.getByText(/ · lines? \d/).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Official website' })).toBeVisible();
+  });
+
+  test('says so when the place has no hours in the data', async ({ page }) => {
+    await page.goto('/place/main-square');
+    await expect(page.getByText('We have no opening hours for this place. The official website has them.')).toBeVisible();
+  });
+
+  test('an unknown place explains what to do', async ({ page }) => {
+    await page.goto('/place/nope');
+    await expect(page.getByText('This place isn’t in KrakowLoop. Go back and pick one from the map.')).toBeVisible();
+  });
+
+  test('opens from the map card and from a plan stop', async ({ page }) => {
+    await openPlaceFromList(page, /Czartoryski Museum/);
+    await page.getByRole('button', { name: 'More' }).click();
+    await page.getByRole('button', { name: 'Open place page' }).click();
+    await expect(page).toHaveURL(/\/place\/czartoryski$/);
+
+    await page.goto('/plan?days=1&pace=steady&likes=history&trips=0');
+    const firstStop = page.getByRole('link', { name: /^Open / }).first();
+    const name = ((await firstStop.getAttribute('aria-label')) ?? '').replace(/^Open /, '');
+    await firstStop.click();
+    await expect(page).toHaveURL(/\/place\//);
+    await expect(page.getByRole('heading', { name }).last()).toBeVisible();
   });
 });
 

@@ -23,6 +23,12 @@ export function hoursOn(placeId: string, date: Date): Interval[] | null {
   return entry.months[date.getMonth()][weekday];
 }
 
+/** Monday-to-Sunday opening intervals for the month of the date, or null when we have no hours. */
+export function weekHours(placeId: string, date: Date): Interval[][] | null {
+  const entry = table[placeId];
+  return entry ? entry.months[date.getMonth()] : null;
+}
+
 /** True unless we know the place is closed or open too briefly for a visit that day. */
 export function opensLongEnough(placeId: string, date: Date, visitMinutes: number): boolean {
   const hours = hoursOn(placeId, date);

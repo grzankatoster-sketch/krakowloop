@@ -106,6 +106,43 @@ export function findTramIn(tt: Timetable, a: LatLon, b: LatLon, date?: Date | nu
   return best;
 }
 
+export interface NearbyStop {
+  name: string;
+  metres: number;
+  /** tram lines calling here, in number order */
+  lines: string[];
+}
+
+/**
+ * The closest tram stops within walking distance of a point, nearest first, each with the lines
+ * that call there. Uses the ZTP timetable unless another one is given (tests).
+ */
+export function nearbyTramStopsIn(
+  tt: Timetable | undefined,
+  p: LatLon,
+  options: { limit?: number; maxMetres?: number } = {},
+): NearbyStop[] {
+  const timetable = tt ?? TIMETABLE;
+  const limit = options.limit ?? 3;
+  const maxMetres = options.maxMetres ?? 700;
+  return timetable.stops
+    .map((s, i) => ({ i, name: s[0], metres: distance(p, { lat: s[1], lon: s[2] }) }))
+    .filter((x) => x.metres <= maxMetres)
+    .sort((a, b) => a.metres - b.metres)
+    .slice(0, limit)
+    .map((x) => {
+      const lines: string[] = [];
+      for (const pattern of timetable.patterns) {
+        if (pattern.s.includes(x.i) && !lines.includes(pattern.r)) lines.push(pattern.r);
+      }
+      lines.sort((a, b) => a.localeCompare(b, 'pl', { numeric: true }));
+      return { name: x.name, metres: Math.round(x.metres), lines };
+    });
+}
+
+export const nearbyTramStops = (p: LatLon, options?: { limit?: number; maxMetres?: number }) =>
+  nearbyTramStopsIn(undefined, p, options);
+
 const cache = new Map<string, TramRide | null>();
 
 /** findTramIn on the ZTP Kraków timetable, cached per pair of points and weekday. */

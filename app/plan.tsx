@@ -378,7 +378,14 @@ export default function PlanScreen() {
                       {photo?.image ? (
                         <Image source={photo.image} style={s.stopPhoto} resizeMode="cover" accessibilityLabel={`Photo of ${st.place.name}`} />
                       ) : null}
-                      <Text style={s.stopName}>{st.place.name}</Text>
+                      <Pressable
+                        accessibilityRole="link"
+                        accessibilityLabel={`Open ${st.place.name}`}
+                        onPress={() => router.push(`/place/${st.place.id}`)}
+                        hitSlop={4}
+                      >
+                        <Text style={[s.stopName, s.stopNameLink]}>{st.place.name}</Text>
+                      </Pressable>
                       <Text style={s.stopBlurb}>{st.place.blurb}</Text>
                       <Eyebrow style={{ marginTop: 4 }}>
                         About {fmt(st.place.minutes)}
@@ -471,6 +478,7 @@ const s = StyleSheet.create({
   // white is the text-on-ink token in every palette; gilt on ink fails contrast in several
   numText: { fontFamily: fonts.monoBold, fontSize: 13, color: colors.white },
   stopName: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  stopNameLink: { textDecorationLine: 'underline', textDecorationColor: colors.line },
   stopPhoto: { width: '100%', height: 130, borderRadius: 10, marginBottom: space.s, backgroundColor: colors.line },
   photoCredit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 4 },
   stopBlurb: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.ink, marginTop: 2 },
