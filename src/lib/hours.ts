@@ -35,7 +35,9 @@ export function opensLongEnough(placeId: string, date: Date, visitMinutes: numbe
   return hours === null || hours.some(([open, close]) => close - open >= visitMinutes);
 }
 
-const hm = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+/** minutes after midnight → "9:05" (1440 reads "24:00") */
+export const formatTime = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+const hm = formatTime;
 
 /** "10:00–18:00", "Closed", or null when unknown */
 export function formatHours(hours: Interval[] | null): string | null {

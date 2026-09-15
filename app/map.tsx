@@ -1,5 +1,17 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AccessibilityInfo,
+  findNodeHandle,
+  FlatList,
+  Image,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CityBrief } from '../src/components/CityBrief';
@@ -93,6 +105,21 @@ export default function MapScreen() {
   const [walkNote, setWalkNote] = useState<string | null>(null);
   /** bumped whenever a pending walking route stops being wanted (another place, card closed) */
   const walkRequest = useRef(0);
+  const cardTitle = useRef<Text>(null);
+  const [cardFocus, setCardFocus] = useState(0);
+  useEffect(() => {
+    if (!cardFocus) return;
+    const el = cardTitle.current;
+    if (!el) return;
+    if (Platform.OS === 'web') {
+      const node = el as unknown as HTMLElement;
+      node.setAttribute('tabindex', '-1');
+      node.focus({ preventScroll: true });
+    } else {
+      const tag = findNodeHandle(el);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+  }, [cardFocus]);
   const [today] = useState(() => new Date());
   const me = useMyLocation();
 
@@ -177,6 +204,8 @@ export default function MapScreen() {
     select(p.id);
     setView('map');
     flyTo(p.lat, p.lon);
+    // the list closes under the keyboard: carry focus on to the place's card
+    setCardFocus((k) => k + 1);
   };
   const close = () => {
     walkRequest.current += 1;
@@ -351,7 +380,7 @@ export default function MapScreen() {
                 {CATEGORY_LABEL[place.cat]} · {place.minutes} min visit
                 {here ? ` · ${formatDistance(distance(here, place))}` : ''}
               </Eyebrow>
-              <Text style={s.name} accessibilityRole="header">
+              <Text ref={cardTitle} style={s.name} accessibilityRole="header">
                 {place.name}
               </Text>
               {hoursToday ? <Text style={s.hours}>Today: {hoursToday}</Text> : null}
@@ -417,7 +446,7 @@ export default function MapScreen() {
           ) : null}
         </View>
       ) : !listOpen ? (
-        <Text style={s.hint}>Tap a pin to see what it is. Gold pins open Time Lens.</Text>
+        <Text style={s.hint}>Tap a pin to see what it is. Gold pins open Time Lens. Every place is also in Show list.</Text>
       ) : null}
     </SafeAreaView>
   );

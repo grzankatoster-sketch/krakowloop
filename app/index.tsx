@@ -38,11 +38,18 @@ export default function Home() {
             ))}
           </View>
 
-          <Link href="/trips" asChild>
-            <Pressable accessibilityRole="link" hitSlop={8} style={s.tripsLink}>
-              <Text style={s.tripsLinkText}>Day trips from Kraków</Text>
-            </Pressable>
-          </Link>
+          <View style={s.links}>
+            <Link href="/now" asChild>
+              <Pressable accessibilityRole="link" hitSlop={8} style={s.tripsLink}>
+                <Text style={s.tripsLinkText}>What’s open now</Text>
+              </Pressable>
+            </Link>
+            <Link href="/trips" asChild>
+              <Pressable accessibilityRole="link" hitSlop={8} style={s.tripsLink}>
+                <Text style={s.tripsLinkText}>Day trips from Kraków</Text>
+              </Pressable>
+            </Link>
+          </View>
 
           <View style={s.story}>
             <Image
@@ -88,6 +95,7 @@ const s = StyleSheet.create({
   doorTitleMain: { color: colors.white, fontSize: 21 },
   doorLine: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute, marginTop: 4 },
   doorLineMain: { color: colors.white },
+  links: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.l, rowGap: space.s },
   tripsLink: { alignSelf: 'flex-start', paddingVertical: 4 },
   tripsLinkText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.vistula, textDecorationLine: 'underline' },
   story: { gap: 6 },

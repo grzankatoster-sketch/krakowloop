@@ -201,6 +201,17 @@ test.describe('map', () => {
     await context.close();
   });
 
+  test('keyboard users are pointed to the list, and a place picked there takes the focus', async ({ page }) => {
+    await page.goto('/map');
+    await expect(page.getByText('Every place is also in Show list.', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Show list' }).focus();
+    await page.keyboard.press('Enter');
+    const row = page.getByRole('button', { name: /Czartoryski Museum/ });
+    await row.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('heading', { name: 'Czartoryski Museum' }).last()).toBeFocused();
+  });
+
   test('the 3D view loads the landmark models', async ({ page }) => {
     test.skip(!HAS_MAPBOX_TOKEN, 'the models need Mapbox: MapLibre has no model layer');
     const glb: string[] = [];
@@ -472,6 +483,58 @@ test.describe('day trips', () => {
     await expect
       .poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened))
       .toEqual([expect.stringMatching(/^https:\/\/visit\.auschwitz\.org(\/|$)/)]);
+  });
+});
+
+test.describe('open now', () => {
+  /** The row of a place in the list: its name link and status line. */
+  const row = (page: Page, name: string) =>
+    page.locator('div').filter({ has: page.getByRole('link', { name: `Open ${name}` }) }).filter({ hasText: ' · ' }).last();
+
+  // every moment carries its UTC offset, so neither the test process nor the browser zone changes it
+  test('on a Tuesday morning the Czartoryski Museum is open until 18:00', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-13T11:00:00+02:00'));
+    await page.goto('/');
+    await page.getByRole('link', { name: 'What’s open now' }).click();
+    await expect(page).toHaveURL(/\/now$/);
+    await expect(page.getByRole('heading', { name: /^Open now \(\d+\)$/ })).toBeVisible();
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Museums · Closes 18:00');
+  });
+
+  test('on a Monday it is closed all day, and the museum filter keeps it', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-12T11:00:00+02:00'));
+    await page.goto('/now');
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Closed today');
+    await page.getByRole('button', { name: 'Museums' }).click();
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Closed today');
+    // only museums remain
+    await expect(page.getByText(/^Sights · /)).toHaveCount(0);
+  });
+
+  test('shortly before closing it says how long is left', async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-10-13T17:20:00+02:00'));
+    await page.goto('/now');
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Closes 18:00, in 40 min');
+  });
+
+  test('a phone still on New York time sees Kraków hours', async ({ browser }) => {
+    const context = await browser.newContext({ timezoneId: 'America/New_York' });
+    const page = await context.newPage();
+    // 18:20 in Kraków is 12:20 in New York: the museum closed 20 minutes ago
+    await page.clock.setFixedTime(new Date('2026-10-13T18:20:00+02:00'));
+    await page.goto('/now');
+    await expect(page.getByText(/18:20 in Kraków/)).toBeVisible();
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Closed for the rest of today');
+    await context.close();
+  });
+
+  test('the list moves on by itself when a place closes', async ({ page }) => {
+    // open the screen in the middle of the last minute
+    await page.clock.install({ time: new Date('2026-10-13T17:59:30+02:00') });
+    await page.goto('/now');
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Closes 18:00, in 1 min');
+    await page.clock.runFor(35_000);
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Closed for the rest of today');
   });
 });
 
