@@ -25,6 +25,7 @@
     "react-native-webview": "13.16.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.55.0",
     "@types/jest": "29.5.14",
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
@@ -42,13 +43,18 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "test": "jest",
+    "test:e2e": "expo export --platform web --output-dir dist-e2e && playwright test",
     "check": "npm run typecheck && npm run lint && npm test",
     "data:hours": "node scripts/build-hours.mjs",
     "data:transit": "node scripts/build-transit.mjs",
     "data:media": "node scripts/build-media.mjs"
   },
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/e2e/"
+    ]
   },
   "private": true
 }
