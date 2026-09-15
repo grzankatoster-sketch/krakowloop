@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { dispatchMapMessage, parseMapMessage } from '../src/components/mapMessages';
 import { places } from '../src/data/places';
-import { paramsToPlan, planToParams, shareableParams } from '../src/lib/planParams';
+import { paramsToPlan, planToParams, shareUrl, shareableParams } from '../src/lib/planParams';
 import { PlanOptions } from '../src/lib/planner';
 
 const ids = new Set(places.map((p) => p.id));
@@ -60,6 +60,20 @@ describe('plan params', () => {
   it('writes a precise start point rounded to about 100 m', () => {
     const precise: PlanOptions = { days: 1, pace: 'steady', interests: [], dayTrips: true, start: { lat: 50.0641234, lon: 19.9456789 } };
     expect(planToParams(precise).from).toBe('50.064,19.946');
+  });
+
+  it('builds a share link that decodes back to the same plan', () => {
+    const url = new URL(shareUrl('http://localhost:5091/plan', full));
+    expect(url.pathname).toBe('/plan');
+    // commas are encoded once, so they come back as commas
+    expect(url.searchParams.get('likes')).toBe('history,jewish');
+    expect(url.searchParams.get('skip')).toBe('czartoryski,barbican');
+    expect(paramsToPlan(Object.fromEntries(url.searchParams), ids)).toEqual(full);
+  });
+
+  it('replaces any query already on the base address', () => {
+    const minimal: PlanOptions = { days: 1, pace: 'steady', interests: ['food'], dayTrips: false };
+    expect(shareUrl('krakowloop://plan?old=1#x', minimal)).toBe('krakowloop://plan?days=1&pace=steady&likes=food&trips=0');
   });
 
   it('reads the first value when a param repeats', () => {

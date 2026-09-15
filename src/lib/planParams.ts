@@ -39,6 +39,17 @@ export function shareableParams(o: PlanOptions): Record<string, string> {
   return Object.fromEntries(Object.entries(planToParams(o)).filter(([, v]) => v !== ''));
 }
 
+/**
+ * The share link for a plan, with the query encoded exactly once. `base` is the address of the
+ * plan screen without a query (web origin + /plan, or the app's deep link).
+ * Linking.createURL's queryParams encoded commas twice (likes=history%252Cmuseums), so a shared
+ * plan lost its interests when opened.
+ */
+export function shareUrl(base: string, o: PlanOptions): string {
+  const query = new URLSearchParams(shareableParams(o)).toString();
+  return `${base.replace(/[?#].*$/, '')}?${query}`;
+}
+
 export function parseStart(value: string | undefined): LatLon | undefined {
   const m = value ? /^(-?\d{1,2}(?:\.\d{1,6})?),(-?\d{1,3}(?:\.\d{1,6})?)$/.exec(value) : null;
   if (!m) return undefined;

@@ -1,5 +1,7 @@
 import { CITY } from '../config/city';
 import { MAPBOX_TOKEN } from '../config/mapbox';
+import { MAP_LOOK_CHOICE } from '../config/mapLook';
+import { GLYPH_PATHS, Glyph } from '../data/categoryGlyph';
 import { colors } from '../theme';
 
 export interface MapPoint {
@@ -16,6 +18,8 @@ export interface MapPoint {
   kind?: 'me' | 'lens' | 'stop';
   /** name shown next to the marker when zoomed in */
   label?: string;
+  /** category icon drawn inside the pin (badge and teardrop pins) */
+  glyph?: Glyph;
 }
 
 export interface MapPayload {
@@ -44,6 +48,18 @@ const LOAD_TIMEOUT_MS = 15000;
 
 export const MAP_PROVIDER: 'mapbox' | 'openfreemap' = MAPBOX_TOKEN ? 'mapbox' : 'openfreemap';
 
+/** Mapbox basemaps to choose from (src/config/mapLook.ts). Standard themes are set through its config. */
+const MAPBOX_STYLES: Record<string, { url: string; theme?: string }> = {
+  standard: { url: 'mapbox://styles/mapbox/standard' },
+  'standard-faded': { url: 'mapbox://styles/mapbox/standard', theme: 'faded' },
+  'standard-monochrome': { url: 'mapbox://styles/mapbox/standard', theme: 'monochrome' },
+  streets: { url: 'mapbox://styles/mapbox/streets-v12' },
+  outdoors: { url: 'mapbox://styles/mapbox/outdoors-v12' },
+  light: { url: 'mapbox://styles/mapbox/light-v11' },
+};
+const mapboxStyle = MAPBOX_STYLES[MAP_LOOK_CHOICE.style] ?? MAPBOX_STYLES.standard;
+export const PIN_STYLE = ['dots', 'badges', 'teardrop'].includes(MAP_LOOK_CHOICE.pins) ? MAP_LOOK_CHOICE.pins : 'badges';
+
 const config = MAPBOX_TOKEN
   ? {
       provider: 'mapbox',
@@ -53,7 +69,9 @@ const config = MAPBOX_TOKEN
       // Subresource Integrity: a tampered library file is refused. Recompute when the version changes.
       cssIntegrity: 'sha384-ybStW03vjH/S7ZApCJT0nH1D7iITNZEYRxjmkJWtpkDDUhwI+hXoHm7JcDvL6spf',
       jsIntegrity: 'sha384-irwCnVYwxiOAcXldUHjrozDrOWFxnXxgojV8LjaKFdnBzTVUqmdBgP4OpNtXNK6Q',
-      style: 'mapbox://styles/mapbox/standard',
+      style: mapboxStyle.url,
+      standard: mapboxStyle.url.endsWith('/standard'),
+      theme: mapboxStyle.theme ?? 'default',
       token: MAPBOX_TOKEN,
       font: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
     }
@@ -65,6 +83,8 @@ const config = MAPBOX_TOKEN
       cssIntegrity: 'sha384-MinO0mNliZ3vwppuPOUnGa+iq619pfMhLVUXfC4LHwSCvF9H+6P/KO4Q7qBOYV5V',
       jsIntegrity: 'sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj',
       style: `https://tiles.openfreemap.org/styles/${colors.dark ? 'dark' : 'positron'}`,
+      standard: false,
+      theme: 'default',
       token: null,
       font: ['Noto Sans Bold'],
     };
@@ -79,6 +99,8 @@ const palette = {
   park: colors.park,
   building: colors.building,
   dark: colors.dark,
+  pins: PIN_STYLE,
+  glyphs: GLYPH_PATHS,
 };
 const view = { center: [CITY.mapCentre.lon, CITY.mapCentre.lat], zoom: CITY.mapZoom, timeout: LOAD_TIMEOUT_MS };
 
@@ -107,7 +129,8 @@ export const MAP_HTML = `<!doctype html>
     var pts=Array.isArray(d.points)?d.points.slice(0,800).filter(function(p){
       return p&&typeof p.id==='string'&&p.id.length<=64&&num(p.lat,-90,90)&&num(p.lon,-180,180)
         &&typeof p.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(p.color)&&(p.order==null||num(p.order,1,99))
-        &&(p.kind==null||KINDS[p.kind]===1)&&(p.label==null||(typeof p.label==='string'&&p.label.length<=80))}):[];
+        &&(p.kind==null||KINDS[p.kind]===1)&&(p.label==null||(typeof p.label==='string'&&p.label.length<=80))
+        &&(p.glyph==null||(typeof p.glyph==='string'&&Object.prototype.hasOwnProperty.call(C.glyphs,p.glyph)))}):[];
     var route=Array.isArray(d.route)?d.route.slice(0,5000).filter(function(c){
       return Array.isArray(c)&&num(c[0],-180,180)&&num(c[1],-90,90)}):[];
     var f=d.focus;
@@ -115,10 +138,29 @@ export const MAP_HTML = `<!doctype html>
     return{points:pts,route:route,selectedId:typeof d.selectedId==='string'?d.selectedId:null,fit:d.fit===true,
       fitKey:num(d.fitKey,0,1e9)?d.fitKey:null,fitTarget:d.fitTarget==='points'?'points':'route',focus:focus,threeD:d.threeD===true};
   }
+  // Pins with a category icon are drawn once per icon and colour on a canvas and added to the map
+  // as images. Numbered plan stops, the traveller and tram stops stay plain circles.
+  function drawPin(shape,glyph,color){
+    var tear=shape==='teardrop',w=tear?72:64,h=tear?92:64,cx=w/2,cy=tear?36:32,r=tear?30:28;
+    var cv=document.createElement('canvas');cv.width=w;cv.height=h;var g=cv.getContext('2d');
+    g.beginPath();
+    if(tear){g.arc(cx,cy,r,Math.PI*0.8,Math.PI*0.2,false);g.lineTo(cx,h-4);g.closePath()}
+    else{g.arc(cx,cy,r,0,Math.PI*2)}
+    g.fillStyle=color;g.fill();g.lineWidth=4;g.strokeStyle='#FFFFFF';g.stroke();
+    var s=(r*1.2)/24;g.save();g.translate(cx-12*s,cy-12*s);g.scale(s,s);g.fillStyle='#FFFFFF';
+    g.fill(new Path2D(C.glyphs[glyph]));g.restore();
+    return g.getImageData(0,0,w,h);
+  }
+  function iconFor(p){
+    if(C.pins==='dots'||!p.glyph||p.kind==='stop'||p.kind==='me'||p.order!=null)return'';
+    var key='pin-'+C.pins+'-'+p.glyph+'-'+p.color.slice(1);
+    if(map&&!map.hasImage(key)){try{map.addImage(key,drawPin(C.pins,p.glyph,p.color),{pixelRatio:2})}catch(e){return''}}
+    return key;
+  }
   function fc(d){return{type:'FeatureCollection',features:d.points.map(function(p){
     return{type:'Feature',geometry:{type:'Point',coordinates:[p.lon,p.lat]},
       properties:{id:p.id,color:p.color,order:p.order==null?'':String(p.order),sel:p.id===d.selectedId?1:0,
-        kind:p.kind||'place',label:p.label||''}}})}}
+        kind:p.kind||'place',label:p.label||'',icon:iconFor(p)}}})}}
   function line(d){return{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:d.route.length>1?d.route:[]}}}
   /** the route when asked for and present, otherwise the places (tram stops left out) */
   function fitTo(d,target){
@@ -163,7 +205,8 @@ export const MAP_HTML = `<!doctype html>
     if(!lib){fail('The map library could not be downloaded.');return}
     if(CFG.token)lib.accessToken=CFG.token;
     var opts={container:'m',style:CFG.style,center:VIEW.center,zoom:VIEW.zoom};
-    if(CFG.provider==='mapbox'){opts.config={basemap:{lightPreset:C.dark?'night':'day',showPointOfInterestLabels:false}}}
+    if(CFG.provider==='mapbox'&&CFG.standard){
+      opts.config={basemap:{lightPreset:C.dark?'night':'day',theme:CFG.theme,showPointOfInterestLabels:false}}}
     else{opts.attributionControl={compact:true}}
     try{map=new lib.Map(opts)}catch(err){fail('The map could not start: '+(err&&err.message));return}
 
@@ -191,8 +234,17 @@ export const MAP_HTML = `<!doctype html>
               'fill-extrusion-base':['coalesce',['get','render_min_height'],0],
               'fill-extrusion-opacity':0.92}});
         }catch(e){}
+      }else if(!CFG.standard){
+        // classic Mapbox styles: extrude their own building heights for the 3D view
+        try{
+          map.addLayer({id:'krk-buildings-3d',type:'fill-extrusion',source:'composite','source-layer':'building',minzoom:13,
+            filter:['==',['get','extrude'],'true'],layout:{visibility:'none'},
+            paint:{'fill-extrusion-color':C.building,'fill-extrusion-height':['get','height'],
+              'fill-extrusion-base':['get','min_height'],'fill-extrusion-opacity':0.9}});
+        }catch(e){}
       }
-      var top=CFG.provider==='mapbox'?{slot:'top'}:{};
+      // slots exist only in Mapbox Standard
+      var top=CFG.standard?{slot:'top'}:{};
       function layer(def){for(var k in top)def[k]=top[k];map.addLayer(def)}
       var isStop=['==',['get','kind'],'stop'];
       var notStop=['!=',['get','kind'],'stop'];
@@ -206,25 +258,36 @@ export const MAP_HTML = `<!doctype html>
       layer({id:'stops',type:'circle',source:'pts',minzoom:13,filter:isStop,paint:{
         'circle-color':C.stone,'circle-radius':['interpolate',['linear'],['zoom'],13,2.5,17,5],
         'circle-stroke-color':C.ink,'circle-stroke-width':1.5}});
-      layer({id:'pts-circle',type:'circle',source:'pts',filter:notStop,paint:{
+      layer({id:'pts-circle',type:'circle',source:'pts',filter:['all',notStop,['==',['get','icon'],'']],paint:{
         'circle-color':['get','color'],
         'circle-radius':['case',['==',['get','sel'],1],13,['==',['get','kind'],'me'],9,['==',['get','kind'],'lens'],9,['!=',['get','order'],''],11,7],
         'circle-stroke-color':['case',['==',['get','sel'],1],C.ink,['==',['get','kind'],'lens'],C.ink,C.white],
         'circle-stroke-width':['case',['==',['get','sel'],1],3,['==',['get','kind'],'me'],4,['==',['get','kind'],'lens'],3,2]}});
+      var tear=C.pins==='teardrop',hasIcon=['!=',['get','icon'],''];
+      // a ring around the selected icon pin (for teardrops, around its round head)
+      layer({id:'pts-sel',type:'circle',source:'pts',filter:['all',hasIcon,['==',['get','sel'],1]],paint:{
+        'circle-radius':tear?21:22,'circle-color':'rgba(0,0,0,0)','circle-stroke-color':C.ink,'circle-stroke-width':3,
+        'circle-translate':tear?[0,-33]:[0,0]}});
+      layer({id:'pts-icon',type:'symbol',source:'pts',filter:hasIcon,layout:{'icon-image':['get','icon'],
+        'icon-anchor':tear?'bottom':'center','icon-allow-overlap':true,'icon-ignore-placement':true,
+        'icon-size':['case',['==',['get','sel'],1],1.2,1]}});
       layer({id:'pts-order',type:'symbol',source:'pts',filter:['!=',['get','order'],''],layout:{'text-field':['get','order'],
         'text-font':CFG.font,'text-size':11,'text-allow-overlap':true},paint:{'text-color':C.white}});
       layer({id:'pts-label',type:'symbol',source:'pts',minzoom:14.6,filter:['all',notStop,['!=',['get','label'],'']],
-        layout:{'text-field':['get','label'],'text-font':CFG.font,'text-size':11,'text-offset':[0,1.1],'text-anchor':'top',
+        layout:{'text-field':['get','label'],'text-font':CFG.font,'text-size':11,
+          'text-offset':tear?[0,0.4]:C.pins==='badges'?[0,1.5]:[0,1.1],'text-anchor':'top',
           'text-max-width':9,'text-optional':true},
         paint:{'text-color':C.ink,'text-halo-color':C.stone,'text-halo-width':1.6}});
       layer({id:'stops-label',type:'symbol',source:'pts',minzoom:16,filter:isStop,
         layout:{'text-field':['get','label'],'text-font':CFG.font,'text-size':10,'text-offset':[0,0.9],'text-anchor':'top',
           'text-max-width':8,'text-optional':true},
         paint:{'text-color':C.mute,'text-halo-color':C.stone,'text-halo-width':1.4}});
-      map.on('click','pts-circle',function(e){var f=e.features&&e.features[0];
-        if(f&&f.properties.kind!=='me')post({type:'select',id:String(f.properties.id)})});
-      map.on('mouseenter','pts-circle',function(){map.getCanvas().style.cursor='pointer'});
-      map.on('mouseleave','pts-circle',function(){map.getCanvas().style.cursor=''});
+      ['pts-circle','pts-icon'].forEach(function(id){
+        map.on('click',id,function(e){var f=e.features&&e.features[0];
+          if(f&&f.properties.kind!=='me')post({type:'select',id:String(f.properties.id)})});
+        map.on('mouseenter',id,function(){map.getCanvas().style.cursor='pointer'});
+        map.on('mouseleave',id,function(){map.getCanvas().style.cursor=''});
+      });
       // a late load still counts: the app clears its error message on "ready"
       ready=true;clearTimeout(timer);
       if(pending){apply(pending);pending=null}

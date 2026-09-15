@@ -17,7 +17,7 @@ import { DETOUR } from '../src/lib/geo';
 import { formatHours, hoursOn } from '../src/lib/hours';
 import type { Leg } from '../src/lib/legs';
 import { openLink } from '../src/lib/openLink';
-import { paramsToPlan, planToParams, shareableParams } from '../src/lib/planParams';
+import { paramsToPlan, planToParams, shareUrl } from '../src/lib/planParams';
 import { Interest, MAX_PLAN_DAYS, Pace, PlanOptions, buildPlan } from '../src/lib/planner';
 import { realMinutes, shownTotal, walkTotal, walkedEndToEnd } from '../src/lib/planView';
 import { shareLink } from '../src/lib/share';
@@ -185,7 +185,7 @@ export default function PlanScreen() {
     });
   const share = async () => {
     if (!options) return;
-    const url = Linking.createURL('/plan', { queryParams: shareableParams(options) });
+    const url = shareUrl(Linking.createURL('/plan'), options);
     const result = await shareLink('My Kraków walking plan', url);
     const note = result === 'copied' ? 'Link copied.' : result === 'failed' ? `Copy this link: ${url}` : null;
     setShareNote(note);

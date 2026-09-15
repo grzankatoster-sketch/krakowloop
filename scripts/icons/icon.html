@@ -1,0 +1,59 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Grenze+Gotisch:wght@700&display=block">
+<style>
+  html, body { margin: 0; background: transparent; }
+  svg { display: block; width: 1024px; height: 1024px; }
+</style></head>
+<body>
+<!--
+  KrakowLoop app icon variants, drawn in the Vistula dusk palette.
+  ?v=loop|spire|monogram  &mode=icon|foreground|mono
+  icon: full square with ground · foreground: symbol only, inside Android's 66% safe zone · mono: white symbol
+-->
+<svg id="out" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+  const p = new URLSearchParams(location.search);
+  const v = p.get('v') || 'loop';
+  const mode = p.get('mode') || 'icon';
+  const INDIGO = '#1C2550', MIST = '#DFE4EE', GILT = '#E2B84A', GILT_DARK = '#986A0C', PARCHMENT = '#F2E6C4';
+
+  const symbols = {
+    // a walking loop that almost closes, with its start point
+    loop: (c) => `
+      <path d="M 352 700 C 214 610 214 400 352 300 C 488 202 700 236 770 390 C 842 548 742 742 560 772"
+            fill="none" stroke="${c.line}" stroke-width="84" stroke-linecap="round"/>
+      <circle cx="352" cy="700" r="70" fill="${c.dot}"/>
+      <circle cx="560" cy="772" r="30" fill="${c.line}"/>`,
+    // St Mary's two towers: the tall one with its spire and crown, the lower one with its dome
+    spire: (c) => `
+      <circle cx="512" cy="540" r="372" fill="none" stroke="${c.ring}" stroke-width="34" stroke-dasharray="1900 440" transform="rotate(118 512 540)"/>
+      <path d="M 412 860 L 412 520 L 432 500 L 432 400 L 462 370 L 492 210 L 512 150 L 532 210 L 562 370 L 592 400 L 592 500 L 612 520 L 612 860 Z" fill="${c.shape}"/>
+      <path d="M 640 860 L 640 600 Q 640 560 670 540 L 700 520 L 730 540 Q 760 560 760 600 L 760 860 Z" fill="${c.shape}"/>
+      <rect x="380" y="850" width="412" height="30" rx="8" fill="${c.shape}"/>
+      <circle cx="512" cy="132" r="26" fill="${c.crown}"/>
+      <rect x="486" y="600" width="52" height="96" rx="26" fill="${c.window}"/>`,
+    // the blackletter K of the wordmark inside a ring left open like a loop
+    monogram: (c) => `
+      <circle cx="512" cy="512" r="396" fill="none" stroke="${c.ring}" stroke-width="30" stroke-dasharray="2150 340" transform="rotate(100 512 512)"/>
+      <text x="512" y="742" text-anchor="middle" font-family="'Grenze Gotisch', serif" font-weight="700" font-size="640" fill="${c.letter}">K</text>`,
+  };
+
+  const grounds = { loop: INDIGO, spire: MIST, monogram: INDIGO };
+  const colourSets = {
+    loop: { line: GILT, dot: PARCHMENT },
+    spire: { shape: INDIGO, ring: GILT_DARK, crown: GILT_DARK, window: MIST },
+    monogram: { letter: PARCHMENT, ring: GILT },
+  };
+  const white = { line: '#fff', dot: '#fff', shape: '#fff', ring: '#fff', crown: '#fff', window: 'transparent', letter: '#fff' };
+
+  const svg = document.getElementById('out');
+  const colours = mode === 'mono' ? white : colourSets[v];
+  const symbol = symbols[v](colours);
+  const ground = mode === 'icon' ? `<rect width="1024" height="1024" fill="${grounds[v]}"/>` : '';
+  // Android crops adaptive icons to a circle or squircle: keep the symbol inside the middle 66%
+  const inner = mode === 'icon' ? symbol : `<g transform="translate(512 512) scale(0.62) translate(-512 -512)">${symbol}</g>`;
+  svg.innerHTML = ground + inner;
+  document.fonts.ready.then(() => document.body.setAttribute('data-ready', '1'));
+</script>
+</body></html>

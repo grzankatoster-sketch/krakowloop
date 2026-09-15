@@ -29,6 +29,7 @@ const LENS_MARKERS: MapPoint[] = lensPoints.map((l) => ({
   lon: l.lon,
   color: colors.gilt,
   kind: 'lens',
+  glyph: 'lens',
   label: `Time Lens: ${l.name}`,
 }));
 const STOP_MARKERS: MapPoint[] = TRAM_STOPS.map(([name, lat, lon], i) => ({
@@ -106,7 +107,7 @@ export default function MapScreen() {
   );
   const points = useMemo<MapPoint[]>(() => {
     const pts: MapPoint[] = showTrams ? [...STOP_MARKERS] : [];
-    for (const p of visible) pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat], label: p.name });
+    for (const p of visible) pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat], label: p.name, glyph: p.cat });
     pts.push(...LENS_MARKERS);
     if (here) pts.push({ id: ME, lat: here.lat, lon: here.lon, color: colors.vistula, kind: 'me' });
     return pts;

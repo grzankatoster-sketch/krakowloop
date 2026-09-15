@@ -43,7 +43,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
     "test": "jest",
-    "test:e2e": "expo export --platform web --output-dir dist-e2e && playwright test",
+    "test:e2e": "playwright test",
     "check": "npm run typecheck && npm run lint && npm test",
     "data:hours": "node scripts/build-hours.mjs",
     "data:transit": "node scripts/build-transit.mjs",
