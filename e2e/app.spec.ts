@@ -555,6 +555,17 @@ test.describe('open now', () => {
     await context.close();
   });
 
+  test('keyboard focus stays on a place when the clock moves it to another group', async ({ page }) => {
+    await page.clock.install({ time: new Date('2026-10-13T17:59:30+02:00') });
+    await page.goto('/now');
+    const link = page.getByRole('link', { name: 'Open Czartoryski Museum' });
+    await link.focus();
+    await expect(link).toBeFocused();
+    await page.clock.runFor(35_000);
+    await expect(row(page, 'Czartoryski Museum')).toContainText('Closed for the rest of today');
+    await expect(page.getByRole('link', { name: 'Open Czartoryski Museum' })).toBeFocused();
+  });
+
   test('the list moves on by itself when a place closes', async ({ page }) => {
     // open the screen in the middle of the last minute
     await page.clock.install({ time: new Date('2026-10-13T17:59:30+02:00') });

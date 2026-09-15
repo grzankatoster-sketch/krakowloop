@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Chip, Eyebrow, TopBar } from '../src/components/ui';
@@ -12,7 +12,22 @@ import { colors, fonts, space } from '../src/theme';
 
 type Filter = 'all' | 'museum';
 
-function Group({ title, rows, minutes, empty }: { title: string; rows: OpenRow[]; minutes: number; empty: string }) {
+/** DOM id of a place's link on web, so focus can follow it when the clock moves it to another group. */
+const linkId = (placeId: string) => `open-now-${placeId}`;
+
+function Group({
+  title,
+  rows,
+  minutes,
+  empty,
+  onFocusPlace,
+}: {
+  title: string;
+  rows: OpenRow[];
+  minutes: number;
+  empty: string;
+  onFocusPlace: (placeId: string | null) => void;
+}) {
   return (
     <View style={s.group}>
       <Text style={s.h2} accessibilityRole="header">
@@ -22,7 +37,13 @@ function Group({ title, rows, minutes, empty }: { title: string; rows: OpenRow[]
         rows.map((row) => (
           <View key={row.place.id} style={s.row}>
             <Link href={`/place/${row.place.id}`} asChild>
-              <Pressable accessibilityRole="link" accessibilityLabel={`Open ${row.place.name}`}>
+              <Pressable
+                nativeID={linkId(row.place.id)}
+                accessibilityRole="link"
+                accessibilityLabel={`Open ${row.place.name}`}
+                onFocus={() => onFocusPlace(row.place.id)}
+                onBlur={() => onFocusPlace(null)}
+              >
                 <Text style={s.name}>{row.place.name}</Text>
               </Pressable>
             </Link>
@@ -41,6 +62,9 @@ function Group({ title, rows, minutes, empty }: { title: string; rows: OpenRow[]
 export default function OpenNow() {
   const [instant, setInstant] = useState(() => new Date());
   const [filter, setFilter] = useState<Filter>('all');
+  // the place whose link has keyboard focus: a minute tick can move its row to another group, which
+  // remounts the link, so focus is put back on it (web; native screen readers keep their own place)
+  const [focusedPlace, setFocusedPlace] = useState<string | null>(null);
   // The list moves with the clock: refresh on each new minute, and when the app comes back to the
   // front, so a place that has just closed leaves "Open now" without a reload.
   useEffect(() => {
@@ -58,6 +82,11 @@ export default function OpenNow() {
       sub.remove();
     };
   }, []);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || !focusedPlace) return;
+    const el = document.getElementById(linkId(focusedPlace));
+    if (el && document.activeElement !== el) el.focus({ preventScroll: true });
+  }, [instant, focusedPlace]);
   // opening hours are Kraków times, whatever zone the phone is set to
   const now = krakowWallClock(instant);
   const minutes = now.getHours() * 60 + now.getMinutes();
@@ -76,9 +105,9 @@ export default function OpenNow() {
             <Chip label="Everything" active={filter === 'all'} onPress={() => setFilter('all')} />
             <Chip label="Museums" active={filter === 'museum'} onPress={() => setFilter('museum')} />
           </View>
-          <Group title="Open now" rows={groups.open} minutes={minutes} empty="Nothing we know of is open right now." />
-          <Group title="Opens later today" rows={groups.later} minutes={minutes} empty="Nothing else opens later today." />
-          <Group title="Closed" rows={groups.closed} minutes={minutes} empty="Nothing is closed for the day." />
+          <Group title="Open now" rows={groups.open} minutes={minutes} empty="Nothing we know of is open right now." onFocusPlace={setFocusedPlace} />
+          <Group title="Opens later today" rows={groups.later} minutes={minutes} empty="Nothing else opens later today." onFocusPlace={setFocusedPlace} />
+          <Group title="Closed" rows={groups.closed} minutes={minutes} empty="Nothing is closed for the day." onFocusPlace={setFocusedPlace} />
           <Text style={s.note}>
             Hours from OpenStreetMap (exported {HOURS_EXPORTED}), without public holidays or last entry times.
             {groups.unknown ? ` We have no hours for ${groups.unknown} more places; their place pages link to the official websites.` : ''}
