@@ -72,12 +72,26 @@ interface WalkPreview {
   source: 'mapbox' | 'estimate';
 }
 
+/** Moves keyboard and screen reader focus to an element: DOM focus on web, accessibility focus natively. */
+function moveFocus(el: View | Text | null) {
+  if (!el) return;
+  if (Platform.OS === 'web') {
+    const node = el as unknown as HTMLElement;
+    if (!node.hasAttribute('tabindex')) node.setAttribute('tabindex', '-1');
+    node.focus({ preventScroll: true });
+  } else {
+    const tag = findNodeHandle(el);
+    if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+  }
+}
+
 function MapButton({ label, active, onPress, hint }: { label: string; active?: boolean; onPress: () => void; hint: string }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={hint}
-      accessibilityState={active === undefined ? undefined : { selected: active }}
+      // the visible label stays the name, so voice control can use what it sees; the hint explains it
+      accessibilityHint={hint}
+      aria-pressed={active}
       onPress={onPress}
       hitSlop={6}
       style={({ pressed }) => [s.mapButton, active && s.mapButtonOn, pressed && { opacity: 0.8 }]}
@@ -106,20 +120,15 @@ export default function MapScreen() {
   /** bumped whenever a pending walking route stops being wanted (another place, card closed) */
   const walkRequest = useRef(0);
   const cardTitle = useRef<Text>(null);
+  const viewSwitch = useRef<View>(null);
   const [cardFocus, setCardFocus] = useState(0);
+  const [switchFocus, setSwitchFocus] = useState(0);
   useEffect(() => {
-    if (!cardFocus) return;
-    const el = cardTitle.current;
-    if (!el) return;
-    if (Platform.OS === 'web') {
-      const node = el as unknown as HTMLElement;
-      node.setAttribute('tabindex', '-1');
-      node.focus({ preventScroll: true });
-    } else {
-      const tag = findNodeHandle(el);
-      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
-    }
+    if (cardFocus) moveFocus(cardTitle.current);
   }, [cardFocus]);
+  useEffect(() => {
+    if (switchFocus) moveFocus(viewSwitch.current);
+  }, [switchFocus]);
   const [today] = useState(() => new Date());
   const me = useMyLocation();
 
@@ -212,6 +221,8 @@ export default function MapScreen() {
     setSelectedId(null);
     setWalk(null);
     setWalkNote(null);
+    // the focused Close button goes away with the card: hand focus on to the list switch
+    setSwitchFocus((k) => k + 1);
   };
 
   const walkHere = async (p: Place) => {
@@ -261,6 +272,7 @@ export default function MapScreen() {
         title="Map"
         right={
           <Pressable
+            ref={viewSwitch}
             accessibilityRole="button"
             onPress={() => setView(listOpen ? 'map' : 'list')}
             hitSlop={8}
@@ -288,7 +300,10 @@ export default function MapScreen() {
           <Chip key={c} label={CATEGORY_LABEL[c]} active={active.has(c)} color={CATEGORY_COLOR[c]} onPress={() => toggle(c)} />
         ))}
       </ScrollView>
-      {locationNote ? <Text style={s.locNote}>{locationNote}</Text> : null}
+      {/* always mounted, so screen readers announce each new message about the traveller's location */}
+      <Text style={locationNote ? s.locNote : s.liveEmpty} accessibilityLiveRegion="polite">
+        {locationNote ?? ''}
+      </Text>
 
       <View style={s.mapWrap}>
         {/* the map stays mounted under the list (no reload), but is hidden from screen readers there */}
@@ -322,13 +337,17 @@ export default function MapScreen() {
             </View>
           )}
           {mapError ? (
-            <View style={s.error}>
+            <View style={s.error} accessibilityRole="alert">
               <Text style={s.errorTitle}>The map didn’t load</Text>
               <Text style={s.errorText}>{mapError} Check your internet connection and try again.</Text>
               <Button label="Try again" onPress={retry} />
             </View>
           ) : null}
-          {mapWarning && !mapError ? <Text style={s.warning}>Some map details didn’t load. Check your connection.</Text> : null}
+          {mapWarning && !mapError ? (
+            <Text style={s.warning} accessibilityRole="alert">
+              Some map details didn’t load. Check your connection.
+            </Text>
+          ) : null}
         </View>
 
         {listOpen ? (
@@ -340,6 +359,10 @@ export default function MapScreen() {
             ListHeaderComponent={
               <View style={s.briefWrap}>
                 <CityBrief />
+                {/* stays mounted while the traveller types, so each new count is announced */}
+                <Text style={s.count} accessibilityLiveRegion="polite">
+                  {rows.length === 1 ? '1 place' : `${rows.length} places`}
+                </Text>
               </View>
             }
             ListEmptyComponent={<Text style={s.hint}>Nothing matches. Try another word or turn on more categories.</Text>}
@@ -410,6 +433,7 @@ export default function MapScreen() {
             <Button
               label={details ? 'Less' : 'More'}
               kind="quiet"
+              expanded={details}
               onPress={() => setDetails((v) => !v)}
               style={s.actionSide}
             />
@@ -560,4 +584,6 @@ const s = StyleSheet.create({
   hours: { fontFamily: fonts.body, fontSize: 13, color: colors.mute },
   note: { fontFamily: fonts.body, fontSize: 12, color: colors.mute },
   hint: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, padding: space.m, textAlign: 'center' },
+  count: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.mute, marginTop: space.s },
+  liveEmpty: { height: 0 },
 });

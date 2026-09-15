@@ -43,7 +43,8 @@ export function Chip({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ selected: active }}
+      // a toggle: buttons carry "pressed", not "selected", so screen readers announce the filter state
+      aria-pressed={active}
       onPress={onPress}
       style={({ pressed }) => [s.chip, active && { backgroundColor: fill, borderColor: fill }, pressed && s.pressed]}
     >
@@ -67,17 +68,21 @@ export function Button({
   kind = 'primary',
   style,
   accessibilityLabel,
+  expanded,
 }: {
   label: string;
   onPress: () => void;
   kind?: 'primary' | 'quiet';
   style?: StyleProp<ViewStyle>;
   accessibilityLabel?: string;
+  /** for a button that shows and hides a section: whether it is shown */
+  expanded?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel ?? SYMBOL_NAMES[label]}
+      aria-expanded={expanded}
       onPress={onPress}
       style={({ pressed }) => [s.button, kind === 'quiet' && s.buttonQuiet, pressed && s.pressed, style]}
     >

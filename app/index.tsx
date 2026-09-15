@@ -1,5 +1,5 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Link, useRouter, Href } from 'expo-router';
+import { Link, Href } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, space } from '../src/theme';
 import { Eyebrow } from '../src/components/ui';
@@ -11,7 +11,6 @@ const DOORS: { href: Href; title: string; line: string }[] = [
 ];
 
 export default function Home() {
-  const router = useRouter();
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={s.scroll}>
@@ -26,15 +25,15 @@ export default function Home() {
 
           <View style={s.doors}>
             {DOORS.map((d, i) => (
-              <Pressable
-                key={d.title}
-                accessibilityRole="button"
-                onPress={() => router.push(d.href)}
-                style={({ pressed }) => [s.door, i === 0 && s.doorMain, pressed && { opacity: 0.85 }]}
-              >
-                <Text style={[s.doorTitle, i === 0 && s.doorTitleMain]}>{d.title}</Text>
-                <Text style={[s.doorLine, i === 0 && s.doorLineMain]}>{d.line}</Text>
-              </Pressable>
+              <Link key={d.title} href={d.href} asChild>
+                <Pressable
+                  accessibilityRole="link"
+                  style={({ pressed }) => [s.door, i === 0 && s.doorMain, pressed && { opacity: 0.85 }]}
+                >
+                  <Text style={[s.doorTitle, i === 0 && s.doorTitleMain]}>{d.title}</Text>
+                  <Text style={[s.doorLine, i === 0 && s.doorLineMain]}>{d.line}</Text>
+                </Pressable>
+              </Link>
             ))}
           </View>
 

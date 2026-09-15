@@ -100,8 +100,8 @@ test.describe('home', () => {
   test('starts with the three doors and opens the map', async ({ page }) => {
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'KrakowLoop' })).toBeVisible();
-    await expect(page.getByRole('button', { name: /Open the map|Plan my days|Time Lens/ })).toHaveCount(3);
-    await page.getByRole('button', { name: /Open the map/ }).click();
+    await expect(page.getByRole('link', { name: /Open the map|Plan my days|Time Lens/ })).toHaveCount(3);
+    await page.getByRole('link', { name: /Open the map/ }).click();
     await expect(page).toHaveURL(/\/map$/);
   });
 
@@ -164,7 +164,7 @@ test.describe('map', () => {
     await page.getByRole('button', { name: 'Show list' }).click();
     await expect(page.getByRole('button', { name: /Wawel Royal Castle/ })).toBeVisible();
     await expect(page.locator('iframe[title="Map"]')).toHaveAttribute('tabindex', '-1');
-    await expect(page.getByRole('button', { name: 'Show where I am' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Near me', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Show map' }).click();
     await expect(page.locator('iframe[title="Map"]')).toHaveAttribute('tabindex', '0');
   });
@@ -199,6 +199,32 @@ test.describe('map', () => {
     // the route starts at the traveller and ends at the Barbican
     expect(requests[0]).toContain('/walking/19.93730,50.06170;19.94163,50.06546');
     await context.close();
+  });
+
+  test('map controls say what they are and what state they are in', async ({ page }) => {
+    await page.goto('/map');
+    // filters are toggles
+    const sights = page.getByRole('button', { name: 'Sights', exact: true });
+    await expect(sights).toHaveAttribute('aria-pressed', 'true');
+    await sights.click();
+    await expect(sights).toHaveAttribute('aria-pressed', 'false');
+    await sights.click();
+    // the visible label is the accessible name
+    await expect(page.getByRole('button', { name: 'Trams', exact: true })).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.getByRole('button', { name: 'Near me', exact: true })).toBeVisible();
+    // the list announces how many places match
+    await page.getByRole('button', { name: 'Show list' }).click();
+    await page.getByLabel('Search places').fill('czartoryski');
+    await expect(page.getByText('1 place', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: /Czartoryski Museum/ }).click();
+    // More shows and hides the details
+    const more = page.getByRole('button', { name: 'More', exact: true });
+    await expect(more).toHaveAttribute('aria-expanded', 'false');
+    await more.click();
+    await expect(page.getByRole('button', { name: 'Less', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    // closing the card hands focus on instead of dropping it
+    await page.getByRole('button', { name: 'Close Czartoryski Museum' }).click();
+    await expect(page.getByRole('button', { name: 'Show list' })).toBeFocused();
   });
 
   test('keyboard users are pointed to the list, and a place picked there takes the focus', async ({ page }) => {

@@ -152,7 +152,13 @@ function PlaceDetails({ place }: { place: Place }) {
           {week ? (
             <>
               {week.map((intervals, i) => (
-                <View key={DAYS[i]} style={[s.dayRow, i === todayIndex && s.today]}>
+                // one named group per day, so a screen reader reads the day with its hours
+                <View
+                  key={DAYS[i]}
+                  role="group"
+                  aria-label={`${DAYS[i]}${i === todayIndex ? ', today' : ''}: ${formatHours(intervals)}`}
+                  style={[s.dayRow, i === todayIndex && s.today]}
+                >
                   <Text style={[s.dayName, i === todayIndex && s.todayText]}>
                     {DAYS[i]}
                     {i === todayIndex ? ' · today' : ''}
