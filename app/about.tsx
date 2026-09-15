@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
-import { LayoutChangeEvent, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AccessibilityInfo, findNodeHandle, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { TopBar } from '../src/components/ui';
 import { MAP_PROVIDER } from '../src/components/mapHtml';
 import { AFFILIATE_NOTE } from '../src/config/affiliates';
+import { LANDMARKS_3D_CREDIT } from '../src/data/landmarks3d';
 import { lensPoints } from '../src/data/lens';
 import { PLACE_MEDIA } from '../src/data/placeMedia';
 import { placeById } from '../src/data/places';
@@ -48,14 +49,17 @@ function Section({
   title,
   children,
   onLayout,
+  ref,
 }: {
   title: string;
   children: React.ReactNode;
   onLayout: (e: LayoutChangeEvent) => void;
+  /** the section heading, which takes focus after a jump */
+  ref: React.Ref<Text>;
 }) {
   return (
     <View style={s.section} onLayout={onLayout}>
-      <Text style={s.h2} accessibilityRole="header">
+      <Text ref={ref} style={s.h2} accessibilityRole="header">
         {title}
       </Text>
       {children}
@@ -78,7 +82,9 @@ function CreditGroup({ title, credits, initiallyOpen }: { title: string; credits
     <View style={s.group}>
       <Pressable
         accessibilityRole="button"
-        accessibilityState={{ expanded: open }}
+        // aria-expanded, not accessibilityState: react-native-web leaves out a false `expanded`,
+        // so a closed group would never be announced as collapsed
+        aria-expanded={open}
         onPress={() => setOpen((v) => !v)}
         style={({ pressed }) => [s.groupHead, pressed && { opacity: 0.8 }]}
       >
@@ -110,7 +116,27 @@ export default function About() {
     const y = e.nativeEvent.layout.y;
     setOffsets((o) => (o[key] === y ? o : { ...o, [key]: y }));
   };
-  const jump = (key: SectionKey) => scroll.current?.scrollTo({ y: Math.max(0, (offsets[key] ?? 0) - space.s), animated: true });
+  // one ref per heading, passed straight to `ref`: the React Compiler lint only reads them as refs that way
+  const privacyHeading = useRef<Text>(null);
+  const linksHeading = useRef<Text>(null);
+  const accuracyHeading = useRef<Text>(null);
+  const dataHeading = useRef<Text>(null);
+  const imagesHeading = useRef<Text>(null);
+  // Scrolling alone leaves keyboard and screen reader users on the button: move their focus to the section too.
+  const jump = (key: SectionKey) => {
+    scroll.current?.scrollTo({ y: Math.max(0, (offsets[key] ?? 0) - space.s), animated: true });
+    const headings = { privacy: privacyHeading, links: linksHeading, accuracy: accuracyHeading, data: dataHeading, images: imagesHeading };
+    const el = headings[key].current;
+    if (!el) return;
+    if (Platform.OS === 'web') {
+      const node = el as unknown as HTMLElement;
+      node.setAttribute('tabindex', '-1');
+      node.focus({ preventScroll: true });
+    } else {
+      const tag = findNodeHandle(el);
+      if (tag) AccessibilityInfo.setAccessibilityFocus(tag);
+    }
+  };
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
@@ -131,7 +157,7 @@ export default function About() {
             ))}
           </View>
 
-          <Section title="Privacy" onLayout={remember('privacy')}>
+          <Section title="Privacy" onLayout={remember('privacy')} ref={privacyHeading}>
             <Text style={s.p}>KrakowLoop has no accounts and no analytics. It doesn’t collect your name, email or history.</Text>
             <Text style={s.p}>The camera picture for Time Lens stays on your phone. Nothing is recorded or uploaded.</Text>
             <Text style={s.p}>
@@ -147,14 +173,14 @@ export default function About() {
             </Text>
           </Section>
 
-          <Section title="Booking links" onLayout={remember('links')}>
+          <Section title="Booking links" onLayout={remember('links')} ref={linksHeading}>
             <Text style={s.p}>
               Links marked “affiliate link” may earn us a commission at no extra cost to you. {AFFILIATE_NOTE}. Auschwitz-Birkenau
               entry cards are only linked to the official website, without any commission.
             </Text>
           </Section>
 
-          <Section title="How accurate is it" onLayout={remember('accuracy')}>
+          <Section title="How accurate is it" onLayout={remember('accuracy')} ref={accuracyHeading}>
             <Text style={s.p}>
               Opening hours come from OpenStreetMap (exported {HOURS_EXPORTED}) and don’t include public holidays. Tram
               suggestions use the ZTP Kraków timetable (feed {TRANSIT_FEED_VERSION}) without live delays. Day-trip travel
@@ -162,19 +188,20 @@ export default function About() {
             </Text>
           </Section>
 
-          <Section title="Data sources" onLayout={remember('data')}>
+          <Section title="Data sources" onLayout={remember('data')} ref={dataHeading}>
             <Text style={s.p}>Place locations and opening hours: © OpenStreetMap contributors, ODbL.</Text>
             <Link label="openstreetmap.org/copyright" url="https://www.openstreetmap.org/copyright" />
             <Text style={s.p}>Tram timetable: Zarząd Transportu Publicznego w Krakowie, GTFS.</Text>
             <Link label="gtfs.ztp.krakow.pl" url="https://gtfs.ztp.krakow.pl/" />
             <Text style={s.p}>Place photos and official websites: Wikimedia Commons and Wikidata.</Text>
+            {MAP_PROVIDER === 'mapbox' ? <Text style={s.p}>{LANDMARKS_3D_CREDIT}.</Text> : null}
             <Text style={s.p}>
               Map: {MAP_PROVIDER === 'mapbox' ? '© Mapbox, © OpenStreetMap' : 'OpenFreeMap, © OpenMapTiles, © OpenStreetMap'}.
               {WALKING_ROUTES_ENABLED ? ' Walking routes: Mapbox Directions.' : ''}
             </Text>
           </Section>
 
-          <Section title="Images" onLayout={remember('images')}>
+          <Section title="Images" onLayout={remember('images')} ref={imagesHeading}>
             <CreditGroup title="Time Lens images" credits={LENS_CREDITS} initiallyOpen />
             <CreditGroup title="Place photos" credits={PLACE_CREDITS} initiallyOpen={false} />
           </Section>

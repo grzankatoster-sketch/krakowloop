@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Image, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CityBrief } from '../src/components/CityBrief';
@@ -378,14 +378,11 @@ export default function PlanScreen() {
                       {photo?.image ? (
                         <Image source={photo.image} style={s.stopPhoto} resizeMode="cover" accessibilityLabel={`Photo of ${st.place.name}`} />
                       ) : null}
-                      <Pressable
-                        accessibilityRole="link"
-                        accessibilityLabel={`Open ${st.place.name}`}
-                        onPress={() => router.push(`/place/${st.place.id}`)}
-                        hitSlop={4}
-                      >
-                        <Text style={[s.stopName, s.stopNameLink]}>{st.place.name}</Text>
-                      </Pressable>
+                      <Link href={`/place/${st.place.id}`} asChild>
+                        <Pressable accessibilityRole="link" accessibilityLabel={`Open ${st.place.name}`} hitSlop={4}>
+                          <Text style={[s.stopName, s.stopNameLink]}>{st.place.name}</Text>
+                        </Pressable>
+                      </Link>
                       <Text style={s.stopBlurb}>{st.place.blurb}</Text>
                       <Eyebrow style={{ marginTop: 4 }}>
                         About {fmt(st.place.minutes)}

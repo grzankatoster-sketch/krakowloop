@@ -1,5 +1,5 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, Eyebrow, TopBar } from '../src/components/ui';
 import { AFFILIATE_NOTE } from '../src/config/affiliates';
@@ -40,13 +40,11 @@ export default function Trips() {
                   <Eyebrow>
                     About {fmt(travel)} each way · {fmt(place.minutes)} there
                   </Eyebrow>
-                  <Pressable
-                    accessibilityRole="link"
-                    accessibilityLabel={`Open ${place.name}`}
-                    onPress={() => router.push(`/place/${place.id}`)}
-                  >
-                    <Text style={s.name}>{place.name}</Text>
-                  </Pressable>
+                  <Link href={`/place/${place.id}`} asChild>
+                    <Pressable accessibilityRole="link" accessibilityLabel={`Open ${place.name}`}>
+                      <Text style={s.name}>{place.name}</Text>
+                    </Pressable>
+                  </Link>
                   <Text style={s.blurb}>{place.blurb}</Text>
                   <View style={s.actions}>
                     {place.booking ? (

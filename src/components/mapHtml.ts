@@ -2,6 +2,7 @@ import { CITY } from '../config/city';
 import { MAPBOX_TOKEN } from '../config/mapbox';
 import { MAP_LOOK_CHOICE } from '../config/mapLook';
 import { GLYPH_PATHS, Glyph } from '../data/categoryGlyph';
+import { LANDMARKS_3D } from '../data/landmarks3d';
 import { colors } from '../theme';
 
 export interface MapPoint {
@@ -74,6 +75,8 @@ const config = MAPBOX_TOKEN
       theme: mapboxStyle.theme ?? 'default',
       token: MAPBOX_TOKEN,
       font: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+      // GUGiK landmark models for the 3D view (Mapbox only: MapLibre has no model layer)
+      models: LANDMARKS_3D.map((l) => ({ id: l.id, position: [l.lon, l.lat] })),
     }
   : {
       provider: 'openfreemap',
@@ -87,6 +90,7 @@ const config = MAPBOX_TOKEN
       theme: 'default',
       token: null,
       font: ['Noto Sans Bold'],
+      models: [] as { id: string; position: number[] }[],
     };
 
 const palette = {
@@ -118,12 +122,15 @@ export const MAP_HTML = `<!doctype html>
   var map=null,lib=null,ready=false,failed=false,warned=false,lastError='',pending=null;
   var lastFocus=null,lastFit=null,threeD=false;
   // Read-only state for the end-to-end tests: whether the style loaded, how many points were
-  // drawn, and where a coordinate sits on screen (to tap a real pin). Changes nothing on the map.
-  var debug={ready:false,points:0,
+  // drawn, how long the drawn route is, and where a coordinate sits on screen (to tap a real pin).
+  // Changes nothing on the map.
+  var debug={ready:false,points:0,route:0,models:0,
     project:function(lon,lat){if(!map)return null;var p=map.project([lon,lat]);return{x:p.x,y:p.y}},
     hit:function(x,y){if(!map||!ready)return[];
       return map.queryRenderedFeatures([x,y],{layers:['pts-icon','pts-circle']}).map(function(f){return String(f.properties.id)})},
     // ids of the pins actually drawn in the current view (not just the data handed to the map)
+    // route line pieces actually drawn in the current view
+    routeDrawn:function(){if(!map||!ready)return 0;return map.queryRenderedFeatures({layers:['route-line']}).length},
     rendered:function(){if(!map||!ready)return[];var seen={};
       map.queryRenderedFeatures({layers:['pts-icon','pts-circle']}).forEach(function(f){seen[String(f.properties.id)]=1});
       return Object.keys(seen)}};
@@ -183,7 +190,7 @@ export const MAP_HTML = `<!doctype html>
   function apply(d){
     if(!ready){pending=d;return}
     map.getSource('pts').setData(fc(d));debug.points=d.points.length;
-    map.getSource('route').setData(line(d));
+    var drawn=line(d);map.getSource('route').setData(drawn);debug.route=drawn.geometry.coordinates.length;
     var fitted=false;
     if(d.fit){fitTo(d,'route');fitted=true}
     if(d.fitKey!==null&&d.fitKey!==lastFit){
@@ -199,7 +206,8 @@ export const MAP_HTML = `<!doctype html>
     }
     if(d.threeD!==threeD){
       threeD=d.threeD;
-      if(map.getLayer('krk-buildings-3d'))map.setLayoutProperty('krk-buildings-3d','visibility',threeD?'visible':'none');
+      ['krk-buildings-3d','krk-models'].forEach(function(id){
+        if(map.getLayer(id))map.setLayoutProperty(id,'visibility',threeD?'visible':'none')});
       cam.pitch=threeD?58:0;cam.bearing=threeD?-20:0;
       if(threeD&&!fitted)cam.zoom=Math.max(cam.zoom||map.getZoom(),15.6);
       move=true;
@@ -252,6 +260,18 @@ export const MAP_HTML = `<!doctype html>
             filter:['==',['get','extrude'],'true'],layout:{visibility:'none'},
             paint:{'fill-extrusion-color':C.building,'fill-extrusion-height':['get','height'],
               'fill-extrusion-base':['get','min_height'],'fill-extrusion-opacity':0.9}});
+        }catch(e){}
+      }
+      // Landmark models, hidden until the 3D view. They are files of the web app (public/models), so a
+      // document without a web origin (the native WebView) has nowhere to load them from.
+      // (a blob: document keeps the http(s) origin of the page that made it)
+      if(CFG.models.length&&/^https?:\\/\\//.test(location.origin)){
+        try{
+          var specs={};
+          CFG.models.forEach(function(m){specs[m.id]={uri:location.origin+'/models/'+m.id+'.glb',position:m.position,orientation:[0,0,0]}});
+          map.addSource('krk-models',{type:'model',models:specs});
+          map.addLayer({id:'krk-models',type:'model',source:'krk-models',layout:{visibility:'none'},paint:{'model-opacity':1}});
+          debug.models=CFG.models.length;
         }catch(e){}
       }
       // slots exist only in Mapbox Standard

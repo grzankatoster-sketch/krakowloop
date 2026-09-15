@@ -1,5 +1,5 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter, Href } from 'expo-router';
+import { Link, useRouter, Href } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, space } from '../src/theme';
 import { Eyebrow } from '../src/components/ui';
@@ -38,9 +38,11 @@ export default function Home() {
             ))}
           </View>
 
-          <Pressable accessibilityRole="link" onPress={() => router.push('/trips')} hitSlop={8} style={s.tripsLink}>
-            <Text style={s.tripsLinkText}>Day trips from Kraków</Text>
-          </Pressable>
+          <Link href="/trips" asChild>
+            <Pressable accessibilityRole="link" hitSlop={8} style={s.tripsLink}>
+              <Text style={s.tripsLinkText}>Day trips from Kraków</Text>
+            </Pressable>
+          </Link>
 
           <View style={s.story}>
             <Image
@@ -59,9 +61,11 @@ export default function Home() {
 
           <View style={s.footer}>
             <Text style={s.foot}>Map data © OpenStreetMap contributors. Historic images: public domain, via Wikimedia Commons.</Text>
-            <Pressable accessibilityRole="link" onPress={() => router.push('/about')} hitSlop={8}>
-              <Text style={s.footLink}>About, sources and privacy</Text>
-            </Pressable>
+            <Link href="/about" asChild>
+              <Pressable accessibilityRole="link" hitSlop={8}>
+                <Text style={s.footLink}>About, sources and privacy</Text>
+              </Pressable>
+            </Link>
           </View>
         </View>
       </ScrollView>

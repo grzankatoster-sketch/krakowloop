@@ -17,19 +17,42 @@ const HAS_MAPBOX_TOKEN = (() => {
 type MapDebug = {
   ready: boolean;
   points: number;
+  route: number;
+  models: number;
+  routeDrawn: () => number;
   project: (lon: number, lat: number) => { x: number; y: number } | null;
   hit: (x: number, y: number) => string[];
   rendered: () => string[];
 };
 
-/** State the map document exposes for tests (window.__krk in mapHtml.ts). */
-async function mapState(page: Page): Promise<{ ready: boolean; points: number }> {
+/** State the map document exposes for tests (window.__krk in mapHtml.ts); route = drawn route vertices. */
+async function mapState(page: Page): Promise<{ ready: boolean; points: number; route: number }> {
   const frame = page.frames().find((f) => f.url().startsWith('blob:'));
-  if (!frame) return { ready: false, points: 0 };
+  if (!frame) return { ready: false, points: 0, route: 0 };
   return frame.evaluate(() => {
     const k = (window as unknown as { __krk?: MapDebug }).__krk;
-    return { ready: !!k?.ready, points: k?.points ?? 0 };
+    return { ready: !!k?.ready, points: k?.points ?? 0, route: k?.route ?? 0 };
   });
+}
+
+/**
+ * Waits until the ready map shows a route line on screen (true), or has neither route data nor a
+ * drawn line (false). A missing or unready map never counts as "no route".
+ */
+async function expectRouteLine(page: Page, drawn: boolean) {
+  const look = expect.poll(
+    async () => {
+      const frame = page.frames().find((f) => f.url().startsWith('blob:'));
+      if (!frame) return 'no map';
+      return frame.evaluate(() => {
+        const k = (window as unknown as { __krk?: MapDebug }).__krk;
+        if (!k?.ready) return 'no map';
+        return k.route > 1 && k.routeDrawn() > 0 ? 'line' : k.route === 0 && k.routeDrawn() === 0 ? 'none' : 'partial';
+      });
+    },
+    { timeout: 15_000 },
+  );
+  await look.toBe(drawn ? 'line' : 'none');
 }
 
 /** Ids of the pins the map has actually drawn in view (not the data it was given). */
@@ -178,13 +201,51 @@ test.describe('map', () => {
     await context.close();
   });
 
+  test('the 3D view loads the landmark models', async ({ page }) => {
+    test.skip(!HAS_MAPBOX_TOKEN, 'the models need Mapbox: MapLibre has no model layer');
+    const glb: string[] = [];
+    page.on('response', (r) => {
+      if (/\/models\/[\w-]+\.glb$/.test(r.url()) && r.ok()) glb.push(r.url());
+    });
+    await page.goto('/map');
+    await expect.poll(async () => (await mapState(page)).ready, { timeout: 30_000 }).toBe(true);
+    const frame = page.frames().find((f) => f.url().startsWith('blob:'))!;
+    expect(await frame.evaluate(() => (window as unknown as { __krk: MapDebug }).__krk.models)).toBe(5);
+    await page.getByRole('button', { name: /3D/ }).first().click();
+    // the files are fetched once the layer is shown and the camera is close enough
+    await expect.poll(() => new Set(glb).size, { timeout: 30_000 }).toBeGreaterThan(0);
+  });
+
+  test('a failed retry of walk here removes the route line from the map', async ({ browser }) => {
+    test.skip(!HAS_MAPBOX_TOKEN, 'needs a Mapbox token in .env: without one the app never asks for a route');
+    const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
+    const page = await context.newPage();
+    await answerDirections(page);
+    await openPlaceFromList(page, /Barbican/);
+    await page.getByRole('button', { name: 'Walk here' }).click();
+    await expect(page.getByText('10 min walk · 850 m', { exact: true })).toBeVisible({ timeout: 30_000 });
+    await expectRouteLine(page, true);
+    await context.clearPermissions();
+    await page.getByRole('button', { name: 'Walk here' }).click();
+    await expect(page.getByText(/Location access|Your location could not be found/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('10 min walk · 850 m', { exact: true })).toHaveCount(0);
+    await expectRouteLine(page, false);
+    await context.close();
+  });
+
   test('walk here falls back to an estimate when routing fails', async ({ browser }) => {
     const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
     const page = await context.newPage();
-    await page.route(DIRECTIONS, (route) => route.abort());
+    let aborted = 0;
+    await page.route(DIRECTIONS, (route) => {
+      aborted += 1;
+      return route.abort();
+    });
     await openPlaceFromList(page, /Barbican/);
     await page.getByRole('button', { name: 'Walk here' }).click();
     await expect(page.getByText(/\d+ min walk · .+ \(estimate\)/)).toBeVisible({ timeout: 30_000 });
+    // with a token the estimate must come from the failed request, not from never asking
+    if (HAS_MAPBOX_TOKEN) expect(aborted).toBe(1);
     await context.close();
   });
 
@@ -326,21 +387,28 @@ test.describe('place page', () => {
     await page.getByRole('button', { name: 'Walk here' }).click();
     await expect(page.getByText('10 min walk · 850 m', { exact: true })).toBeVisible({ timeout: 30_000 });
     expect(requests[0]).toContain('/walking/19.93730,50.06170;19.94163,50.06546');
+    await expectRouteLine(page, true);
     // location access is taken away and the traveller tries again: the old route must not stay
     await context.clearPermissions();
     await page.getByRole('button', { name: 'Walk here' }).click();
     await expect(page.getByText(/Location access|Your location could not be found/).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('10 min walk · 850 m', { exact: true })).toHaveCount(0);
+    await expectRouteLine(page, false);
     await context.close();
   });
 
   test('walk here on the place page falls back to an estimate when routing fails', async ({ browser }) => {
     const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
     const page = await context.newPage();
-    await page.route(DIRECTIONS, (route) => route.abort());
+    let aborted = 0;
+    await page.route(DIRECTIONS, (route) => {
+      aborted += 1;
+      return route.abort();
+    });
     await page.goto('/place/barbican');
     await page.getByRole('button', { name: 'Walk here' }).click();
     await expect(page.getByText(/\d+ min walk · .+ \(estimate\)/)).toBeVisible({ timeout: 30_000 });
+    if (HAS_MAPBOX_TOKEN) expect(aborted).toBe(1);
     await context.close();
   });
 
@@ -380,9 +448,30 @@ test.describe('day trips', () => {
   });
 
   test('the memorial is linked only to its official website', async ({ page }) => {
+    // record what the page asks the browser to open instead of leaving the test
+    await page.addInitScript(() => {
+      const opened: string[] = [];
+      (window as unknown as { __opened: string[] }).__opened = opened;
+      window.open = ((url?: string | URL) => {
+        opened.push(String(url));
+        return null;
+      }) as typeof window.open;
+    });
     await page.goto('/trips');
-    await expect(page.getByRole('link', { name: 'Open Auschwitz-Birkenau Memorial' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Reserve on the official website' })).toBeVisible();
+    const name = page.getByRole('link', { name: 'Open Auschwitz-Birkenau Memorial' });
+    await expect(name).toBeVisible();
+    await expect(name).toHaveAttribute('href', '/place/auschwitz');
+    // the smallest block holding both the name and its button is the memorial's card
+    const card = page
+      .locator('div')
+      .filter({ has: name })
+      .filter({ has: page.getByRole('button', { name: 'Reserve on the official website' }) })
+      .last();
+    await expect(card).not.toContainText('Affiliate link');
+    await card.getByRole('button', { name: 'Reserve on the official website' }).click();
+    await expect
+      .poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened))
+      .toEqual([expect.stringMatching(/^https:\/\/visit\.auschwitz\.org(\/|$)/)]);
   });
 });
 
@@ -390,11 +479,19 @@ test.describe('about', () => {
   test('jumps to a section and opens the place photo credits on demand', async ({ page }) => {
     await page.goto('/about');
     await page.getByRole('button', { name: 'Go to Images' }).click();
+    // focus follows the jump, so the keyboard and screen readers carry on from the section
+    await expect(page.getByRole('heading', { name: 'Images' })).toBeFocused();
     const placePhotos = page.getByRole('button', { name: /Place photos \(\d+\)/ });
     await expect(placePhotos).toBeInViewport();
+    await expect(placePhotos).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByText('Barbican', { exact: true })).toHaveCount(0);
     await placePhotos.click();
+    await expect(placePhotos).toHaveAttribute('aria-expanded', 'true');
     await expect(page.getByText('Barbican', { exact: true })).toBeVisible();
+    await placePhotos.click();
+    await expect(placePhotos).toHaveAttribute('aria-expanded', 'false');
+    // closed credits leave the page, and with them the keyboard order
+    await expect(page.getByText('Barbican', { exact: true })).toHaveCount(0);
   });
 });
 

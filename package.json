@@ -26,8 +26,10 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",
+    "@types/earcut": "^2.1.4",
     "@types/jest": "29.5.14",
     "@types/react": "~19.2.2",
+    "earcut": "^2.2.4",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
     "jest": "~29.7.0",
