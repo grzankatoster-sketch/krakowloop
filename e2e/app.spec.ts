@@ -327,6 +327,35 @@ test.describe('place page', () => {
   });
 });
 
+test.describe('day trips', () => {
+  test('lists trips with road time and opens their place page', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('link', { name: 'Day trips from Kraków' }).click();
+    await expect(page).toHaveURL(/\/trips$/);
+    await expect(page.getByText(/^About \d+( h)?( \d+)? min each way|^About \d+ h each way/).first()).toBeVisible();
+    await page.getByRole('link', { name: 'Open Wieliczka Salt Mine' }).click();
+    await expect(page).toHaveURL(/\/place\/wieliczka$/);
+  });
+
+  test('the memorial is linked only to its official website', async ({ page }) => {
+    await page.goto('/trips');
+    await expect(page.getByRole('link', { name: 'Open Auschwitz-Birkenau Memorial' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Reserve on the official website' })).toBeVisible();
+  });
+});
+
+test.describe('about', () => {
+  test('jumps to a section and opens the place photo credits on demand', async ({ page }) => {
+    await page.goto('/about');
+    await page.getByRole('button', { name: 'Go to Images' }).click();
+    const placePhotos = page.getByRole('button', { name: /Place photos \(\d+\)/ });
+    await expect(placePhotos).toBeInViewport();
+    await expect(page.getByText('Barbican', { exact: true })).toHaveCount(0);
+    await placePhotos.click();
+    await expect(page.getByText('Barbican', { exact: true })).toBeVisible();
+  });
+});
+
 test.describe('Time Lens', () => {
   const OVERLAY = '[aria-label="Cloth Hall with cabs and market stalls"]';
   const transformOf = (page: Page) => page.locator(OVERLAY).last().evaluate((el) => getComputedStyle(el).transform);

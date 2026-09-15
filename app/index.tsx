@@ -38,6 +38,10 @@ export default function Home() {
             ))}
           </View>
 
+          <Pressable accessibilityRole="link" onPress={() => router.push('/trips')} hitSlop={8} style={s.tripsLink}>
+            <Text style={s.tripsLinkText}>Day trips from Kraków</Text>
+          </Pressable>
+
           <View style={s.story}>
             <Image
               source={require('../assets/lens/cracovia_1618.jpg')}
@@ -80,6 +84,8 @@ const s = StyleSheet.create({
   doorTitleMain: { color: colors.white, fontSize: 21 },
   doorLine: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute, marginTop: 4 },
   doorLineMain: { color: colors.white },
+  tripsLink: { alignSelf: 'flex-start', paddingVertical: 4 },
+  tripsLinkText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.vistula, textDecorationLine: 'underline' },
   story: { gap: 6 },
   hero: { width: '100%', height: 170, borderRadius: 14, backgroundColor: colors.line },
   body: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: space.s },
