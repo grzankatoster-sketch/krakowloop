@@ -122,7 +122,11 @@ export const MAP_HTML = `<!doctype html>
   var debug={ready:false,points:0,
     project:function(lon,lat){if(!map)return null;var p=map.project([lon,lat]);return{x:p.x,y:p.y}},
     hit:function(x,y){if(!map||!ready)return[];
-      return map.queryRenderedFeatures([x,y],{layers:['pts-icon','pts-circle']}).map(function(f){return String(f.properties.id)})}};
+      return map.queryRenderedFeatures([x,y],{layers:['pts-icon','pts-circle']}).map(function(f){return String(f.properties.id)})},
+    // ids of the pins actually drawn in the current view (not just the data handed to the map)
+    rendered:function(){if(!map||!ready)return[];var seen={};
+      map.queryRenderedFeatures({layers:['pts-icon','pts-circle']}).forEach(function(f){seen[String(f.properties.id)]=1});
+      return Object.keys(seen)}};
   window.__krk=debug;
   function fail(message){if(ready||failed)return;failed=true;post({type:'error',message:message})}
   var timer=setTimeout(function(){

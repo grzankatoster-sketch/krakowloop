@@ -79,6 +79,13 @@ describe('shareLink on the web', () => {
     const shareLink = await loadShare('web');
     await expect(shareLink('My plan', URL_WITH_START)).resolves.toBe('failed');
   });
+
+  it('reports failure when the clipboard answers false (the web refusal)', async () => {
+    g.navigator = {};
+    mockSetStringAsync.mockResolvedValue(false);
+    const shareLink = await loadShare('web');
+    await expect(shareLink('My plan', URL_WITH_START)).resolves.toBe('failed');
+  });
 });
 
 describe('shareLink on phones', () => {

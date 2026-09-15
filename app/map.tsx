@@ -189,6 +189,8 @@ export default function MapScreen() {
     // a slower answer for an earlier request must never replace a newer one
     const request = ++walkRequest.current;
     const stale = () => request !== walkRequest.current;
+    // a new attempt replaces the old route: a failed attempt must not leave it on screen
+    setWalk(null);
     setWalkNote('Finding you…');
     const loc = await me.locate();
     if (stale()) return;
@@ -360,7 +362,7 @@ export default function MapScreen() {
           </View>
           {walkShown ? (
             <View style={s.walkRow}>
-              <Text style={s.walkText}>
+              <Text style={s.walkText} accessibilityLiveRegion="polite">
                 {walkShown.minutes} min walk · {formatDistance(walkShown.metres)}
                 {walkShown.source === 'estimate' ? ' (estimate)' : ''}
               </Text>

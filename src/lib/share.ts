@@ -7,8 +7,9 @@ const isCancel = (e: unknown) => typeof e === 'object' && e !== null && (e as { 
 
 async function copy(url: string): Promise<ShareResult> {
   try {
-    await Clipboard.setStringAsync(url);
-    return 'copied';
+    const ok = await Clipboard.setStringAsync(url);
+    // on the web a refused copy resolves to false instead of throwing
+    return ok === false ? 'failed' : 'copied';
   } catch {
     return 'failed';
   }

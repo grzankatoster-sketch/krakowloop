@@ -46,6 +46,8 @@ function PlaceDetails({ place }: { place: Place }) {
   const [today] = useState(() => new Date());
   const [walk, setWalk] = useState<Walk | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  /** where the shown route starts: set with the route, so the marker and the line always agree */
+  const [walkFrom, setWalkFrom] = useState<{ lat: number; lon: number } | null>(null);
   const request = useRef(0);
 
   const media = PLACE_MEDIA[place.id];
@@ -57,10 +59,15 @@ function PlaceDetails({ place }: { place: Place }) {
   const points: MapPoint[] = [
     { id: place.id, lat: place.lat, lon: place.lon, color: CATEGORY_COLOR[place.cat], glyph: place.cat, label: place.name },
   ];
-  if (here) points.push({ id: '__me', lat: here.lat, lon: here.lon, color: colors.vistula, kind: 'me' });
+  // with a route, the marker is its start (a slower, older location answer can't move it)
+  const marker = walkFrom ?? here;
+  if (marker) points.push({ id: '__me', lat: marker.lat, lon: marker.lon, color: colors.vistula, kind: 'me' });
 
   const walkHere = async () => {
     const mine = ++request.current;
+    // a new attempt replaces the old route: a failed attempt must not leave it on screen
+    setWalk(null);
+    setWalkFrom(null);
     setNote('Finding you…');
     const loc = await me.locate();
     if (mine !== request.current) return;
@@ -82,6 +89,7 @@ function PlaceDetails({ place }: { place: Place }) {
         ? { coordinates: real.coordinates, minutes: real.legMinutes[0], metres: real.distanceMetres ?? straight, estimate: false }
         : { coordinates: [[from.lon, from.lat], [place.lon, place.lat]], minutes: walkingMinutes(from, place), metres: straight, estimate: true },
     );
+    setWalkFrom(from);
     setNote(null);
   };
 
@@ -116,7 +124,7 @@ function PlaceDetails({ place }: { place: Place }) {
           {place.lensId ? <Button label="Time Lens here" kind="quiet" onPress={() => router.push(`/lens/${place.lensId}`)} style={s.grow} /> : null}
         </View>
         {walk ? (
-          <Text style={[s.col, s.walk]}>
+          <Text style={[s.col, s.walk]} accessibilityLiveRegion="polite">
             {walk.minutes} min walk · {formatDistance(walk.metres)}
             {walk.estimate ? ' (estimate)' : ''}
           </Text>

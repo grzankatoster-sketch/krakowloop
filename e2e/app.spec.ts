@@ -1,12 +1,16 @@
 import { readFileSync } from 'node:fs';
 import { Page, expect, test } from '@playwright/test';
 
-/** Exact Directions answers only reach the app when the build has a Mapbox token (.env). */
+/**
+ * Exact Directions answers only reach the app when the build has a Mapbox token. Expo takes it from
+ * the environment first and from .env otherwise: check both the same way, with or without quotes.
+ */
 const HAS_MAPBOX_TOKEN = (() => {
+  if (/^pk\./.test(process.env.EXPO_PUBLIC_MAPBOX_TOKEN ?? '')) return true;
   try {
-    return /EXPO_PUBLIC_MAPBOX_TOKEN=pk\./.test(readFileSync('.env', 'utf8'));
+    return /^\s*EXPO_PUBLIC_MAPBOX_TOKEN\s*=\s*["']?pk\./m.test(readFileSync('.env', 'utf8'));
   } catch {
-    return !!process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+    return false;
   }
 })();
 
@@ -15,6 +19,7 @@ type MapDebug = {
   points: number;
   project: (lon: number, lat: number) => { x: number; y: number } | null;
   hit: (x: number, y: number) => string[];
+  rendered: () => string[];
 };
 
 /** State the map document exposes for tests (window.__krk in mapHtml.ts). */
@@ -25,6 +30,13 @@ async function mapState(page: Page): Promise<{ ready: boolean; points: number }>
     const k = (window as unknown as { __krk?: MapDebug }).__krk;
     return { ready: !!k?.ready, points: k?.points ?? 0 };
   });
+}
+
+/** Ids of the pins the map has actually drawn in view (not the data it was given). */
+async function renderedPins(page: Page): Promise<string[]> {
+  const frame = page.frames().find((f) => f.url().startsWith('blob:'));
+  if (!frame) return [];
+  return frame.evaluate(() => (window as unknown as { __krk?: MapDebug }).__krk?.rendered() ?? []);
 }
 
 // Main Square, Kraków: a traveller standing in the Old Town
@@ -82,8 +94,11 @@ test.describe('map', () => {
     await page.goto('/map');
     await expect(page.frameLocator('iframe[title="Map"]').locator('canvas').first()).toBeVisible({ timeout: 30_000 });
     await expect.poll(async () => (await mapState(page)).ready, { timeout: 30_000 }).toBe(true);
-    // every visible place plus the Time Lens markers reached the map
+    // the data reached the map…
     await expect.poll(async () => (await mapState(page)).points).toBeGreaterThan(40);
+    // …and pins were really drawn in view, the Main Square among them
+    await expect.poll(async () => renderedPins(page), { timeout: 20_000 }).toEqual(expect.arrayContaining(['main-square']));
+    expect((await renderedPins(page)).length).toBeGreaterThan(15);
     await expect(page.getByText('The map didn’t load')).toHaveCount(0);
   });
 
@@ -300,6 +315,33 @@ test.describe('place page', () => {
     await expect(page.getByRole('heading', { name: 'Trams nearby' })).toBeVisible();
     await expect(page.getByText(/ · lines? \d/).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Official website' })).toBeVisible();
+  });
+
+  test('walk here on the place page shows the route, and a failed retry removes it', async ({ browser }) => {
+    test.skip(!HAS_MAPBOX_TOKEN, 'needs a Mapbox token in .env: without one the app never asks for a route');
+    const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
+    const page = await context.newPage();
+    const requests = await answerDirections(page);
+    await page.goto('/place/barbican');
+    await page.getByRole('button', { name: 'Walk here' }).click();
+    await expect(page.getByText('10 min walk · 850 m', { exact: true })).toBeVisible({ timeout: 30_000 });
+    expect(requests[0]).toContain('/walking/19.93730,50.06170;19.94163,50.06546');
+    // location access is taken away and the traveller tries again: the old route must not stay
+    await context.clearPermissions();
+    await page.getByRole('button', { name: 'Walk here' }).click();
+    await expect(page.getByText(/Location access|Your location could not be found/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText('10 min walk · 850 m', { exact: true })).toHaveCount(0);
+    await context.close();
+  });
+
+  test('walk here on the place page falls back to an estimate when routing fails', async ({ browser }) => {
+    const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
+    const page = await context.newPage();
+    await page.route(DIRECTIONS, (route) => route.abort());
+    await page.goto('/place/barbican');
+    await page.getByRole('button', { name: 'Walk here' }).click();
+    await expect(page.getByText(/\d+ min walk · .+ \(estimate\)/)).toBeVisible({ timeout: 30_000 });
+    await context.close();
   });
 
   test('says so when the place has no hours in the data', async ({ page }) => {
