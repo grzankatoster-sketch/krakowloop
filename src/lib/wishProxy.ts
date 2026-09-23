@@ -45,6 +45,15 @@ async function askProxy(text: string, signal: AbortSignal): Promise<WishIntent |
 }
 
 /**
+ * Wakes the model behind the proxy (a cloud GPU sleeps when nobody asks), so the traveller's first
+ * wish does not wait for it to start. Sends nothing but the request itself; failures are ignored.
+ */
+export function warmWishProxy(): void {
+  if (!WISH_PROXY_URL) return;
+  fetch(`${WISH_PROXY_URL}/v1/warm`, { method: 'POST' }).catch(() => {});
+}
+
+/**
  * Reads a wish: with the model behind the proxy when the owner has set one up, otherwise on the
  * phone. The phone's reading is also the answer whenever the proxy cannot help.
  */

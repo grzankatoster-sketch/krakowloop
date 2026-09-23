@@ -48,8 +48,33 @@ export function anthropic({ key, model = 'claude-haiku-4-5-20251001' }) {
   };
 }
 
+/**
+ * Any OpenAI-compatible chat API: a RunPod Serverless endpoint running vLLM with Bielik
+ * (https://api.runpod.ai/v2/<endpoint id>/openai/v1), a vLLM server of one's own, and so on.
+ * A cold RunPod worker takes longer than the timeout: the proxy then answers 502, the app reads the
+ * wish on the phone, and the request has still woken the worker for the next traveller.
+ */
+export function openaiCompatible({ url, key, model = 'speakleash/Bielik-Minitron-7B-v3.0-Instruct' }) {
+  if (!url) throw new Error('OPENAI_BASE_URL missing');
+  return async (system, user) => {
+    const data = await post(`${url.replace(/\/+$/, '')}/chat/completions`, key ? { Authorization: `Bearer ${key}` } : {}, {
+      model,
+      temperature: 0,
+      max_tokens: 200,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    });
+    return data?.choices?.[0]?.message?.content ?? '';
+  };
+}
+
 export function fromEnv(env) {
   const which = (env.WISH_PROVIDER || 'ollama').toLowerCase();
   if (which === 'anthropic') return anthropic({ key: env.ANTHROPIC_API_KEY, model: env.WISH_MODEL || undefined });
+  if (which === 'openai' || which === 'runpod')
+    return openaiCompatible({ url: env.OPENAI_BASE_URL, key: env.OPENAI_API_KEY, model: env.WISH_MODEL || undefined });
   return ollama({ url: env.OLLAMA_URL || undefined, model: env.WISH_MODEL || undefined });
 }

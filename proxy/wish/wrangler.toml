@@ -1,0 +1,13 @@
+# Cloudflare Worker for the wish proxy. Deploy from this folder: npx wrangler deploy
+# Secrets (never in this file):  npx wrangler secret put OPENAI_API_KEY   (the RunPod API key)
+name = "krakowloop-wish"
+main = "worker.mjs"
+compatibility_date = "2026-09-01"
+
+[vars]
+WISH_PROVIDER = "runpod"
+# https://api.runpod.ai/v2/<endpoint id>/openai/v1 — filled in after the RunPod endpoint exists
+OPENAI_BASE_URL = ""
+WISH_MODEL = "speakleash/Bielik-Minitron-7B-v3.0-Instruct"
+# the app's web origins; the native app sends no Origin header and is limited by rate only
+ALLOWED_ORIGINS = ""

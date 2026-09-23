@@ -6,30 +6,17 @@
 import { createServer } from 'node:http';
 import { interpret, readRequest } from './core.mjs';
 import { fromEnv } from './providers.mjs';
+import { rateLimiter } from './limits.mjs';
 
 const MAX_BODY = 8 * 1024;
-const RATE = { perMinute: 20 };
 
-/** A fixed window per address, kept in memory: enough for one small server. */
-export function rateLimiter(perMinute = RATE.perMinute, now = () => Date.now()) {
-  const seen = new Map();
-  return (ip) => {
-    const t = now();
-    const w = seen.get(ip);
-    if (!w || t - w.start >= 60_000) {
-      seen.set(ip, { start: t, n: 1 });
-      if (seen.size > 5000) for (const [k, v] of seen) if (t - v.start >= 60_000) seen.delete(k);
-      return true;
-    }
-    w.n++;
-    return w.n <= perMinute;
-  };
-}
+export { rateLimiter };
 
-export function makeHandler({ provider, allowedOrigins = [], limit = rateLimiter() }) {
+export function makeHandler({ provider, allowedOrigins = [], limit = rateLimiter(20) }) {
   return async (req, res) => {
     const origin = req.headers.origin;
-    const allowed = !allowedOrigins.length || (origin && allowedOrigins.includes(origin));
+    // no Origin = not a browser (the phone app): CORS only protects browsers, the rate limit does the rest
+    const allowed = !allowedOrigins.length || !origin || allowedOrigins.includes(origin);
     const cors = allowed && origin ? { 'Access-Control-Allow-Origin': origin, Vary: 'Origin' } : {};
     const send = (status, body) => {
       res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...cors });
@@ -40,6 +27,12 @@ export function makeHandler({ provider, allowedOrigins = [], limit = rateLimiter
       return res.end();
     }
     if (req.method === 'GET' && req.url === '/health') return send(200, { ok: true });
+    // the app calls this when Discover opens: a cold model starts loading before anyone types
+    if (req.method === 'POST' && req.url === '/v1/warm') {
+      if (!allowed) return send(403, { error: 'origin' });
+      interpret(provider, 'pl', 'sushi').catch(() => {});
+      return send(202, { warming: true });
+    }
     if (req.method !== 'POST' || req.url !== '/v1/interpret-wish') return send(404, { error: 'not_found' });
     if (!allowed) return send(403, { error: 'origin' });
     if (!limit(req.socket.remoteAddress ?? '?')) return send(429, { error: 'rate_limited' });

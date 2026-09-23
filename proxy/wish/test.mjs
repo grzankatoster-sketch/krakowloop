@@ -70,6 +70,10 @@ test('serves the contract end to end, and falls back quietly when the model fail
     assert.deepEqual(await ok.json(), { schemaVersion: 2, intent: { mode: 'do', activities: ['quads'] } });
     const foreign = await fetch(`${base}/v1/interpret-wish`, { method: 'POST', headers: { Origin: 'https://evil.example' }, body: '{}' });
     assert.equal(foreign.status, 403);
+    const native = await fetch(`${base}/v1/interpret-wish`, { method: 'POST', body: JSON.stringify({ schemaVersion: 2, locale: 'pl', text: 'quady' }) });
+    assert.equal(native.status, 200, 'the phone app sends no Origin and must get through');
+    const warm = await fetch(`${base}/v1/warm`, { method: 'POST' });
+    assert.equal(warm.status, 202);
     const big = await fetch(`${base}/v1/interpret-wish`, { method: 'POST', headers: { Origin: 'http://localhost:8081' }, body: 'x'.repeat(9000) });
     assert.equal(big.status, 413);
   });

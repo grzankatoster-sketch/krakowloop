@@ -54,7 +54,7 @@ import { openState, statusLabel } from '../../src/lib/openNow';
 import { BUS_STOP_LIST, TRAM_STOPS } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { useReducedMotion } from '../../src/lib/useReducedMotion';
-import { readWishAnywhere } from '../../src/lib/wishProxy';
+import { readWishAnywhere, warmWishProxy } from '../../src/lib/wishProxy';
 import { t } from '../../src/i18n';
 import type { StringKey } from '../../src/i18n/en';
 import { colors, fonts, space } from '../../src/theme';
@@ -135,6 +135,8 @@ export default function DiscoverScreen() {
     epochRef.current = epoch;
   }, [epoch]);
   const [modeParam, setModeParam] = useState(params.mode);
+  // the model behind the wish box may be asleep: wake it while the traveller looks at the map
+  useEffect(() => warmWishProxy(), []);
 
   // what the traveller typed, and what the app understood from it
   const [text, setText] = useState('');
