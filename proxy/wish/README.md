@@ -11,17 +11,33 @@ cannot invent a place, an address, an opening hour or a price.
 
 Design worked out with Codex, 22.09.2026.
 
-## Switching it on
+## Switching it on (Bielik, 23.09.2026)
 
-1. Deploy this worker with the model provider's key as a secret.
-2. Put its address in the app's `.env`:
-   ```
-   EXPO_PUBLIC_WISH_PROXY_URL=https://wish.example.workers.dev
-   ```
-3. Rebuild the app. With the variable empty, nothing is sent and the phone reads wishes alone.
+The default model is **Bielik** (SpeakLeash), a Polish language model, run by Ollama:
 
-The key must never go into the app: everything starting with `EXPO_PUBLIC_` is readable by anyone
-who unpacks the build.
+```
+ollama pull SpeakLeash/bielik-minitron-7B-v3.0-instruct:Q5_K_M   # 5.3 GB, fits an 8 GB GPU
+npm run proxy:wish                                                # http://127.0.0.1:8787
+```
+
+Then in the app's `.env`: `EXPO_PUBLIC_WISH_PROXY_URL=http://localhost:8787` and restart Expo.
+
+| Setting | Default | |
+|---|---|---|
+| `WISH_PROVIDER` | `ollama` | or `anthropic` (Claude Haiku 4.5, key in `ANTHROPIC_API_KEY`) |
+| `OLLAMA_URL` | `http://127.0.0.1:11434` | any machine running Ollama |
+| `WISH_MODEL` | Bielik-Minitron-7B v3.0 Q5_K_M | e.g. `SpeakLeash/bielik-11b-v3.0-instruct:Q4_K_M` |
+| `ALLOWED_ORIGINS` | empty (any) | comma-separated app origins; set it for anything public |
+| `PORT` | `8787` | |
+
+**A laptop is a demo, not production:** phones of travellers cannot reach it. For real use, run the
+same server next to Ollama on a machine with a GPU (a VPS, RunPod) behind HTTPS, set
+`ALLOWED_ORIGINS`, and point `EXPO_PUBLIC_WISH_PROXY_URL` there.
+
+Files: `core.mjs` (prompt, JSON schema, the check every answer passes), `providers.mjs`,
+`server.mjs` (Node, no dependencies), `catalogue.json` (allowed values, kept equal to the app by
+`__tests__/wishProxyCatalogue.test.ts`), `test.mjs` (`npm run proxy:test`, no network),
+`eval.mjs` (`npm run proxy:eval -- <model>`: 20 wishes in three languages, accuracy and time).
 
 ## The contract
 

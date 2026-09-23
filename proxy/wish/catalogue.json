@@ -1,0 +1,12 @@
+{
+  "_note": "Everything a model may answer with. Must match the app (checked by __tests__/wishProxyCatalogue.test.ts).",
+  "maxDays": 4,
+  "paces": ["easy", "steady", "full"],
+  "interests": ["history", "museums", "jewish", "views", "food", "remembrance"],
+  "activities": ["shooting", "quads", "pierogi", "chopin", "rafting", "balloon", "sleigh", "paintball", "karting", "escape-room", "pub-crawl", "vodka-tasting", "food-tour", "jewish-tour", "nowa-huta-tour", "river-cruise", "golf-cart", "wieliczka-tour"],
+  "cuisines": ["sushi", "ramen", "asian", "indian", "pizza", "italian", "polish", "burger", "kebab", "georgian", "mexican", "seafood", "jewish", "french", "breakfast", "coffee", "dessert"],
+  "experienceKinds": ["extreme", "sightseeing", "food", "water", "night"],
+  "modes": ["eat", "do", "stay", "see"],
+  "minPrice": 5,
+  "maxPrice": 2000
+}

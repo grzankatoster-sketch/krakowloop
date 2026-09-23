@@ -53,7 +53,10 @@
     "data:transit": "node scripts/build-transit.mjs",
     "data:media": "node scripts/build-media.mjs",
     "data:restaurants": "node scripts/build-restaurants.mjs",
-    "data:stays": "node scripts/build-stays.mjs"
+    "data:stays": "node scripts/build-stays.mjs",
+    "proxy:wish": "node proxy/wish/server.mjs",
+    "proxy:test": "node --test proxy/wish/test.mjs",
+    "proxy:eval": "node proxy/wish/eval.mjs"
   },
   "jest": {
     "preset": "jest-expo",

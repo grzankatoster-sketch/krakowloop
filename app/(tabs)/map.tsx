@@ -146,6 +146,8 @@ export default function DiscoverScreen() {
   const [seeCats, setSeeCats] = useState<Set<Category>>(DEFAULT_SEE);
   const [stayKinds, setStayKinds] = useState<Set<Stay['kind']>>(new Set());
   const [expKind, setExpKind] = useState<(typeof EXP_KINDS)[number] | null>(null);
+  // activities the traveller said no to ("no vodka tasting"): left out of the do door
+  const [refused, setRefused] = useState<string[]>([]);
   const [showStops, setShowStops] = useState(false);
   const [picked, setPicked] = useState<Picked>(null);
 
@@ -222,9 +224,12 @@ export default function DiscoverScreen() {
   const doList = useMemo(() => {
     const q = fold(nameQuery.trim());
     return experiences.filter(
-      (x) => (!expKind || (x as Experience & { kind?: string }).kind === expKind) && (!q || fold(`${x.name} ${x.note}`).includes(q)),
+      (x) =>
+        !refused.includes(x.id) &&
+        (!expKind || (x as Experience & { kind?: string }).kind === expKind) &&
+        (!q || fold(`${x.name} ${x.note}`).includes(q)),
     );
-  }, [expKind, nameQuery]);
+  }, [expKind, nameQuery, refused]);
 
   // ---- pins ----------------------------------------------------------------------------------------
   const points = useMemo<MapPoint[]>(() => {
@@ -266,6 +271,7 @@ export default function DiscoverScreen() {
 
   const switchMode = (m: DiscoverMode) => {
     setEpoch((e) => e + 1);
+    setRefused([]);
     setReading('idle');
     setMode(m);
     setPicked(null);
@@ -319,14 +325,19 @@ export default function DiscoverScreen() {
     const { intent, understood } = await readWishAnywhere(said);
     // a newer question, or a door changed meanwhile, wins over this late answer
     if (run !== readRun.current || since !== epochRef.current) return;
-    const wish = intent as DiscoverIntent;
+    const wish = intent as DiscoverIntent & { excludeActivities?: string[]; activities?: string[] };
     const veg = VEG_WORDS.some((w) => fold(said).includes(w));
     const next = applyDiscoverIntent({ ...wish, veg: veg || undefined }, NO_EAT_FILTERS);
     // a diet or "open now" alone is a food wish too, even when nothing else was recognised
     const food = next.eat.cuisines.length > 0 || veg || (understood && wish.openNow === true);
     if (food && !next.mode) next.mode = 'eat';
+    if (!next.mode && (wish.activities?.length || wish.excludeActivities?.length)) next.mode = 'do';
     if ((understood && next.mode) || food) {
       setEat(next.eat);
+      // the do door opens on the kind of activity asked for, without the refused ones
+      const kind = wish.experienceKinds?.find((k): k is (typeof EXP_KINDS)[number] => (EXP_KINDS as readonly string[]).includes(k));
+      setExpKind(kind ?? null);
+      setRefused(wish.excludeActivities ?? []);
       setNameQuery('');
       if (next.mode) setMode(next.mode);
       setPicked(null);
