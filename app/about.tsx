@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { AccessibilityInfo, findNodeHandle, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TopBar } from '../src/components/ui';
+import { ScreenHeader } from '../src/components/ui';
+import { lensName, placeName } from '../src/components/placeName';
 import { MAP_PROVIDER } from '../src/components/mapHtml';
 import { AFFILIATE_NOTE } from '../src/config/affiliates';
 import { LANDMARKS_3D_CREDIT } from '../src/data/landmarks3d';
@@ -26,7 +27,7 @@ interface Credit {
 
 const LENS_CREDITS: Credit[] = lensPoints.flatMap((p) => [
   ...(p.reference
-    ? [{ key: `${p.id}-ref`, title: t('about.today', { name: p.name }), credit: p.reference.credit, license: p.reference.license, url: p.reference.sourceUrl }]
+    ? [{ key: `${p.id}-ref`, title: t('about.today', { name: lensName(p) }), credit: p.reference.credit, license: p.reference.license, url: p.reference.sourceUrl }]
     : []),
   ...p.layers
     .filter((l) => l.image)
@@ -35,7 +36,7 @@ const LENS_CREDITS: Credit[] = lensPoints.flatMap((p) => [
 
 const PLACE_CREDITS: Credit[] = Object.entries(PLACE_MEDIA)
   .filter(([, m]) => m.image && m.sourceUrl)
-  .map(([id, m]) => ({ key: `place-${id}`, title: placeById(id)?.name ?? id, credit: m.credit ?? '', license: m.license ?? '', url: m.sourceUrl! }))
+  .map(([id, m]) => ({ key: `place-${id}`, title: (() => { const p = placeById(id); return p ? placeName(p) : id; })(), credit: m.credit ?? '', license: m.license ?? '', url: m.sourceUrl! }))
   .sort((a, b) => a.title.localeCompare(b.title));
 
 type SectionKey = 'privacy' | 'links' | 'accuracy' | 'data' | 'images';
@@ -142,7 +143,7 @@ export default function About() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title={t('about.title')} />
+      <ScreenHeader title={t('about.title')} />
       <ScrollView ref={scroll} contentContainerStyle={s.scroll}>
         <View style={s.col}>
           <View style={s.jumps} accessibilityLabel={t('about.onThisPage')}>
@@ -189,6 +190,8 @@ export default function About() {
           <Section title={t('about.data')} onLayout={remember('data')} ref={dataHeading}>
             <Text style={s.p}>{t('about.osm')}</Text>
             <Link label="openstreetmap.org/copyright" url="https://www.openstreetmap.org/copyright" />
+            <Text style={s.p}>{t('about.osmCatalogue')}</Text>
+            <Link label="openstreetmap.org/copyright" url="https://www.openstreetmap.org/copyright" />
             <Text style={s.p}>{t('about.gtfs')}</Text>
             <Link label="gtfs.ztp.krakow.pl" url="https://gtfs.ztp.krakow.pl/" />
             <Text style={s.p}>{t('about.wiki')}</Text>
@@ -215,15 +218,15 @@ const s = StyleSheet.create({
   col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m },
   jumps: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.s },
   jump: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
-  jumpText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
+  jumpText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   section: { marginTop: space.l, gap: space.s },
   h2: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
   p: { fontFamily: fonts.body, fontSize: 15, lineHeight: 22, color: colors.ink },
-  link: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.vistula },
+  link: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.vistula },
   group: { backgroundColor: colors.paper, borderRadius: 12, borderWidth: 1, borderColor: colors.line, paddingHorizontal: space.m },
   groupHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   groupTitle: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink },
   credit: { paddingBottom: space.s },
   creditTitle: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
-  creditLine: { fontFamily: fonts.body, fontSize: 13, color: colors.mute },
+  creditLine: { fontFamily: fonts.body, fontSize: 15, color: colors.mute },
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
-import { readWish } from '../src/lib/wish';
+import type { PlanOptions } from '../src/lib/planner';
+import { applyIntent, cleanIntent, describeIntent, readWish, removeFromIntent } from '../src/lib/wish';
 
 describe('reading a wish written in the traveller’s own words', () => {
   it('takes the activities it recognises, in English', () => {
@@ -67,5 +68,85 @@ describe('reading a wish written in the traveller’s own words', () => {
   it('clamps a silly number of days to what the planner allows', () => {
     expect(readWish('99 days in Kraków').intent.days).toBeUndefined();
     expect(readWish('4 days in Kraków').intent.days).toBe(4);
+  });
+});
+
+// ---- audit fixes 23.09.2026 ----
+
+const FORM: PlanOptions = { days: 2, pace: 'steady', interests: ['history'], dayTrips: false };
+
+describe('applyIntent keeps what the traveller already chose', () => {
+  it('adds wished activities to those already in the plan, keeping their days', () => {
+    const form = { ...FORM, activities: [{ day: 2, id: 'pub-crawl' }, { day: 1, id: 'chopin' }] };
+    const next = applyIntent(form, { activities: ['quads', 'chopin'] });
+    expect(next.activities).toEqual([{ day: 2, id: 'pub-crawl' }, { day: 1, id: 'chopin' }, { day: 1, id: 'quads' }]);
+  });
+
+  it('removes activities the wish refuses', () => {
+    const form = { ...FORM, activities: [{ day: 2, id: 'pub-crawl' }, { day: 1, id: 'chopin' }] };
+    const next = applyIntent(form, { excludeActivities: ['pub-crawl'] });
+    expect(next.activities).toEqual([{ day: 1, id: 'chopin' }]);
+  });
+});
+
+describe('a refusal binds to what follows it', () => {
+  it('"quads and no pub crawl" still wants quads', () => {
+    const { intent } = readWish('quads and no pub crawl');
+    expect(intent.activities).toEqual(['quads']);
+    expect(intent.excludeActivities).toEqual(['pub-crawl']);
+  });
+
+  it('"quady i bez pub crawla" in Polish too', () => {
+    const { intent } = readWish('quady i bez pub crawl');
+    expect(intent.activities).toEqual(['quads']);
+    expect(intent.excludeActivities).toEqual(['pub-crawl']);
+  });
+
+  it('"dużo chodzić" is not a wish to walk little', () => {
+    expect(readWish('chcemy dużo chodzić').intent.walking).not.toBe('low');
+    expect(readWish('nie chcemy dużo chodzić').intent.walking).toBe('low');
+  });
+});
+
+describe('WishIntent v2 fields', () => {
+  it('reads cuisines, a price cap, a rating and "now"', () => {
+    const { intent } = readWish('sushi do 80 zł, 4.5+ gwiazdki, teraz');
+    expect(intent.cuisines).toEqual(['sushi']);
+    expect(intent.pricePerPersonMax).toBe(80);
+    expect(intent.minRating).toBe(4.5);
+    expect(intent.openNow).toBe(true);
+    expect(intent.mode).toBe('eat');
+  });
+
+  it('cleanIntent validates the new fields strictly', () => {
+    const intent = cleanIntent({
+      cuisines: ['sushi', 'helicopter', 'sushi', 3],
+      pricePerPersonMax: 80.5,
+      minRating: 4.2,
+      openNow: 'yes',
+      experienceKinds: ['extreme', 'extreme', 'spa'],
+      stay: { wanted: true, hotel: 'Hilton' },
+      mode: 'fly',
+    });
+    expect(intent).toEqual({ cuisines: ['sushi'], experienceKinds: ['extreme'], stay: { wanted: true } });
+    expect(cleanIntent({ pricePerPersonMax: 80, minRating: 4, openNow: false, mode: 'eat' })).toEqual({ pricePerPersonMax: 80, minRating: 4, openNow: false, mode: 'eat' });
+    expect(cleanIntent({ pricePerPersonMax: 0 })).toEqual({});
+    expect(cleanIntent({ pricePerPersonMax: 100000 })).toEqual({});
+    expect(cleanIntent({ stay: { wanted: false } })).toEqual({});
+  });
+
+  it('describes an intent as chips and removes one of them', () => {
+    const intent = readWish('dwa dni, quady, sushi tanio, bez pub crawl').intent;
+    const chips = describeIntent(intent, (k, v) => `${k}${v ? JSON.stringify(v) : ''}`);
+    const keys = chips.map((c) => c.key);
+    expect(keys).toEqual(expect.arrayContaining(['days', 'activity:quads', 'cuisine:sushi', 'price', 'exclude:pub-crawl']));
+    expect(chips.every((c) => c.label.length > 0)).toBe(true);
+    expect(new Set(keys).size).toBe(keys.length);
+    const without = removeFromIntent(intent, 'cuisine:sushi');
+    expect(without.cuisines).toBeUndefined();
+    expect(without.activities).toEqual(['quads']);
+    expect(removeFromIntent(intent, 'activity:quads').activities).toBeUndefined();
+    expect(removeFromIntent(intent, 'days').days).toBeUndefined();
+    expect(removeFromIntent(intent, 'nonsense')).toEqual(intent);
   });
 });

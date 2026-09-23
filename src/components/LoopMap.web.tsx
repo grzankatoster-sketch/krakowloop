@@ -3,14 +3,16 @@ import { View } from 'react-native';
 import { MAP_HTML } from './mapHtml';
 import type { LoopMapProps } from './LoopMap';
 import { MapHandlers, dispatchMapMessage, parseMapMessage } from './mapMessages';
+import { useReducedMotion } from '../lib/useReducedMotion';
 
 const send = (frame: HTMLIFrameElement | null, payload: string) =>
   frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), window.location.origin);
 
 // Web preview: same map document, hosted in an iframe instead of a WebView.
 export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, style, ...handlers }: LoopMapProps) {
+  const calm = useReducedMotion();
   const frame = useRef<HTMLIFrameElement | null>(null);
-  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD });
+  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, calm });
   const latest = useRef(payload);
   const handlersRef = useRef<MapHandlers>(handlers);
 

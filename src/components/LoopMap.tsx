@@ -5,6 +5,7 @@ import { APP } from '../config/city';
 import { openLink } from '../lib/openLink';
 import { MAP_HTML, MapPayload } from './mapHtml';
 import { MapHandlers, dispatchMapMessage, parseMapMessage } from './mapMessages';
+import { useReducedMotion } from '../lib/useReducedMotion';
 
 export interface LoopMapProps extends MapPayload, MapHandlers {
   style?: StyleProp<ViewStyle>;
@@ -13,8 +14,9 @@ export interface LoopMapProps extends MapPayload, MapHandlers {
 }
 
 export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, style, ...handlers }: LoopMapProps) {
+  const calm = useReducedMotion();
   const ref = useRef<WebView>(null);
-  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD });
+  const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, calm });
   const latest = useRef(payload);
   const handlersRef = useRef<MapHandlers>(handlers);
 

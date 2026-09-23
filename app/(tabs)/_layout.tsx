@@ -17,7 +17,8 @@ const icon = (name: IconName) => {
 };
 
 /**
- * Three tabs, always on screen, so nobody has to remember the way back to the map or their plan.
+ * Three tabs, always on screen: the start, Discover (the map with sights, food, things to do and
+ * places to sleep) and the plan, so nobody has to remember the way back.
  * Big icons and labels: many visitors are older and not app-savvy.
  */
 export default function TabLayout() {
@@ -33,7 +34,7 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen name="index" options={{ title: t('tab.home'), tabBarAccessibilityLabel: t('tab.home'), tabBarIcon: icon('home-variant') }} />
-      <Tabs.Screen name="map" options={{ title: t('tab.map'), tabBarAccessibilityLabel: t('tab.map'), tabBarIcon: icon('map') }} />
+      <Tabs.Screen name="map" options={{ title: t('tab.discover'), tabBarAccessibilityLabel: t('tab.discover'), tabBarIcon: icon('compass-outline') }} />
       <Tabs.Screen name="plan" options={{ title: t('tab.plan'), tabBarAccessibilityLabel: t('tab.plan'), tabBarIcon: icon('calendar-check') }} />
     </Tabs>
   );

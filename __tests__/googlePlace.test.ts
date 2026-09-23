@@ -6,7 +6,7 @@ import { FOOD_INFO } from '../src/data/foodInfo';
 import { places } from '../src/data/places';
 import { translate } from '../src/i18n';
 import type { StringKey } from '../src/i18n/en';
-import { GOOGLE_ATTRIBUTION, clearGooglePlaceMemory, fetchGooglePlace, googleRatingText, isGooglePlaceId, parseGooglePlace } from '../src/lib/googlePlace';
+import { GOOGLE_ATTRIBUTION, clearGooglePlaceMemory, fetchGooglePlace, googleRatingText, isGooglePlaceId, parseGooglePlace, safeGoogleMapsUrl } from '../src/lib/googlePlace';
 
 const ID = 'ChIJN1t_tDeuEmsRUsoyG83frY4';
 const PLACE = {
@@ -118,5 +118,26 @@ describe('food info data', () => {
     const en = (k: StringKey, v?: Record<string, string | number>) => translate('en', k, v);
     expect(osmFoodLines({ osm: 'node/1', cuisine: ['polish'], diet: ['vegan', 'gluten_free'] }, en)).toEqual(['Cuisine: Polish', 'Vegan options · Gluten-free options']);
     expect(osmFoodLines(undefined)).toEqual([]);
+  });
+});
+
+describe('safeGoogleMapsUrl', () => {
+  it('accepts Google map links only', () => {
+    expect(safeGoogleMapsUrl('https://maps.google.com/?cid=123')).toBe('https://maps.google.com/?cid=123');
+    expect(safeGoogleMapsUrl('https://www.google.com/maps/place/x')).toBe('https://www.google.com/maps/place/x');
+    expect(safeGoogleMapsUrl('https://maps.app.goo.gl/abc')).toBe('https://maps.app.goo.gl/abc');
+  });
+  it('refuses look-alike hosts, credentials, plain http and other paths', () => {
+    for (const bad of [
+      'https://maps.google.com.attacker.example/x',
+      'https://maps.google.com@attacker.example/x',
+      'https://user:pw@maps.google.com/x',
+      'http://maps.google.com/x',
+      'https://www.google.com/search?q=x',
+      'https://maps.google.com:8443/x',
+      'javascript:alert(1)',
+      42,
+    ])
+      expect(safeGoogleMapsUrl(bad)).toBeNull();
   });
 });

@@ -58,6 +58,8 @@ export interface PlanDay {
   /** leg back to the start point, or to stop 1, closing the loop */
   returnLeg: Leg | null;
   walkMinutes: number;
+  /** every minute on foot: walking legs plus the walk to and from each tram */
+  onFootMinutes: number;
   /** tram and taxi legs */
   transitMinutes: number;
   visitMinutes: number;
@@ -186,6 +188,20 @@ function orderAsLoop(stops: Place[], start?: LatLon): Place[] {
   return ordered;
 }
 
+/** minutes on foot in one leg: all of a walk, the walk to and from the stops of a tram ride */
+function onFoot(l: Leg): number {
+  if (l.mode === 'walk') return l.minutes;
+  return l.tram ? l.tram.walkToMinutes + l.tram.walkFromMinutes : 0;
+}
+
+/**
+ * A place for an evening meal: a food place that is not a café, a market or a bookshop café
+ * (`noDinner` in src/data/places.ts). A coffee is not a dinner.
+ */
+export function suitsDinner(p: Place): boolean {
+  return p.cat === 'food' && !p.noDinner;
+}
+
 function measure(ordered: Place[], start: LatLon | undefined, date: Date | null) {
   const legs = ordered.map((p, i) => (i === 0 ? (start ? leg(start, p, date) : null) : leg(ordered[i - 1], p, date)));
   const home = start ?? ordered[0];
@@ -193,9 +209,10 @@ function measure(ordered: Place[], start: LatLon | undefined, date: Date | null)
     ordered.length > 0 && (start || ordered.length >= 2) ? leg(ordered[ordered.length - 1], home, date) : null;
   const all = [...legs, returnLeg].filter((l): l is Leg => l !== null);
   const walkMinutes = all.filter((l) => l.mode === 'walk').reduce((s, l) => s + l.minutes, 0);
+  const onFootMinutes = all.reduce((s, l) => s + onFoot(l), 0);
   const transitMinutes = all.filter((l) => l.mode !== 'walk').reduce((s, l) => s + l.minutes, 0);
   const visitMinutes = ordered.reduce((s, p) => s + p.minutes, 0);
-  return { legs, returnLeg, walkMinutes, transitMinutes, visitMinutes, totalMinutes: walkMinutes + transitMinutes + visitMinutes };
+  return { legs, returnLeg, walkMinutes, onFootMinutes, transitMinutes, visitMinutes, totalMinutes: walkMinutes + transitMinutes + visitMinutes };
 }
 
 function pickCityDay(
@@ -237,7 +254,7 @@ function pickCityDay(
     if (spots(trial) > maxStops) continue;
     const m = measure(trial, start, date);
     // a day for someone who does not want to walk much: the stops have to stay close together
-    if (wish.walking === 'low' && m.walkMinutes > LOW_WALK_MINUTES) continue;
+    if (wish.walking === 'low' && m.onFootMinutes > LOW_WALK_MINUTES) continue;
     if (m.totalMinutes <= fill) {
       chosen = trial;
       anchor ??= candidate;
@@ -260,14 +277,26 @@ function withDinner(
   available: number,
   wish: { walking?: 'low' | 'normal' },
 ): Place[] {
-  if (!chosen.length || chosen.some((p) => p.cat === 'food')) return chosen;
+  if (!chosen.length || chosen.some(suitsDinner)) return chosen;
   const near = centre(chosen);
-  const food = pool.filter((p) => p.cat === 'food' && !chosen.includes(p)).sort((a, b) => distance(near, a) - distance(near, b));
+  const food = pool.filter((p) => suitsDinner(p) && !chosen.includes(p)).sort((a, b) => distance(near, a) - distance(near, b));
+  const fits = (trial: Place[]) => {
+    const m = measure(trial, start, date);
+    return !(wish.walking === 'low' && m.onFootMinutes > LOW_WALK_MINUTES) && m.totalMinutes <= available;
+  };
   for (const place of food.slice(0, 6)) {
     const trial = orderAsLoop([...chosen, place], start);
-    const m = measure(trial, start, date);
-    if (wish.walking === 'low' && m.walkMinutes > LOW_WALK_MINUTES) continue;
-    if (m.totalMinutes <= available) return trial;
+    if (fits(trial)) return trial;
+  }
+  // no room left: the dinner takes the place of the day's least important stop, never the first one
+  // (a café among the stops goes first, since a dinner replaces it anyway)
+  const drop = [...chosen.slice(1)].sort((a, b) => Number(suitsDinner(a)) - Number(suitsDinner(b)) || Number(b.cat === 'food') - Number(a.cat === 'food') || a.priority - b.priority);
+  for (const out of drop) {
+    const rest = chosen.filter((p) => p !== out);
+    for (const place of food.slice(0, 6)) {
+      const trial = orderAsLoop([...rest, place], start);
+      if (fits(trial)) return trial;
+    }
   }
   return chosen;
 }
@@ -294,6 +323,7 @@ function cityDay(index: number, ordered: Place[], pace: Pace, start: LatLon | un
     stops: ordered.map((place, i) => ({ place, leg: m.legs[i] })),
     returnLeg: m.returnLeg,
     walkMinutes: m.walkMinutes,
+    onFootMinutes: m.onFootMinutes,
     transitMinutes: m.transitMinutes,
     visitMinutes: m.visitMinutes,
     travelMinutes: 0,
@@ -318,6 +348,7 @@ function tripDay(index: number, place: Place, pace: Pace, start: LatLon | undefi
     stops: [{ place, leg: null }],
     returnLeg: null,
     walkMinutes: 0,
+    onFootMinutes: 0,
     transitMinutes: 0,
     visitMinutes: place.minutes,
     travelMinutes,
@@ -371,7 +402,7 @@ export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanD
     const date = dateOf(d);
     const slot = slots.indexOf(d);
     if (slot >= 0) {
-      plan.push(tripDay(plan.length + 1, trips[slot], opts.pace, opts.start, date));
+      plan.push(tripDay(d + 1, trips[slot], opts.pace, opts.start, date));
       continue;
     }
     const zones = cityDays === 1 ? ONE_DAY_GROUP : DAY_GROUPS[cityIndex] ?? CITY_ZONES;
@@ -381,7 +412,8 @@ export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanD
     const stops = pickCityDay(open, zones, wanted, opts.pace, opts.start, date, jitter, { walking: opts.walking, dinner: opts.dinner });
     if (!stops.length) continue;
     const closed = date ? pool.filter((p) => zones.includes(p.zone) && p.priority >= 2 && !open.includes(p)) : [];
-    plan.push(cityDay(plan.length + 1, stops, opts.pace, opts.start, date, closed));
+    // the day keeps its number in the stay, so activities put on "day 2" stay with it
+    plan.push(cityDay(d + 1, stops, opts.pace, opts.start, date, closed));
     pool = pool.filter((p) => !stops.includes(p));
   }
   return plan;

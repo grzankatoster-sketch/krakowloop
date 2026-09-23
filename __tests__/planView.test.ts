@@ -61,6 +61,7 @@ describe('real walking times per leg', () => {
       ],
       returnLeg: { mode: 'walk', minutes: 7, onFootMinutes: 7 },
       walkMinutes: 12,
+    onFootMinutes: 12,
       transitMinutes: 10,
       visitMinutes: 60,
       travelMinutes: 0,

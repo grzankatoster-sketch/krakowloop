@@ -1,7 +1,7 @@
-import { Image, ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ImageSourcePropType, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { TopBar } from '../src/components/ui';
+import { card, Photo, ScreenHeader } from '../src/components/ui';
 import { PLACE_MEDIA } from '../src/data/placeMedia';
 import { t } from '../src/i18n';
 import type { StringKey } from '../src/i18n/en';
@@ -35,7 +35,7 @@ function Topic({ k, image, place }: { k: string; image?: ImageSourcePropType; pl
   const text = t(`city.${k}.text` as StringKey);
   const body = (
     <>
-      {image ? <Image source={image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
+      {image ? <Photo source={image} /> : null}
       <View style={s.topicText}>
         <Text style={s.h2} role="heading" aria-level={2}>
           {title}
@@ -59,8 +59,8 @@ function Topic({ k, image, place }: { k: string; image?: ImageSourcePropType; pl
 export default function City() {
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title={t('home.knownFor')} />
       <ScrollView contentContainerStyle={s.scroll}>
+        <ScreenHeader title={t('home.knownFor')} />
         <View style={s.col}>
           <Text style={s.lead}>{t('city.lead')}</Text>
           {TOPICS.map((topic) => (
@@ -83,14 +83,13 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
   scroll: { paddingBottom: space.xl },
   col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m, gap: space.m },
-  lead: { fontFamily: fonts.body, fontSize: 18, lineHeight: 27, color: colors.ink, marginTop: space.s },
-  topic: { borderRadius: 18, overflow: 'hidden', backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
-  photo: { width: '100%', height: 170, backgroundColor: colors.line },
+  lead: { fontFamily: fonts.body, fontSize: 17, lineHeight: 25, color: colors.ink },
+  topic: { ...card },
   topicText: { padding: space.m, gap: 6 },
   h2: { fontFamily: fonts.bodyBold, fontSize: 21, lineHeight: 26, color: colors.ink },
   text: { fontFamily: fonts.body, fontSize: 17, lineHeight: 25, color: colors.ink },
   more: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.vistula, marginTop: 2 },
   sourcesTitle: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.mute, marginTop: space.m },
-  source: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.vistula, textDecorationLine: 'underline' },
-  small: { fontFamily: fonts.body, fontSize: 12, color: colors.mute },
+  source: { fontFamily: fonts.body, fontSize: 15, lineHeight: 20, color: colors.vistula, textDecorationLine: 'underline' },
+  small: { fontFamily: fonts.body, fontSize: 15, color: colors.mute },
 });

@@ -146,3 +146,18 @@ export const fonts = {
 } as const;
 
 export const space = { xs: 4, s: 8, m: 16, l: 24, xl: 40 } as const;
+
+/** Corner radii: s = thumbnails and small rows, m = cards and buttons, l = hero cards and tiles. */
+export const radius = { s: 10, m: 14, l: 18 } as const;
+
+/**
+ * Type roles. Grenze Gotisch (display) only for screen titles and the home hero; Atkinson for
+ * everything read; Martian Mono for eyebrows and meta lines.
+ */
+export const typeScale = {
+  hero: { fontFamily: fonts.display, fontSize: 46, lineHeight: 50 },
+  title: { fontFamily: fonts.display, fontSize: 34, lineHeight: 40 },
+  h2: { fontFamily: fonts.bodyBold, fontSize: 20, lineHeight: 26 },
+  body: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24 },
+  meta: { fontFamily: fonts.mono, fontSize: 14, lineHeight: 20, letterSpacing: 0.3 },
+} as const;

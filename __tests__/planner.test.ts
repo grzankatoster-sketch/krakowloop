@@ -3,7 +3,7 @@ import { places } from '../src/data/places';
 import { parseISODate } from '../src/lib/dates';
 import { distance } from '../src/lib/geo';
 import { hoursOn } from '../src/lib/hours';
-import { INTEREST_KEYS, Interest, LOW_WALK_MINUTES, MAX_DAY_SPREAD_METRES, MAX_PLAN_DAYS, PACE_KEYS, PlanOptions, buildPlan, tripSlots } from '../src/lib/planner';
+import { INTEREST_KEYS, Interest, LOW_WALK_MINUTES, MAX_DAY_SPREAD_METRES, MAX_PLAN_DAYS, PACE_KEYS, PlanDay, PlanOptions, buildPlan, suitsDinner, tripSlots } from '../src/lib/planner';
 
 const subsets = <T>(xs: T[]): T[][] => xs.reduce<T[][]>((acc, x) => acc.concat(acc.map((s) => [...s, x])), [[]]);
 
@@ -109,6 +109,8 @@ describe('buildPlan options', () => {
     expect(plan).toHaveLength(1);
     expect(plan[0].date).toBe('2026-10-13');
     expect(plan[0].stops[0].place.id).toBe('czartoryski');
+    // the day keeps its number in the stay, so an activity added to "day 2" still belongs to it
+    expect(plan[0].index).toBe(2);
   });
 
   it('puts a day trip in the middle of the stay, never on the first or the last day', () => {
@@ -265,5 +267,37 @@ describe('wishes the planner can grant', () => {
       expect(withoutFood({ ...base, interests: ['museums'], dinner: true, seed })).toBe(0);
     }
     expect(daysWithNowhereToEat).toBeGreaterThan(0);
+  });
+});
+
+describe('audit fixes 23.09.2026', () => {
+  const base: PlanOptions = { days: 2, pace: 'steady', interests: ['history'], dayTrips: false, seed: 7 };
+  const onFoot = (d: PlanDay) =>
+    [...d.stops.map((s) => s.leg), d.returnLeg].reduce((sum, l) => sum + (!l ? 0 : l.mode === 'walk' ? l.minutes : l.tram ? l.tram.walkToMinutes + l.tram.walkFromMinutes : 0), 0);
+
+  it('a café or a market is not a dinner: dinner days get a place for an evening meal', () => {
+    expect(suitsDinner(places.find((p) => p.id === 'wierzynek')!)).toBe(true);
+    for (const id of ['noworolski', 'jama-michalika', 'massolit', 'stary-kleparz']) expect(suitsDinner(places.find((p) => p.id === id)!)).toBe(false);
+    for (let seed = 1; seed <= 15; seed++) {
+      for (const interests of [['history'], ['food'], ['museums']] as Interest[][]) {
+        for (const d of buildPlan({ ...base, interests, dinner: true, seed })) {
+          if (d.kind !== 'city') continue;
+          expect({ seed, interests, dinner: d.stops.some((s) => suitsDinner(s.place)) }).toEqual({ seed, interests, dinner: true });
+        }
+      }
+    }
+  });
+
+  it('counts the walk to and from the tram as walking', () => {
+    const far = { lat: 50.0725, lon: 20.0375 }; // Nowa Huta, a tram ride from the centre
+    let trams = 0;
+    for (let seed = 1; seed <= 10; seed++) {
+      for (const d of buildPlan({ ...base, start: far, seed })) {
+        expect(d.onFootMinutes).toBe(onFoot(d));
+        trams += d.stops.filter((s) => s.leg?.mode === 'tram').length;
+      }
+      for (const d of buildPlan({ ...base, start: far, walking: 'low', seed })) expect(d.onFootMinutes).toBeLessThanOrEqual(LOW_WALK_MINUTES);
+    }
+    expect(trams).toBeGreaterThan(0);
   });
 });

@@ -2,16 +2,24 @@ import { useEffect, useState } from 'react';
 import { AppState, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Link } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Chip, Eyebrow, TopBar } from '../src/components/ui';
-import { CATEGORY_LABEL, places } from '../src/data/places';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { card, Chip, ScreenHeader } from '../src/components/ui';
+import { placeName } from '../src/components/placeName';
+import { CATEGORY_COLOR } from '../src/data/categoryColor';
+import { CATEGORY_LABEL, Category, places } from '../src/data/places';
 import { krakowWallClock } from '../src/lib/cityTime';
 import { formatDay } from '../src/lib/dates';
 import { formatTime, hoursOn, HOURS_EXPORTED } from '../src/lib/hours';
 import { closingSoon, groupOpenNow, OpenRow, statusLabel } from '../src/lib/openNow';
 import { t } from '../src/i18n';
-import { colors, fonts, space } from '../src/theme';
+import { colors, fonts, space, typeScale } from '../src/theme';
 
-type Filter = 'all' | 'museum';
+type Filter = 'all' | Category;
+
+/** The categories that have opening hours at all, in the order of CATEGORY_LABEL: only those get a chip. */
+const FILTERS: Category[] = (Object.keys(CATEGORY_LABEL) as Category[]).filter((cat) =>
+  places.some((p) => p.cat === cat && p.zone !== 'out' && hoursOn(p.id, new Date()) !== null),
+);
 
 /** DOM id of a place's link on web, so focus can follow it when the clock moves it to another group. */
 const linkId = (placeId: string) => `open-now-${placeId}`;
@@ -30,32 +38,42 @@ function Group({
   onFocusPlace: (placeId: string | null) => void;
 }) {
   return (
-    <View style={s.group}>
+    <View style={s.groupWrap}>
       <Text style={s.h2} accessibilityRole="header">
-        {title} ({rows.length})
+        {title} · {rows.length}
       </Text>
-      {rows.length ? (
-        rows.map((row) => (
-          <View key={row.place.id} style={s.row}>
-            <Link href={`/place/${row.place.id}`} asChild>
-              <Pressable
-                nativeID={linkId(row.place.id)}
-                accessibilityRole="link"
-                accessibilityLabel={t('now.openLabel', { name: row.place.name })}
-                onFocus={() => onFocusPlace(row.place.id)}
-                onBlur={() => onFocusPlace(null)}
-              >
-                <Text style={s.name}>{row.place.name}</Text>
-              </Pressable>
-            </Link>
-            <Text style={[s.status, closingSoon(row.status, minutes) && s.soon]}>
-              {CATEGORY_LABEL[row.place.cat]} · {statusLabel(row.status, minutes)}
-            </Text>
-          </View>
-        ))
-      ) : (
-        <Text style={s.empty}>{empty}</Text>
-      )}
+      <View style={s.group}>
+        {rows.length ? (
+          rows.map((row, i) => {
+            const name = placeName(row.place);
+            const status = statusLabel(row.status, minutes);
+            return (
+              <Link key={row.place.id} href={`/place/${row.place.id}`} asChild>
+                <Pressable
+                  nativeID={linkId(row.place.id)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`${t('now.openLabel', { name })}. ${CATEGORY_LABEL[row.place.cat]}, ${status}`}
+                  onFocus={() => onFocusPlace(row.place.id)}
+                  onBlur={() => onFocusPlace(null)}
+                  style={StyleSheet.flatten([s.row, i > 0 && s.rowLine])}
+                >
+                  <View style={[s.dot, { backgroundColor: CATEGORY_COLOR[row.place.cat] }]} />
+                  <View style={s.rowBody}>
+                    <Text style={s.name}>{name}</Text>
+                    <Text style={s.cat}>{CATEGORY_LABEL[row.place.cat]}</Text>
+                    <Text style={[s.status, closingSoon(row.status, minutes) && s.soon]}>{status}</Text>
+                  </View>
+                  <View aria-hidden importantForAccessibility="no-hide-descendants">
+                    <MaterialCommunityIcons name="chevron-right" size={26} color={colors.mute} />
+                  </View>
+                </Pressable>
+              </Link>
+            );
+          })
+        ) : (
+          <Text style={s.empty}>{empty}</Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -92,20 +110,19 @@ export default function OpenNow() {
   const now = krakowWallClock(instant);
   const minutes = now.getHours() * 60 + now.getMinutes();
   // a few dozen places: cheap enough to sort on every render, and the React Compiler memoizes it
-  const groups = groupOpenNow(filter === 'museum' ? places.filter((p) => p.cat === 'museum') : places, now, hoursOn);
+  const groups = groupOpenNow(filter === 'all' ? places : places.filter((p) => p.cat === filter), now, hoursOn);
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title={t('now.title')} />
       <ScrollView contentContainerStyle={s.scroll}>
+        <ScreenHeader title={t('now.title')} eyebrow={t('now.clock', { day: formatDay(now), time: formatTime(minutes) })} />
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips} accessibilityLabel={t('now.filter')}>
+          <Chip label={t('now.everything')} active={filter === 'all'} onPress={() => setFilter('all')} />
+          {FILTERS.map((cat) => (
+            <Chip key={cat} label={CATEGORY_LABEL[cat]} color={CATEGORY_COLOR[cat]} active={filter === cat} onPress={() => setFilter(cat)} />
+          ))}
+        </ScrollView>
         <View style={s.col}>
-          <Eyebrow>
-            {t('now.clock', { day: formatDay(now), time: formatTime(minutes) })}
-          </Eyebrow>
-          <View style={s.chips}>
-            <Chip label={t('now.everything')} active={filter === 'all'} onPress={() => setFilter('all')} />
-            <Chip label={t('now.museums')} active={filter === 'museum'} onPress={() => setFilter('museum')} />
-          </View>
           <Group title={t('now.open')} rows={groups.open} minutes={minutes} empty={t('now.emptyOpen')} onFocusPlace={setFocusedPlace} />
           <Group title={t('now.later')} rows={groups.later} minutes={minutes} empty={t('now.emptyLater')} onFocusPlace={setFocusedPlace} />
           <Group title={t('now.closed')} rows={groups.closed} minutes={minutes} empty={t('now.emptyClosed')} onFocusPlace={setFocusedPlace} />
@@ -122,14 +139,19 @@ export default function OpenNow() {
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
   scroll: { paddingBottom: space.xl },
-  col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m, gap: space.m, paddingTop: space.s },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s },
-  group: { backgroundColor: colors.paper, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: space.m, gap: space.s },
-  h2: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
-  row: { gap: 2, paddingVertical: 4 },
-  name: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink, textDecorationLine: 'underline', textDecorationColor: colors.line },
-  status: { fontFamily: fonts.body, fontSize: 14, color: colors.mute },
-  soon: { color: colors.brick, fontFamily: fonts.bodyBold },
-  empty: { fontFamily: fonts.body, fontSize: 14, color: colors.mute },
-  note: { fontFamily: fonts.body, fontSize: 12, lineHeight: 18, color: colors.mute },
+  col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m, gap: space.l, paddingTop: space.m },
+  chips: { flexDirection: 'row', gap: space.s, paddingHorizontal: space.m },
+  groupWrap: { gap: space.s },
+  group: { ...card },
+  h2: { ...typeScale.meta, color: colors.mute, textTransform: 'uppercase' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: space.m, minHeight: 64, paddingVertical: space.s + 2, paddingHorizontal: space.m },
+  rowLine: { borderTopWidth: 1, borderColor: colors.line },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  rowBody: { flex: 1, gap: 2 },
+  name: { fontFamily: fonts.bodyBold, fontSize: 17, lineHeight: 22, color: colors.ink },
+  cat: { fontFamily: fonts.body, fontSize: 15, color: colors.mute },
+  status: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
+  soon: { color: colors.brick },
+  empty: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, padding: space.m },
+  note: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute },
 });

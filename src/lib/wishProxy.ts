@@ -13,6 +13,9 @@ export interface WishReading {
 
 const TIMEOUT_MS = 10_000;
 
+/** Version of the request and answer (proxy/wish/README.md). Version 2 added cuisines, price, rating… */
+export const WISH_SCHEMA_VERSION = 2;
+
 /**
  * Asks the owner's proxy to read a wish with a language model. The proxy answers with settings and
  * ids from the app's own catalogue only, and everything it says is checked again here, so a model
@@ -27,12 +30,13 @@ async function askProxy(text: string, signal: AbortSignal): Promise<WishIntent |
       headers: { 'Content-Type': 'application/json' },
       // only the words the traveller typed and the language of the app: never the location, the
       // dates, the plan so far, or anything that could identify the phone
-      body: JSON.stringify({ schemaVersion: 1, locale: LANG, text: text.slice(0, WISH_MAX_CHARS) }),
+      body: JSON.stringify({ schemaVersion: WISH_SCHEMA_VERSION, locale: LANG, text: text.slice(0, WISH_MAX_CHARS) }),
       signal,
     });
     if (!res.ok) return null;
     const data = (await res.json()) as { schemaVersion?: number; intent?: unknown };
-    if (data.schemaVersion !== 1) return null;
+    // a proxy not yet updated answers in version 1, which is a valid subset of version 2
+    if (data.schemaVersion !== 1 && data.schemaVersion !== 2) return null;
     const intent = cleanIntent(data.intent);
     return Object.keys(intent).length ? intent : null;
   } catch {

@@ -4,7 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import LoopMap from '../../src/components/LoopMap';
 import type { MapPoint } from '../../src/components/mapHtml';
-import { Button, Eyebrow, TopBar } from '../../src/components/ui';
+import { Button, card, Photo, ScreenHeader } from '../../src/components/ui';
+import { bookingLabel, placeAltName, placeName, placeText } from '../../src/components/placeName';
 import { AFFILIATE_NOTE } from '../../src/config/affiliates';
 import { CATEGORY_COLOR } from '../../src/data/categoryColor';
 import { aboutOf } from '../../src/data/placeAbout';
@@ -20,8 +21,8 @@ import { nearbyTransit } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { FoodDetails } from '../../src/components/FoodDetails';
 import { RideToggle } from '../../src/components/RideButtons';
-import { t } from '../../src/i18n';
-import { colors, fonts, space } from '../../src/theme';
+import { LANG, t } from '../../src/i18n';
+import { colors, fonts, radius, space, typeScale } from '../../src/theme';
 
 const DAYS = [t('day.0'), t('day.1'), t('day.2'), t('day.3'), t('day.4'), t('day.5'), t('day.6')];
 
@@ -31,7 +32,7 @@ export default function PlaceScreen() {
   if (!place) {
     return (
       <SafeAreaView style={s.safe}>
-        <TopBar title={t('place.title')} />
+        <ScreenHeader title={t('place.title')} />
         <Text style={s.empty}>{t('place.unknown')}</Text>
       </SafeAreaView>
     );
@@ -57,7 +58,12 @@ function PlaceDetails({ place }: { place: Place }) {
   const request = useRef(0);
 
   const media = PLACE_MEDIA[place.id];
-  const about = aboutOf(place.id);
+  const name = placeName(place);
+  const altName = placeAltName(place);
+  // English readers get the app's blurb and the English Wikipedia lead; others one text in their
+  // language when Wikipedia has it, else the English blurb with its language marked
+  const about = LANG === 'en' ? aboutOf(place.id) : null;
+  const text = placeText(place);
   const week = weekHours(place.id, today);
   const todayIndex = (today.getDay() + 6) % 7;
   const stops = nearbyTransit(place);
@@ -65,7 +71,7 @@ function PlaceDetails({ place }: { place: Place }) {
   const here = me.status === 'ok' && me.coords && !me.outsideCity ? me.coords : undefined;
 
   const points: MapPoint[] = [
-    { id: place.id, lat: place.lat, lon: place.lon, color: CATEGORY_COLOR[place.cat], glyph: place.cat, label: place.name, rank: 3 },
+    { id: place.id, lat: place.lat, lon: place.lon, color: CATEGORY_COLOR[place.cat], glyph: place.cat, label: name, rank: 3 },
   ];
   // with a route, the marker is its start (a slower, older location answer can't move it)
   const marker = walkFrom ?? here;
@@ -103,11 +109,14 @@ function PlaceDetails({ place }: { place: Place }) {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title={place.name} />
       <ScrollView contentContainerStyle={s.scroll}>
+        <ScreenHeader
+          title={name}
+          eyebrow={`${CATEGORY_LABEL[place.cat]} · ${ZONE_LABEL[place.zone]} · ${t('place.about', { minutes: place.minutes })}`}
+        />
         {media?.image ? (
-          <View>
-            <Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={t('place.photoAlt', { name: place.name })} />
+          <View style={s.photoBox}>
+            <Photo source={media.image} accessibilityLabel={t('place.photoAlt', { name })} />
             <Pressable accessibilityRole="link" onPress={() => openLink(media.sourceUrl!)} style={s.col}>
               <Text style={s.credit} numberOfLines={2}>
                 {t('ui.photo')}: {media.credit} · {media.license} · Wikimedia Commons
@@ -117,15 +126,15 @@ function PlaceDetails({ place }: { place: Place }) {
         ) : null}
 
         <View style={[s.col, s.head]}>
-          <Eyebrow>
-            {CATEGORY_LABEL[place.cat]} · {ZONE_LABEL[place.zone]} · {t('place.about', { minutes: place.minutes })}
-          </Eyebrow>
-          <Text style={s.name} accessibilityRole="header">
-            {place.name}
-          </Text>
-          {place.local ? <Text style={s.local}>{place.local}</Text> : null}
+          {altName ? <Text style={s.local}>{altName}</Text> : null}
           {place.address ? <Text style={s.local}>{place.address}</Text> : null}
-          <Text style={s.blurb}>{place.blurb}</Text>
+          <Text style={s.blurb}>{text.text}</Text>
+          {text.lang !== LANG ? <Text style={s.langTag}>{t('ui.inEnglish')}</Text> : null}
+          {text.url ? (
+            <Pressable accessibilityRole="link" onPress={() => openLink(text.url!)} hitSlop={6}>
+              <Text style={s.aboutCredit}>{t('place.aboutCredit')}</Text>
+            </Pressable>
+          ) : null}
           {about ? (
             <>
               <Text style={s.about}>{about.text}</Text>
@@ -236,7 +245,7 @@ function PlaceDetails({ place }: { place: Place }) {
 
         <View style={[s.col, s.section, s.actions]}>
           {media?.website ? <Button label={t('place.website')} kind="quiet" onPress={() => openLink(media.website!)} style={s.grow} /> : null}
-          {place.booking ? <Button label={place.booking.label} kind="quiet" onPress={() => openLink(place.booking!.url)} style={s.grow} /> : null}
+          {place.booking ? <Button label={bookingLabel(place.booking)} kind="quiet" onPress={() => openLink(place.booking!.url)} style={s.grow} /> : null}
         </View>
         {place.booking?.affiliate ? <Text style={[s.col, s.note]}>{AFFILIATE_NOTE}</Text> : null}
       </ScrollView>
@@ -248,35 +257,35 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
   scroll: { paddingBottom: space.xl },
   col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m },
-  photo: { width: '100%', maxWidth: 560, alignSelf: 'center', height: 220, backgroundColor: colors.line },
-  credit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 4 },
-  head: { marginTop: space.m, gap: 4 },
-  name: { fontFamily: fonts.bodyBold, fontSize: 26, lineHeight: 31, color: colors.ink },
-  local: { fontFamily: fonts.mono, fontSize: 12, color: colors.mute },
+  photoBox: { width: '100%', maxWidth: 560, alignSelf: 'center' },
+  credit: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, marginTop: 4 },
+  head: { marginTop: space.m, gap: space.xs },
+  local: { ...typeScale.meta, color: colors.mute },
+  langTag: { ...typeScale.meta, color: colors.mute, alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.line, borderRadius: 6, paddingHorizontal: 6, marginTop: space.xs },
   about: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: space.s },
-  aboutCredit: { fontFamily: fonts.body, fontSize: 13, color: colors.vistula, textDecorationLine: 'underline', marginTop: 4 },
+  aboutCredit: { fontFamily: fonts.body, fontSize: 15, color: colors.vistula, textDecorationLine: 'underline', marginTop: 4 },
   blurb: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: space.s },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.m },
   grow: { flexGrow: 1 },
   ride: { marginTop: space.s },
   walk: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink, marginTop: space.s },
-  note: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: colors.mute, marginTop: space.s },
+  note: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute, marginTop: space.s },
   mapBox: { height: 230, marginTop: space.m },
-  map: { flex: 1, borderRadius: 14, overflow: 'hidden' },
+  map: { flex: 1, borderRadius: radius.m, overflow: 'hidden' },
   section: { marginTop: space.l },
   h2: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink, marginBottom: space.s },
   dayRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7, paddingHorizontal: space.s, borderRadius: 8 },
   today: { backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
   dayName: { fontFamily: fonts.body, fontSize: 15, color: colors.ink },
-  dayHours: { fontFamily: fonts.mono, fontSize: 13, color: colors.ink },
+  dayHours: { fontFamily: fonts.mono, fontSize: 14, color: colors.ink },
   todayText: { fontFamily: fonts.bodyBold },
-  small: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, marginTop: 6 },
-  past: { flexDirection: 'row', alignItems: 'center', gap: space.m, marginTop: space.m, padding: space.s, paddingRight: space.m, borderRadius: 14, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  small: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, marginTop: 6 },
+  past: { ...card, flexDirection: 'row', alignItems: 'center', gap: space.m, marginTop: space.m, padding: space.s, paddingRight: space.m },
   pastImage: { width: 76, height: 76, borderRadius: 10, backgroundColor: colors.line },
   pastTitle: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
-  pastLine: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.mute, marginTop: 2 },
+  pastLine: { fontFamily: fonts.body, fontSize: 15, lineHeight: 20, color: colors.mute, marginTop: 2 },
   tramRow: { paddingVertical: 8, borderBottomWidth: 1, borderColor: colors.line },
   tramName: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
-  tramMeta: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, marginTop: 2 },
+  tramMeta: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, marginTop: 2 },
   empty: { fontFamily: fonts.body, fontSize: 16, color: colors.ink, padding: space.m },
 });

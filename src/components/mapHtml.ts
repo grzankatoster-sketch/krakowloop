@@ -41,6 +41,8 @@ export interface MapPayload {
   focus?: { lat: number; lon: number; key: number } | null;
   /** tilted view with buildings in 3D */
   threeD?: boolean;
+  /** the traveller asked for less motion: jump instead of flying, no fading or pulsing */
+  calm?: boolean;
 }
 
 // Provider switch. With a public Mapbox token the map uses Mapbox Standard with 3D buildings;
@@ -169,8 +171,65 @@ export const MAP_HTML = `<!doctype html>
     var f=d.focus;
     var focus=f&&typeof f==='object'&&num(f.lat,-90,90)&&num(f.lon,-180,180)&&num(f.key,0,1e9)?{lat:f.lat,lon:f.lon,key:f.key}:null;
     return{points:pts,route:route,selectedId:typeof d.selectedId==='string'?d.selectedId:null,fit:d.fit===true,
-      fitKey:num(d.fitKey,0,1e9)?d.fitKey:null,fitTarget:d.fitTarget==='points'?'points':'route',focus:focus,threeD:d.threeD===true};
+      fitKey:num(d.fitKey,0,1e9)?d.fitKey:null,fitTarget:d.fitTarget==='points'?'points':'route',focus:focus,threeD:d.threeD===true,
+      calm:d.calm===true};
   }
+
+  // Motion. Every animation is a short, single movement tied to something the traveller did, and
+  // none runs when the phone or the browser asks for reduced motion.
+  var calm=false,mq=window.matchMedia?window.matchMedia('(prefers-reduced-motion: reduce)'):null;
+  function still(){return calm||(mq&&mq.matches)}
+  var FADE_LAYERS=[['pts-far','icon-opacity'],['pts-icon','icon-opacity'],['pts-circle','circle-opacity']];
+  var BASE_OPACITY={};
+  // New pins fade in over ~350 ms: the paint opacity is the layer's own expression times k, 0 → 1.
+  var fadeRun=0;
+  function fadeIn(){
+    if(still())return;
+    var run=++fadeRun,t0=performance.now(),DUR=350;
+    function frame(now){
+      if(run!==fadeRun)return;
+      var k=Math.min(1,(now-t0)/DUR);k=1-Math.pow(1-k,3);
+      FADE_LAYERS.forEach(function(l){if(map.getLayer(l[0])&&BASE_OPACITY[l[0]]!=null)
+        map.setPaintProperty(l[0],l[1],k>=1?BASE_OPACITY[l[0]]:['*',BASE_OPACITY[l[0]],k])});
+      if(k<1)requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  // A soft ring breathes around the chosen pin three times, then stays still.
+  var pulseRun=0;
+  function pulse(){
+    var run=++pulseRun;
+    if(!map.getLayer('pts-pulse'))return;
+    if(still()){map.setPaintProperty('pts-pulse','circle-stroke-opacity',0);return}
+    var t0=performance.now(),DUR=1400,TIMES=3;
+    function frame(now){
+      if(run!==pulseRun)return;
+      var e=(now-t0)/DUR,p=e%1;
+      if(e>=TIMES){map.setPaintProperty('pts-pulse','circle-stroke-opacity',0);return}
+      map.setPaintProperty('pts-pulse','circle-radius',22+18*p);
+      map.setPaintProperty('pts-pulse','circle-stroke-opacity',0.55*(1-p));
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  // A new route draws itself from the start to the end (Mapbox only: MapLibre has no line trim).
+  var drawRun=0;
+  function drawRoute(){
+    var run=++drawRun;
+    if(CFG.provider!=='mapbox'||!map.getLayer('route-line'))return;
+    var ids=['route-casing','route-line'];
+    if(still()){ids.forEach(function(id){try{map.setPaintProperty(id,'line-trim-offset',[0,0])}catch(e){}});return}
+    var t0=performance.now(),DUR=900;
+    function frame(now){
+      if(run!==drawRun)return;
+      var k=Math.min(1,(now-t0)/DUR);k=k<0.5?2*k*k:1-Math.pow(-2*k+2,2)/2;
+      // the part still to come is trimmed away: [k, 1] hidden while k grows
+      ids.forEach(function(id){try{map.setPaintProperty(id,'line-trim-offset',k>=1?[0,0]:[k,1])}catch(e){}});
+      if(k<1)requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  }
+  var lastIds='',lastRoute='',lastSel=null;
   // Pins with a category icon are drawn once per icon and colour on a canvas and added to the map
   // as images. Numbered plan stops, the traveller and tram stops stay plain circles.
   function drawPin(shape,glyph,color){
@@ -209,12 +268,19 @@ export const MAP_HTML = `<!doctype html>
     // region around the places instead, and the far ones are a short pan away.
     var cam=map.cameraForBounds(b,{padding:pad,maxZoom:16});
     if(cam&&cam.zoom<FIT_MIN_ZOOM){map.easeTo({center:b.getCenter(),zoom:FIT_MIN_ZOOM,duration:600});return}
-    map.fitBounds(b,{padding:pad,maxZoom:16,duration:600});
+    map.fitBounds(b,{padding:pad,maxZoom:16,duration:still()?0:900});
   }
   function apply(d){
     if(!ready){pending=d;return}
+    calm=d.calm;
     map.getSource('pts').setData(fc(d));debug.points=d.points.length;
     var drawn=line(d);map.getSource('route').setData(drawn);debug.route=drawn.geometry.coordinates.length;
+    // animate only what changed: a new set of pins, a new route, a new chosen pin
+    var ids=d.points.map(function(p){return p.id}).join('|');
+    if(ids!==lastIds){if(lastIds)fadeIn();lastIds=ids}
+    var rk=drawn.geometry.coordinates.length?drawn.geometry.coordinates.map(function(c){return c[0].toFixed(5)+','+c[1].toFixed(5)}).join(';'):'';
+    if(rk!==lastRoute){lastRoute=rk;if(rk)drawRoute()}
+    if(d.selectedId!==lastSel){lastSel=d.selectedId;if(d.selectedId)pulse()}
     var fitted=false;
     if(d.fit){fitTo(d,'route');fitted=true}
     if(d.fitKey!==null&&d.fitKey!==lastFit){
@@ -239,8 +305,13 @@ export const MAP_HTML = `<!doctype html>
       move=true;
     }
     if(move){
-      if(fitted)map.once('moveend',function(){map.easeTo(Object.assign({duration:600},cam))});
-      else map.easeTo(Object.assign({duration:800},cam));
+      // a chosen place is flown to along a gentle arc; a calm map jumps there
+      var go=function(){
+        if(still())map.jumpTo(cam);
+        else if(cam.center)map.flyTo(Object.assign({duration:1200,curve:1.3,essential:false},cam));
+        else map.easeTo(Object.assign({duration:800},cam));
+      };
+      if(fitted)map.once('moveend',go);else go();
     }
   }
   window.__apply=function(d){var c=clean(d);if(c)apply(c)};
@@ -310,7 +381,8 @@ export const MAP_HTML = `<!doctype html>
       function layer(def){for(var k in top)def[k]=top[k];map.addLayer(def)}
       var isStop=['==',['get','kind'],'stop'];
       var notStop=['!=',['get','kind'],'stop'];
-      map.addSource('route',{type:'geojson',data:line({route:[]})});
+      // lineMetrics lets the route draw itself (line-trim-offset)
+      map.addSource('route',{type:'geojson',lineMetrics:true,data:line({route:[]})});
       map.addSource('pts',{type:'geojson',data:fc({points:[]})});
       layer({id:'route-casing',type:'line',source:'route',layout:{'line-join':'round','line-cap':'round'},
         paint:{'line-color':C.ink,'line-width':7}});
@@ -332,6 +404,10 @@ export const MAP_HTML = `<!doctype html>
       layer({id:'pts-sel',type:'circle',source:'pts',filter:['all',hasIcon,['==',['get','sel'],1]],paint:{
         'circle-radius':tear?25:26,'circle-color':'rgba(0,0,0,0)','circle-stroke-color':C.ink,'circle-stroke-width':3,
         'circle-translate':tear?[0,-39]:[0,0]}});
+      // the breathing ring around the chosen pin (radius and opacity are animated by pulse())
+      layer({id:'pts-pulse',type:'circle',source:'pts',filter:['==',['get','sel'],1],paint:{
+        'circle-radius':22,'circle-color':'rgba(0,0,0,0)','circle-stroke-color':['get','color'],'circle-stroke-width':3,
+        'circle-stroke-opacity':0,'circle-translate':tear?[0,-39]:[0,0]}});
       // Crowding. Zoomed out, a pin and its name are placed together and give way to more important
       // neighbours (a cafe beside St Mary's), so fewer, readable pins remain; zoomed in, every pin shows.
       var notSel=['!=',['get','sel'],1],isSel=['==',['get','sel'],1],byRank=['-',4,['get','rank']];
@@ -381,6 +457,8 @@ export const MAP_HTML = `<!doctype html>
         map.on('mouseenter',id,function(){map.getCanvas().style.cursor='pointer'});
         map.on('mouseleave',id,function(){map.getCanvas().style.cursor=''});
       });
+      // remember each fading layer's own opacity expression, so fadeIn() can scale and restore it
+      FADE_LAYERS.forEach(function(l){if(map.getLayer(l[0]))BASE_OPACITY[l[0]]=map.getPaintProperty(l[0],l[1])});
       // a late load still counts: the app clears its error message on "ready"
       ready=true;debug.ready=true;clearTimeout(timer);
       if(pending){apply(pending);pending=null}

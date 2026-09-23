@@ -1,27 +1,79 @@
-import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Animated,
+  FlatList,
+  Image,
+  LayoutChangeEvent,
+  Linking,
+  PanResponder,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import LoopMap from '../../src/components/LoopMap';
 import type { MapPoint } from '../../src/components/mapHtml';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { Button, Chip, Eyebrow, TopBar } from '../../src/components/ui';
+import { Button, Chip, Eyebrow } from '../../src/components/ui';
+import { stay22Link } from '../../src/config/affiliates';
+import { CITY } from '../../src/config/city';
 import { CATEGORY_COLOR } from '../../src/data/categoryColor';
+import { CuisineKey } from '../../src/data/cuisines';
+import { FOOD_INFO } from '../../src/data/foodInfo';
 import { lensPoints } from '../../src/data/lens';
 import { PLACE_MEDIA } from '../../src/data/placeMedia';
-import { CATEGORY_LABEL, Category, ZONE_LABEL, places } from '../../src/data/places';
-import { distance, formatDistance } from '../../src/lib/geo';
+import { CATEGORY_LABEL, Category, Experience, ZONE_LABEL, experiences, places } from '../../src/data/places';
+import { RESTAURANTS, Restaurant, cuisineCounts, restaurantHoursOn } from '../../src/data/restaurants';
+import { STAYS, Stay } from '../../src/data/stays';
 import { krakowWallClock } from '../../src/lib/cityTime';
-import { hoursOn } from '../../src/lib/hours';
+import {
+  DiscoverIntent,
+  DiscoverMode,
+  EatFilters,
+  NO_EAT_FILTERS,
+  applyDiscoverIntent,
+  byDistance,
+  eatChips,
+  filterEat,
+  fold,
+  nearest,
+  parseMode,
+  removeEatChip,
+  toggleCuisine,
+  topCuisines,
+} from '../../src/lib/discover';
+import { distance, formatDistance, LatLon } from '../../src/lib/geo';
+import { formatHours, hoursOn } from '../../src/lib/hours';
+import { openWalkingDirections } from '../../src/lib/navigate';
+import { openLink, safeWebUrl } from '../../src/lib/openLink';
 import { openState, statusLabel } from '../../src/lib/openNow';
 import { BUS_STOP_LIST, TRAM_STOPS } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
+import { useReducedMotion } from '../../src/lib/useReducedMotion';
+import { readWishAnywhere } from '../../src/lib/wishProxy';
 import { t } from '../../src/i18n';
+import type { StringKey } from '../../src/i18n/en';
 import { colors, fonts, space } from '../../src/theme';
 
-const ORDER: Category[] = ['history', 'museum', 'jewish', 'view', 'food', 'daytrip', 'remembrance', 'night'];
 const ME = '__me';
 const LENS_PREFIX = 'lens:';
+/** pins the map draws at once for a long catalogue: the nearest ones */
+const MAX_PINS = 600;
+const SEE_CATS: Category[] = ['history', 'museum', 'jewish', 'view', 'remembrance', 'daytrip'];
+const DEFAULT_SEE = new Set<Category>(['history', 'museum', 'jewish', 'view', 'remembrance']);
+const MODE_ICON: Record<DiscoverMode, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
+  see: 'bank-outline',
+  eat: 'silverware-fork-knife',
+  do: 'lightning-bolt-outline',
+  stay: 'bed-outline',
+};
+const MODE_COLOR: Record<DiscoverMode, string> = { see: colors.brick, eat: colors.gilt, do: colors.patina, stay: colors.vistula };
+const STAY_KINDS: Stay['kind'][] = ['hotel', 'guest_house', 'hostel', 'apartment'];
+const EXP_KINDS = ['extreme', 'sightseeing', 'food', 'water', 'night'] as const;
 
 const LENS_MARKERS: MapPoint[] = lensPoints.map((l) => ({
   id: `${LENS_PREFIX}${l.id}`,
@@ -33,450 +85,812 @@ const LENS_MARKERS: MapPoint[] = lensPoints.map((l) => ({
   rank: 3,
   label: t('map.lensPin', { name: l.name }),
 }));
-// tram stops ringed in ink, bus stops in green: two kinds of stop, one switch
 const STOP_MARKERS: MapPoint[] = [
   ...TRAM_STOPS.map(([name, lat, lon], i): MapPoint => ({ id: `stop:t${i}`, lat, lon, color: colors.ink, kind: 'stop', label: name })),
   ...BUS_STOP_LIST.map((b, i): MapPoint => ({ id: `stop:b${i}`, lat: b.lat, lon: b.lon, color: colors.patina, kind: 'stop', label: b.name })),
 ];
-
-/** case and accent insensitive, so "wawel" finds "Wawel" and "krakow" finds "Kraków" */
-const normalise = (s: string) =>
-  s
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/ł/g, 'l')
-    .replace(/Ł/g, 'L')
-    .toLowerCase();
+/** the curated food places (src/data/places.ts) by their OpenStreetMap object, to link a pick to its page */
+const PLACE_BY_OSM = new Map(Object.entries(FOOD_INFO).map(([placeId, info]) => [info.osm, placeId]));
+const RYNEK: LatLon = { lat: CITY.mapCentre.lat, lon: CITY.mapCentre.lon };
+const COUNTS = cuisineCounts();
+const QUICK_CUISINES = topCuisines(COUNTS, 10);
 
 type Focus = { lat: number; lon: number; key: number } | null;
+type Picked = { type: 'eat'; item: Restaurant } | { type: 'stay'; item: Stay } | null;
 
-/** Open at this moment, by Kraków's clock. A place with unknown hours is not counted as open. */
-function isOpenNow(id: string): boolean {
-  const now = krakowWallClock(new Date());
-  const hours = hoursOn(id, now);
-  return !!hours && openState(hours, now.getHours() * 60 + now.getMinutes()).state === 'open';
+function nowInKrakow() {
+  const d = krakowWallClock(new Date());
+  return { date: d, minutes: d.getHours() * 60 + d.getMinutes() };
 }
 
-/** Closed at this moment, from hours we have. A place with unknown hours is never called closed. */
-function closedNow(id: string): boolean {
-  const now = krakowWallClock(new Date());
-  const hours = hoursOn(id, now);
-  return !!hours && openState(hours, now.getHours() * 60 + now.getMinutes()).state !== 'open';
+/** open (true), closed (false) or unknown (null) at this moment, from our own hours only */
+function restaurantOpen(r: Restaurant): boolean | null {
+  const now = nowInKrakow();
+  // restaurantHoursOn reads the weekday in Kraków time itself: it takes the real instant
+  const h = restaurantHoursOn(r, new Date());
+  return h ? openState(h, now.minutes).state === 'open' : null;
 }
 
+/** words for vegetarian food in the three languages: the wish reader does not carry diets */
+const VEG_WORDS = ['wege', 'wegan', 'wegetar', 'vegan', 'vegetar', 'vegeta'];
 
+const chipLabel = (key: 'cuisine' | 'openNow' | 'picks' | 'veg', cuisine?: CuisineKey) =>
+  key === 'cuisine' && cuisine ? t(`cuisine.${cuisine}` as StringKey) : t(`discover.chip.${key}` as StringKey);
 
-
-/** A category, or the stops layer, as one large row with a box to tick. */
-function FilterRow({ label, color, on, onPress }: { label: string; color?: string; on: boolean; onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityLabel={label}
-      aria-checked={on}
-      onPress={onPress}
-      style={({ pressed }) => [s.filterItem, pressed && { opacity: 0.8 }]}
-    >
-      <View aria-hidden importantForAccessibility="no-hide-descendants">
-        <MaterialCommunityIcons name={on ? 'checkbox-marked' : 'checkbox-blank-outline'} size={28} color={colors.ink} />
-      </View>
-      {color ? <View style={[s.filterDot, { backgroundColor: color }]} /> : null}
-      <Text style={s.filterItemText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-export default function MapScreen() {
+export default function DiscoverScreen() {
   const router = useRouter();
-  const [active, setActive] = useState<Set<Category>>(() => new Set(ORDER.filter((c) => c !== 'daytrip' && c !== 'night')));
+  const params = useLocalSearchParams<{ mode?: string }>();
+  const calm = useReducedMotion();
+  const me = useMyLocation();
+  const here = me.status === 'ok' && !me.outsideCity ? me.coords ?? null : null;
+  const origin: LatLon = here ?? RYNEK;
+
+  const [mode, setMode] = useState<DiscoverMode>(() => parseMode(params.mode));
+  // a tile on the start screen opens a door (/map?mode=eat): follow the address when it changes
+  // every change of door (a tap, or a tile on the start screen) starts a new epoch: a wish answer
+  // that arrives from an older epoch is dropped
+  const [epoch, setEpoch] = useState(0);
+  const epochRef = useRef(0);
+  useEffect(() => {
+    epochRef.current = epoch;
+  }, [epoch]);
+  const [modeParam, setModeParam] = useState(params.mode);
+
+  // what the traveller typed, and what the app understood from it
+  const [text, setText] = useState('');
+  const [nameQuery, setNameQuery] = useState('');
+  const [reading, setReading] = useState<'idle' | 'busy' | 'notUnderstood'>('idle');
+  const readRun = useRef(0);
+
+  const [eat, setEat] = useState<EatFilters>(NO_EAT_FILTERS);
+  const [seeCats, setSeeCats] = useState<Set<Category>>(DEFAULT_SEE);
+  const [stayKinds, setStayKinds] = useState<Set<Stay['kind']>>(new Set());
+  const [expKind, setExpKind] = useState<(typeof EXP_KINDS)[number] | null>(null);
+  const [showStops, setShowStops] = useState(false);
+  const [picked, setPicked] = useState<Picked>(null);
+
+  const [focus, setFocus] = useState<Focus>(null);
+  const [fit, setFit] = useState({ key: 0 });
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapWarning, setMapWarning] = useState<string | null>(null);
   const [mapKey, setMapKey] = useState(0);
-  const [view, setView] = useState<'map' | 'list'>('map');
-  const [query, setQuery] = useState('');
-  const [focus, setFocus] = useState<Focus>(null);
-  // the map is always 3D: one less switch to find, and buildings help people recognise where they are
-  const threeD = true;
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [openOnly, setOpenOnly] = useState(false);
-  const [showStops, setShowStops] = useState(false);
-  // one line of help, shown until the traveller closes it or taps a place
-  const [tipShown, setTipShown] = useState(true);
-  const [fit, setFit] = useState<{ key: number; target: 'route' | 'points' }>({ key: 0, target: 'points' });
-  // opening status in the list is read in Kraków time, whatever zone the phone is on
-  const krakowNow = krakowWallClock(new Date());
-  const krakowMinutes = krakowNow.getHours() * 60 + krakowNow.getMinutes();
-  const me = useMyLocation();
 
-  const here = me.status === 'ok' ? me.coords : undefined;
-  const q = normalise(query.trim());
-
-  const visible = useMemo(
+  // ---- the drawer: peek, half, full --------------------------------------------------------------
+  const [areaH, setAreaH] = useState(0);
+  const [topH, setTopH] = useState(0);
+  const [snap, setSnap] = useState<0 | 1 | 2>(0);
+  const heights = useMemo(() => {
+    const full = Math.max(260, areaH - topH - space.s);
+    return [Math.min(176, full), Math.min(Math.round(areaH * 0.52), full), full] as const;
+  }, [areaH, topH]);
+  const [drawerH] = useState(() => new Animated.Value(176));
+  // where a drag began: a plain box, read only inside the gesture callbacks
+  const [drag] = useState(() => ({ start: 0 }));
+  useEffect(() => {
+    if (!areaH) return;
+    if (calm) drawerH.setValue(heights[snap]);
+    else Animated.spring(drawerH, { toValue: heights[snap], useNativeDriver: false, bounciness: 3, speed: 16 }).start();
+  }, [snap, heights, calm, areaH, drawerH]);
+  const pan = useMemo(
     () =>
-      places.filter(
-        (p) => active.has(p.cat) && (!q || normalise(`${p.name} ${p.local ?? ''}`).includes(q)) && (!openOnly || isOpenNow(p.id)),
-      ),
-    [active, q, openOnly],
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 6,
+        onPanResponderGrant: () => {
+          drawerH.stopAnimation((v) => (drag.start = v));
+        },
+        onPanResponderMove: (_e, g) => drawerH.setValue(Math.max(heights[0], Math.min(heights[2], drag.start - g.dy))),
+        onPanResponderRelease: (_e, g) => {
+          const h = drag.start - g.dy;
+          // the nearest height, nudged in the direction of a quick flick
+          const target = h - g.vy * 120;
+          let best: 0 | 1 | 2 = 0;
+          heights.forEach((v, i) => {
+            if (Math.abs(v - target) < Math.abs(heights[best] - target)) best = i as 0 | 1 | 2;
+          });
+          // settle there even when the height is the one the drawer started from
+          if (calm) drawerH.setValue(heights[best]);
+          else Animated.spring(drawerH, { toValue: heights[best], useNativeDriver: false, bounciness: 3, speed: 16 }).start();
+          setSnap(best);
+        },
+      }),
+    [heights, drawerH, calm, drag],
   );
+
+  // ---- what each door lists ------------------------------------------------------------------------
+  const seeRows = useMemo(() => {
+    const q = fold(nameQuery.trim());
+    return byDistance(
+      places.filter((p) => seeCats.has(p.cat) && (!q || fold(`${p.name} ${p.local ?? ''}`).includes(q))),
+      here,
+    );
+  }, [seeCats, nameQuery, here]);
+
+  const eatRows = useMemo(() => byDistance(filterEat(RESTAURANTS, eat, nameQuery, restaurantOpen), origin), [eat, nameQuery, origin]);
+
+  const stayRows = useMemo(() => {
+    const q = fold(nameQuery.trim());
+    return byDistance(
+      STAYS.filter((s) => (!stayKinds.size || stayKinds.has(s.kind)) && (!q || fold(s.name).includes(q))),
+      origin,
+    );
+  }, [stayKinds, nameQuery, origin]);
+
+  const nightPlaces = useMemo(() => {
+    const q = fold(nameQuery.trim());
+    return places.filter((p) => p.cat === 'night' && (!q || fold(`${p.name} ${p.local ?? ''}`).includes(q)));
+  }, [nameQuery]);
+  const doList = useMemo(() => {
+    const q = fold(nameQuery.trim());
+    return experiences.filter(
+      (x) => (!expKind || (x as Experience & { kind?: string }).kind === expKind) && (!q || fold(`${x.name} ${x.note}`).includes(q)),
+    );
+  }, [expKind, nameQuery]);
+
+  // ---- pins ----------------------------------------------------------------------------------------
   const points = useMemo<MapPoint[]>(() => {
     const pts: MapPoint[] = showStops ? [...STOP_MARKERS] : [];
-    for (const p of visible)
-      pts.push({
-        id: p.id,
-        lat: p.lat,
-        lon: p.lon,
-        color: CATEGORY_COLOR[p.cat],
-        label: p.name,
-        glyph: p.cat,
-        rank: p.priority,
-        // places to eat and drink are faded while they are closed: our own hours only, never Google's
-        dim: (p.cat === 'food' || p.cat === 'night') && closedNow(p.id),
-      });
-    pts.push(...LENS_MARKERS);
+    if (mode === 'see') {
+      for (const { item: p } of seeRows)
+        pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat], label: p.name, glyph: p.cat, rank: p.priority });
+      pts.push(...LENS_MARKERS);
+    } else if (mode === 'eat') {
+      const shown = nearest(eatRows.map((x) => x.item), origin, MAX_PINS);
+      if (picked?.type === 'eat' && !shown.includes(picked.item)) shown.push(picked.item);
+      for (const r of shown)
+        pts.push({
+          id: r.id,
+          lat: r.lat,
+          lon: r.lon,
+          color: r.pick ? colors.brick : CATEGORY_COLOR.food,
+          label: r.name,
+          glyph: r.kind === 'cafe' ? 'coffee' : 'food',
+          rank: r.pick ? 3 : 2,
+          dim: restaurantOpen(r) === false,
+        });
+    } else if (mode === 'stay') {
+      const shown = nearest(stayRows.map((x) => x.item), origin, MAX_PINS);
+      if (picked?.type === 'stay' && !shown.includes(picked.item)) shown.push(picked.item);
+      for (const s of shown)
+        pts.push({ id: s.id, lat: s.lat, lon: s.lon, color: colors.vistula, label: s.name, glyph: 'stay', rank: s.stars && s.stars >= 4 ? 3 : 2 });
+    } else {
+      for (const p of nightPlaces)
+        pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR.night, label: p.name, glyph: 'night', rank: p.priority });
+    }
     if (here) pts.push({ id: ME, lat: here.lat, lon: here.lon, color: colors.vistula, kind: 'me' });
     return pts;
-  }, [visible, here, showStops]);
-  const rows = useMemo(
-    () =>
-      visible
-        .map((p) => ({ place: p, metres: here ? distance(here, p) : null }))
-        .sort((a, b) =>
-          // places outside Kraków (day trips, the memorial) come after everything in the city
-          Number(a.place.zone === 'out') - Number(b.place.zone === 'out') ||
-          (a.metres !== null && b.metres !== null
-            ? a.metres - b.metres
-            : b.place.priority - a.place.priority || a.place.name.localeCompare(b.place.name)),
-        ),
-    [visible, here],
-  );
-  const refit = (target: 'route' | 'points') => setFit((f) => ({ key: f.key + 1, target }));
+  }, [mode, seeRows, eatRows, stayRows, nightPlaces, origin, here, showStops, picked]);
 
-  const toggle = (c: Category) => {
-    const next = new Set(active);
-    if (next.has(c)) next.delete(c);
-    else next.add(c);
-    setActive(next);
-    // day trips are far away: zoom out to show them
-    if (c === 'daytrip' && next.has(c)) {
-      setView('map');
-      refit('points');
-    }
+  // a new door or new filters: show all their pins
+  const refit = () => setFit((f) => ({ key: f.key + 1 }));
+  const flyTo = (p: LatLon) => setFocus((f) => ({ lat: p.lat, lon: p.lon, key: (f?.key ?? 0) + 1 }));
+
+  const switchMode = (m: DiscoverMode) => {
+    setEpoch((e) => e + 1);
+    setReading('idle');
+    setMode(m);
+    setPicked(null);
+    setNameQuery('');
+    refit();
   };
-  const allOn = active.size === ORDER.length;
-  const toggleAll = () => setActive(new Set(allOn ? [] : ORDER));
+  // a tile on the start screen opened a door (/map?mode=eat): the same reset as a tap on the door
+  if (params.mode !== modeParam) {
+    setModeParam(params.mode);
+    if (params.mode) switchMode(parseMode(params.mode));
+  }
 
-  // A tap on a pin opens the place itself: photo, description, hours and the way there, in one step.
   const select = useCallback(
     (id: string) => {
       if (id === ME) return;
-      setTipShown(false);
-      if (id.startsWith(LENS_PREFIX)) {
-        router.push(`/lens/${id.slice(LENS_PREFIX.length)}`);
-        return;
+      if (id.startsWith(LENS_PREFIX)) return router.push(`/lens/${id.slice(LENS_PREFIX.length)}`);
+      if (mode === 'eat') {
+        const r = RESTAURANTS.find((x) => x.id === id);
+        if (r) {
+          setPicked({ type: 'eat', item: r });
+          setSnap(1);
+          return;
+        }
+      }
+      if (mode === 'stay') {
+        const s = STAYS.find((x) => x.id === id);
+        if (s) {
+          setPicked({ type: 'stay', item: s });
+          setSnap(1);
+          return;
+        }
       }
       router.push(`/place/${id}`);
     },
-    [router],
+    [mode, router],
   );
-  const onError = useCallback((message: string) => setMapError(message), []);
-  const onWarning = useCallback((message: string) => setMapWarning(message), []);
-  // a map that loads after an error (slow network) clears the message by itself
+  const pickFromList = (p: Picked) => {
+    if (!p) return;
+    setPicked(p);
+    setSnap(1);
+    flyTo(p.item);
+  };
+
+  // ---- the wish box ------------------------------------------------------------------------------
+  const submit = async () => {
+    const said = text.trim();
+    if (!said) return;
+    const run = ++readRun.current;
+    const since = epochRef.current;
+    setReading('busy');
+    const { intent, understood } = await readWishAnywhere(said);
+    // a newer question, or a door changed meanwhile, wins over this late answer
+    if (run !== readRun.current || since !== epochRef.current) return;
+    const wish = intent as DiscoverIntent;
+    const veg = VEG_WORDS.some((w) => fold(said).includes(w));
+    const next = applyDiscoverIntent({ ...wish, veg: veg || undefined }, NO_EAT_FILTERS);
+    // a diet or "open now" alone is a food wish too, even when nothing else was recognised
+    const food = next.eat.cuisines.length > 0 || veg || (understood && wish.openNow === true);
+    if (food && !next.mode) next.mode = 'eat';
+    if ((understood && next.mode) || food) {
+      setEat(next.eat);
+      setNameQuery('');
+      if (next.mode) setMode(next.mode);
+      setPicked(null);
+      setSnap(1);
+      setReading('idle');
+      refit();
+    } else {
+      // nothing the tab can act on: search the names on this door instead
+      setNameQuery(said);
+      setReading('notUnderstood');
+    }
+  };
+  const clearText = () => {
+    readRun.current++;
+    setText('');
+    setNameQuery('');
+    setReading('idle');
+  };
+
+  const onError = useCallback((m: string) => setMapError(m), []);
+  const onWarning = useCallback((m: string) => setMapWarning(m), []);
   const onReady = useCallback(() => setMapError(null), []);
   const retry = () => {
     setMapError(null);
     setMapWarning(null);
     setMapKey((k) => k + 1);
   };
-
-  const flyTo = (lat: number, lon: number) => setFocus((f) => ({ lat, lon, key: (f?.key ?? 0) + 1 }));
   const nearMe = async () => {
     const loc = await me.locate();
-    if (loc.status === 'ok' && loc.coords && !loc.outsideCity) {
-      setView('map');
-      flyTo(loc.coords.lat, loc.coords.lon);
-    }
+    if (loc.status === 'ok' && loc.coords && !loc.outsideCity) flyTo(loc.coords);
   };
 
-  const locationNote =
-    me.status === 'asking'
-      ? t('walk.findingYou')
-      : me.status === 'ok' && me.outsideCity
-        ? t('map.outsideCity')
-        : me.message ?? null;
-  const listOpen = view === 'list';
-  const covered = listOpen || filtersOpen;
+  const chips = mode === 'eat' ? eatChips(eat) : [];
+  const locationNote = me.status === 'asking' ? t('walk.findingYou') : me.status === 'ok' && me.outsideCity ? t('map.outsideCity') : me.message ?? null;
+  const count = mode === 'see' ? seeRows.length : mode === 'eat' ? eatRows.length : mode === 'stay' ? stayRows.length : doList.length;
+
+  // ---- the drawer's contents ---------------------------------------------------------------------
+  const filterRow = (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow} keyboardShouldPersistTaps="handled">
+      {mode === 'see' ? <Chip label={t('discover.stops')} active={showStops} onPress={() => setShowStops((v) => !v)} /> : null}
+      {mode === 'see' &&
+        SEE_CATS.map((c) => (
+          <Chip
+            key={c}
+            label={CATEGORY_LABEL[c]}
+            color={CATEGORY_COLOR[c]}
+            active={seeCats.has(c)}
+            onPress={() => {
+              const n = new Set(seeCats);
+              if (n.has(c)) n.delete(c);
+              else n.add(c);
+              setSeeCats(n);
+              refit();
+            }}
+          />
+        ))}
+      {mode === 'eat' && (
+        <>
+          <Chip label={t('discover.chip.openNow')} active={eat.openNow} onPress={() => setEat({ ...eat, openNow: !eat.openNow })} />
+          <Chip label={t('discover.chip.picks')} active={eat.picks} onPress={() => setEat({ ...eat, picks: !eat.picks })} />
+          <Chip label={t('discover.chip.veg')} active={eat.veg} onPress={() => setEat({ ...eat, veg: !eat.veg })} />
+          {QUICK_CUISINES.map((c) => (
+            <Chip
+              key={c}
+              label={`${t(`cuisine.${c}` as StringKey)} · ${COUNTS[c]}`}
+              active={eat.cuisines.includes(c)}
+              onPress={() => {
+                setEat(toggleCuisine(eat, c));
+                refit();
+              }}
+            />
+          ))}
+        </>
+      )}
+      {mode === 'do' && (
+        <>
+          <Chip label={t('discover.all')} active={!expKind} onPress={() => setExpKind(null)} />
+          {EXP_KINDS.filter((k) => experiences.some((x) => (x as Experience & { kind?: string }).kind === k)).map((k) => (
+            <Chip key={k} label={t(`exp.kind.${k}` as StringKey)} active={expKind === k} onPress={() => setExpKind(expKind === k ? null : k)} />
+          ))}
+        </>
+      )}
+      {mode === 'stay' &&
+        STAY_KINDS.filter((k) => STAYS.some((x) => x.kind === k)).map((k) => (
+          <Chip
+            key={k}
+            label={t(`stay.${k}` as StringKey)}
+            active={stayKinds.has(k)}
+            onPress={() => {
+              const n = new Set(stayKinds);
+              if (n.has(k)) n.delete(k);
+              else n.add(k);
+              setStayKinds(n);
+              refit();
+            }}
+          />
+        ))}
+    </ScrollView>
+  );
+
+  const header = (
+    <View>
+      {filterRow}
+      <View style={s.countRow}>
+        <Text style={s.count} accessibilityLiveRegion="polite">
+          {t('discover.count', { n: count })}
+          {mode !== 'do' ? ` · ${here ? t('discover.fromYou') : t('discover.fromRynek')}` : ''}
+        </Text>
+      </View>
+      {mode === 'stay' ? (
+        <View style={s.stayCta}>
+          <Button
+            label={t('discover.stay.search')}
+            onPress={() => openLink(stay22Link({ lat: origin.lat, lon: origin.lon }).url)}
+          />
+          <Text style={s.fine}>{t('discover.stay.searchNote')}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+
+  const footer = mode === 'eat' || mode === 'stay' ? <Text style={s.credit}>{t('discover.osmCredit')}</Text> : null;
+  const empty = <Text style={s.hint}>{t('discover.nothing')}</Text>;
+
+  const list = () => {
+    if (mode === 'see')
+      return (
+        <FlatList
+          data={seeRows}
+          keyExtractor={(r) => r.item.id}
+          ListHeaderComponent={header}
+          ListEmptyComponent={empty}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item: { item: p, metres } }) => {
+            const now = nowInKrakow();
+            const h = hoursOn(p.id, now.date);
+            const st = h ? openState(h, now.minutes) : null;
+            const photo = PLACE_MEDIA[p.id]?.image;
+            return (
+              <Pressable accessibilityRole="button" onPress={() => router.push(`/place/${p.id}`)} style={({ pressed }) => [s.row, pressed && s.pressed]}>
+                {photo ? (
+                  <Image source={photo} style={s.rowPhoto} resizeMode="cover" accessibilityIgnoresInvertColors />
+                ) : (
+                  <View style={[s.rowPhoto, { backgroundColor: CATEGORY_COLOR[p.cat] }]} />
+                )}
+                <View style={s.rowBody}>
+                  <Text style={s.rowName}>{p.name}</Text>
+                  <Eyebrow>
+                    {CATEGORY_LABEL[p.cat]} · {metres !== null ? formatDistance(metres) : ZONE_LABEL[p.zone]}
+                  </Eyebrow>
+                  {st ? (
+                    <Text style={[s.rowMeta, st.state === 'open' && s.open]}>
+                      {st.state === 'open' ? t('open.nowPrefix') : ''}
+                      {statusLabel(st, now.minutes)}
+                    </Text>
+                  ) : null}
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+      );
+    if (mode === 'eat')
+      return (
+        <FlatList
+          data={eatRows}
+          keyExtractor={(r) => r.item.id}
+          ListHeaderComponent={header}
+          ListFooterComponent={footer}
+          ListEmptyComponent={empty}
+          initialNumToRender={12}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item: { item: r, metres } }) => {
+            const open = restaurantOpen(r);
+            return (
+              <Pressable accessibilityRole="button" onPress={() => pickFromList({ type: 'eat', item: r })} style={({ pressed }) => [s.row, pressed && s.pressed]}>
+                <View style={[s.rowIcon, { backgroundColor: r.pick ? colors.brick : CATEGORY_COLOR.food }]} aria-hidden>
+                  <MaterialCommunityIcons name={r.kind === 'cafe' ? 'coffee' : 'silverware-fork-knife'} size={22} color={colors.white} />
+                </View>
+                <View style={s.rowBody}>
+                  <Text style={s.rowName}>{r.name}</Text>
+                  <Eyebrow>
+                    {[r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey), metres !== null ? formatDistance(metres) : null]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Eyebrow>
+                  <View style={s.rowTags}>
+                    {r.pick ? <Text style={s.badge}>{t('discover.pick')}</Text> : null}
+                    {open === true ? <Text style={[s.rowMeta, s.open]}>{t('discover.openNow')}</Text> : null}
+                    {open === false ? <Text style={s.rowMeta}>{t('discover.closedNow')}</Text> : null}
+                  </View>
+                </View>
+              </Pressable>
+            );
+          }}
+        />
+      );
+    if (mode === 'stay')
+      return (
+        <FlatList
+          data={stayRows}
+          keyExtractor={(r) => r.item.id}
+          ListHeaderComponent={header}
+          ListFooterComponent={footer}
+          ListEmptyComponent={empty}
+          initialNumToRender={12}
+          keyboardShouldPersistTaps="handled"
+          renderItem={({ item: { item: st, metres } }) => (
+            <Pressable accessibilityRole="button" onPress={() => pickFromList({ type: 'stay', item: st })} style={({ pressed }) => [s.row, pressed && s.pressed]}>
+              <View style={[s.rowIcon, { backgroundColor: colors.vistula }]} aria-hidden>
+                <MaterialCommunityIcons name="bed-outline" size={22} color={colors.white} />
+              </View>
+              <View style={s.rowBody}>
+                <Text style={s.rowName}>{st.name}</Text>
+                <Eyebrow>
+                  {[t(`stay.${st.kind}` as StringKey), st.stars ? t('discover.stars', { n: st.stars }) : null, metres !== null ? formatDistance(metres) : null]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Eyebrow>
+              </View>
+            </Pressable>
+          )}
+        />
+      );
+    return (
+      <FlatList
+        data={doList}
+        keyExtractor={(x) => x.id}
+        ListHeaderComponent={header}
+        ListEmptyComponent={empty}
+        keyboardShouldPersistTaps="handled"
+        ListFooterComponent={
+          <View style={s.nightBlock}>
+            <Text style={s.sectionTitle} accessibilityRole="header">
+              {t('discover.do.night')}
+            </Text>
+            {nightPlaces.map((p) => (
+              <Pressable key={p.id} accessibilityRole="button" onPress={() => router.push(`/place/${p.id}`)} style={({ pressed }) => [s.rowSlim, pressed && s.pressed]}>
+                <View style={[s.dot, { backgroundColor: CATEGORY_COLOR.night }]} />
+                <Text style={s.rowNameSlim}>{p.name}</Text>
+                <MaterialCommunityIcons name="chevron-right" size={22} color={colors.mute} aria-hidden />
+              </Pressable>
+            ))}
+          </View>
+        }
+        renderItem={({ item: x }) => {
+          const e = x as Experience & { kind?: string; minutes?: number; pickup?: boolean };
+          const meta = [
+            e.kind ? t(`exp.kind.${e.kind}` as StringKey) : null,
+            e.minutes ? t('discover.do.minutes', { h: Math.round((e.minutes / 60) * 10) / 10 }) : null,
+            e.pickup ? t('discover.do.pickup') : null,
+            e.season ?? null,
+          ].filter(Boolean);
+          return (
+            <View style={s.expCard}>
+              <Text style={s.rowName}>{e.name}</Text>
+              {meta.length ? <Eyebrow>{meta.join(' · ')}</Eyebrow> : null}
+              <Text style={s.expNote}>{e.note}</Text>
+              <Button label={t('discover.do.book')} kind="quiet" onPress={() => openLink(e.booking.url)} />
+            </View>
+          );
+        }}
+      />
+    );
+  };
+
+  const detail = () => {
+    if (!picked) return null;
+    const close = () => setPicked(null);
+    if (picked.type === 'eat') {
+      const r = picked.item;
+      const now = nowInKrakow();
+      const h = restaurantHoursOn(r, new Date());
+      const st = h ? openState(h, now.minutes) : null;
+      const placeId = PLACE_BY_OSM.get(r.osm);
+      return (
+        <ScrollView contentContainerStyle={s.detail} keyboardShouldPersistTaps="handled">
+          <DetailHead title={r.name} onClose={close} />
+          <Eyebrow>
+            {[r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey), formatDistance(distance(origin, r))].join(' · ')}
+          </Eyebrow>
+          {r.pick ? <Text style={[s.badge, s.badgeBig]}>{t('discover.pick')}</Text> : null}
+          {r.address ? <Text style={s.detailLine}>{r.address}</Text> : null}
+          <Text style={[s.detailLine, st?.state === 'open' && s.open]}>
+            {st ? `${st.state === 'open' ? t('open.nowPrefix') : ''}${statusLabel(st, now.minutes)}` : t('discover.hoursUnknown')}
+            {h ? ` · ${t('discover.today', { hours: formatHours(h) ?? '' })}` : ''}
+          </Text>
+          {r.diet?.length ? <Text style={s.detailLine}>{r.diet.map((d) => t(`discover.diet.${d}` as StringKey)).join(', ')}</Text> : null}
+          <View style={s.actions}>
+            <Button label={t('discover.navigate')} onPress={() => openWalkingDirections(r)} />
+            {placeId ? <Button label={t('discover.more')} kind="quiet" onPress={() => router.push(`/place/${placeId}`)} /> : null}
+            {safeWebUrl(r.website) ? <Button label={t('discover.website')} kind="quiet" onPress={() => openLink(safeWebUrl(r.website)!)} /> : null}
+            {r.phone ? <Button label={t('discover.call')} kind="quiet" onPress={() => Linking.openURL(`tel:${r.phone!.replace(/[^+\d]/g, '')}`).catch(() => {})} /> : null}
+          </View>
+          <Text style={s.credit}>{t('discover.osmCredit')}</Text>
+        </ScrollView>
+      );
+    }
+    const st = picked.item;
+    return (
+      <ScrollView contentContainerStyle={s.detail}>
+        <DetailHead title={st.name} onClose={close} />
+        <Eyebrow>
+          {[t(`stay.${st.kind}` as StringKey), st.stars ? t('discover.stars', { n: st.stars }) : null, formatDistance(distance(origin, st))].filter(Boolean).join(' · ')}
+        </Eyebrow>
+        {st.address ? <Text style={s.detailLine}>{st.address}</Text> : null}
+        <View style={s.actions}>
+          <Button label={t('discover.stay.prices')} onPress={() => openLink(stay22Link({ lat: st.lat, lon: st.lon }).url)} />
+          {safeWebUrl(st.website) ? <Button label={t('discover.website')} kind="quiet" onPress={() => openLink(safeWebUrl(st.website)!)} /> : null}
+          <Button label={t('discover.navigate')} kind="quiet" onPress={() => openWalkingDirections(st)} />
+        </View>
+        <Text style={s.fine}>{t('discover.stay.searchNote')}</Text>
+        <Text style={s.credit}>{t('discover.osmCredit')}</Text>
+      </ScrollView>
+    );
+  };
+
+  const selectedId = picked?.item.id ?? null;
 
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
-      <TopBar
-        back={false}
-        title={t('map.title')}
-        right={
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => setView(listOpen ? 'map' : 'list')}
-            hitSlop={8}
-            style={({ pressed }) => [s.viewSwitch, pressed && { opacity: 0.75 }]}
-          >
-            <Text style={s.viewSwitchText}>{listOpen ? t('map.showMap') : t('map.showList')}</Text>
-          </Pressable>
-        }
-      />
-      <View style={s.searchRow}>
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder={t('map.searchPlaceholder')}
-          placeholderTextColor={colors.mute}
-          style={s.search}
-          accessibilityLabel={t('map.searchLabel')}
-          autoCorrect={false}
-          returnKeyType="search"
-          clearButtonMode="while-editing"
-        />
-        <Pressable
-          accessibilityRole="button"
-          aria-expanded={filtersOpen}
-          accessibilityLabel={t('map.filterLabel', { shown: active.size, total: ORDER.length })}
-          onPress={() => setFiltersOpen((v) => !v)}
-          style={({ pressed }) => [s.filterButton, filtersOpen && s.filterButtonOn, pressed && { opacity: 0.85 }]}
-        >
-          <View aria-hidden importantForAccessibility="no-hide-descendants">
-            <MaterialCommunityIcons name="tune-variant" size={22} color={filtersOpen ? colors.white : colors.ink} />
-          </View>
-          <Text style={[s.filterButtonText, filtersOpen && s.onInk]}>{t('map.filterShort', { shown: active.size, total: ORDER.length })}</Text>
-        </Pressable>
-      </View>
-      {/* always mounted, so screen readers announce each new message about the traveller's location */}
-      <Text style={locationNote ? s.locNote : s.liveEmpty} accessibilityLiveRegion="polite">
-        {locationNote ?? ''}
-      </Text>
-
-      <View style={s.mapWrap}>
-        {/* the map stays mounted under the list and the filters (no reload), hidden from screen readers there */}
-        <View
-          style={s.map}
-          aria-hidden={covered}
-          accessibilityElementsHidden={covered}
-          importantForAccessibility={covered ? 'no-hide-descendants' : 'auto'}
-        >
+      <View style={s.area} onLayout={(e: LayoutChangeEvent) => setAreaH(e.nativeEvent.layout.height)}>
+        <View style={StyleSheet.absoluteFill} aria-hidden={snap === 2} importantForAccessibility={snap === 2 ? 'no-hide-descendants' : 'auto'}>
           <LoopMap
             key={mapKey}
-            style={s.map}
+            style={StyleSheet.absoluteFill}
             points={points}
+            selectedId={selectedId}
             focus={focus}
             fitKey={fit.key}
-            fitTarget={fit.target}
-            threeD={threeD}
-            inactive={covered}
+            fitTarget="points"
+            threeD
+            inactive={snap === 2}
             onSelect={select}
             onError={onError}
             onWarning={onWarning}
             onReady={onReady}
           />
-          {listOpen ? null : (
+        </View>
+
+        {/* the question, the four doors and what was understood, over the top of the map */}
+        <View style={s.top} onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
+          <View style={s.ask}>
+            <MaterialCommunityIcons name="magnify" size={22} color={colors.mute} aria-hidden />
+            <TextInput
+              value={text}
+              onChangeText={(v) => {
+                setText(v);
+                if (!v.trim()) clearText();
+              }}
+              onSubmitEditing={submit}
+              placeholder={t('discover.askPlaceholder')}
+              placeholderTextColor={colors.mute}
+              style={s.askInput}
+              accessibilityLabel={t('discover.askLabel')}
+              returnKeyType="search"
+              autoCorrect={false}
+            />
+            {text ? (
+              <Pressable accessibilityRole="button" accessibilityLabel={t('discover.clear')} onPress={clearText} hitSlop={10} style={s.iconBtn}>
+                <MaterialCommunityIcons name="close" size={20} color={colors.ink} aria-hidden />
+              </Pressable>
+            ) : null}
             <Pressable
               accessibilityRole="button"
-              accessibilityHint={t('map.nearMeHint')}
-              onPress={nearMe}
-              hitSlop={6}
-              style={({ pressed }) => [s.nearMe, pressed && { opacity: 0.8 }]}
+              accessibilityLabel={t('discover.askSubmit')}
+              onPress={submit}
+              disabled={!text.trim() || reading === 'busy'}
+              style={({ pressed }) => [s.go, (!text.trim() || reading === 'busy') && s.goOff, pressed && s.pressed]}
             >
-              <View aria-hidden importantForAccessibility="no-hide-descendants">
-                <MaterialCommunityIcons name="crosshairs-gps" size={22} color={colors.ink} />
-              </View>
-              <Text style={s.nearMeText}>{t('map.nearMe')}</Text>
+              <MaterialCommunityIcons name="arrow-right" size={22} color={colors.white} aria-hidden />
             </Pressable>
-          )}
-          {tipShown && !covered ? (
-            <View style={s.tip}>
-              <Text style={s.tipText}>{t('map.tip')}</Text>
-              <Pressable accessibilityRole="button" accessibilityLabel={t('map.tipClose')} onPress={() => setTipShown(false)} hitSlop={10}>
-                <View aria-hidden importantForAccessibility="no-hide-descendants">
-                  <MaterialCommunityIcons name="close" size={22} color={colors.white} />
-                </View>
-              </Pressable>
+          </View>
+
+          <View style={s.modes} accessibilityRole="tablist">
+            {(['see', 'eat', 'do', 'stay'] as DiscoverMode[]).map((m) => {
+              const on = mode === m;
+              return (
+                <Pressable
+                  key={m}
+                  accessibilityRole="tab"
+                  aria-selected={on}
+                  onPress={() => switchMode(m)}
+                  style={({ pressed }) => [s.mode, on && { backgroundColor: MODE_COLOR[m] }, pressed && s.pressed]}
+                >
+                  <MaterialCommunityIcons name={MODE_ICON[m]} size={20} color={on ? colors.white : colors.ink} aria-hidden />
+                  <Text style={[s.modeText, on && s.modeTextOn]}>{t(`discover.mode.${m}` as StringKey)}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {reading === 'busy' ? (
+            <Text style={s.readingNote} accessibilityLiveRegion="polite">
+              {t('discover.reading')}
+            </Text>
+          ) : null}
+          {reading === 'notUnderstood' ? (
+            <Text style={s.readingNote} accessibilityLiveRegion="polite">
+              {t('discover.notUnderstood')}
+            </Text>
+          ) : null}
+          {chips.length ? (
+            <View style={s.understood}>
+              <Text style={s.understoodLabel}>{t('discover.understood')}</Text>
+              <View style={s.understoodChips}>
+                {chips.map((c) => {
+                  const label = chipLabel(c.label.key, c.label.cuisine);
+                  return (
+                    <Pressable
+                      key={c.key}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('discover.removeChip', { label })}
+                      onPress={() => {
+                        setEat(removeEatChip(eat, c.key));
+                        refit();
+                      }}
+                      style={({ pressed }) => [s.uChip, pressed && s.pressed]}
+                    >
+                      <Text style={s.uChipText}>{label}</Text>
+                      <MaterialCommunityIcons name="close" size={16} color={colors.ink} aria-hidden />
+                    </Pressable>
+                  );
+                })}
+              </View>
             </View>
           ) : null}
-          {mapError ? (
-            <View style={s.error} accessibilityRole="alert">
-              <Text style={s.errorTitle}>{t('map.errorTitle')}</Text>
-              <Text style={s.errorText}>
-                {mapError} {t('map.errorHelp')}
-              </Text>
-              <Button label={t('map.tryAgain')} onPress={retry} />
-            </View>
-          ) : null}
-          {mapWarning && !mapError ? (
-            <Text style={s.warning} accessibilityRole="alert">
-              {t('map.warning')}
+          {locationNote ? (
+            <Text style={s.locNote} accessibilityLiveRegion="polite">
+              {locationNote}
             </Text>
           ) : null}
         </View>
 
-        {filtersOpen ? (
-          // a panel over the map instead of chips pushing it down: the map keeps its size behind
-          <View style={s.sheet}>
-            <ScrollView contentContainerStyle={s.sheetInner}>
-              <Text style={s.sheetTitle} accessibilityRole="header">
-                {t('map.categories')}
-              </Text>
-              <FilterRow label={t('map.allCategories')} on={allOn} onPress={toggleAll} />
-              {ORDER.map((c) => (
-                <FilterRow key={c} label={CATEGORY_LABEL[c]} color={CATEGORY_COLOR[c]} on={active.has(c)} onPress={() => toggle(c)} />
-              ))}
-              <View style={s.stopsRow}>
-                <View style={{ flex: 1 }}>
-                  <Text style={s.filterItemText}>{t('map.stops')}</Text>
-                  <Text style={s.stopsLine}>{t('map.stopsLine')}</Text>
-                </View>
-                <Switch
-                  value={showStops}
-                  onValueChange={setShowStops}
-                  trackColor={{ true: colors.ink, false: colors.line }}
-                  thumbColor={colors.paper}
-                  accessibilityLabel={t('map.stops')}
-                />
-              </View>
-            </ScrollView>
-            <View style={s.sheetFoot}>
-              <Button label={t('map.done')} onPress={() => setFiltersOpen(false)} />
-            </View>
+        {mapError ? (
+          <View style={[s.error, { top: topH + space.s }]} accessibilityRole="alert">
+            <Text style={s.errorTitle}>{t('map.errorTitle')}</Text>
+            <Text style={s.errorText}>
+              {mapError} {t('map.errorHelp')}
+            </Text>
+            <Button label={t('map.tryAgain')} onPress={retry} />
           </View>
         ) : null}
-
-        {listOpen ? (
-          <FlatList
-            style={[StyleSheet.absoluteFill, s.list]}
-            data={rows}
-            keyExtractor={(r) => r.place.id}
-            keyboardShouldPersistTaps="handled"
-            ListHeaderComponent={
-              <View style={s.briefWrap}>
-                {/* what is open now lives here, in the same list, instead of on a screen of its own */}
-                <View style={s.openToggle}>
-                  <Chip label={t('map.openOnly')} active={openOnly} onPress={() => setOpenOnly((v) => !v)} />
-                </View>
-                {/* stays mounted while the traveller types, so each new count is announced */}
-                <Text style={s.count} accessibilityLiveRegion="polite">
-                  {rows.length === 1 ? t('map.count.one') : t('map.count.many', { n: rows.length })}
-                </Text>
-              </View>
-            }
-            ListEmptyComponent={<Text style={s.hint}>{t('map.nothing')}</Text>}
-            renderItem={({ item }) => {
-              const dayHours = hoursOn(item.place.id, krakowNow);
-              const status = dayHours ? openState(dayHours, krakowMinutes) : null;
-              const photo = PLACE_MEDIA[item.place.id]?.image;
-              return (
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => router.push(`/place/${item.place.id}`)}
-                  style={({ pressed }) => [s.row, pressed && { opacity: 0.8 }]}
-                >
-                  {photo ? (
-                    <Image source={photo} style={s.rowPhoto} resizeMode="cover" accessibilityIgnoresInvertColors />
-                  ) : (
-                    <View style={[s.rowPhoto, { backgroundColor: CATEGORY_COLOR[item.place.cat] }]} />
-                  )}
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.rowName}>{item.place.name}</Text>
-                    <Eyebrow>
-                      {CATEGORY_LABEL[item.place.cat]}
-                      {item.metres !== null ? ` · ${formatDistance(item.metres)}` : ` · ${ZONE_LABEL[item.place.zone]}`}
-                    </Eyebrow>
-                    {status ? (
-                      <Text style={[s.rowHours, status.state === 'open' && s.rowOpen]}>
-                        {status.state === 'open' ? t('open.nowPrefix') : ''}
-                        {statusLabel(status, krakowMinutes)}
-                      </Text>
-                    ) : null}
-                  </View>
-                </Pressable>
-              );
-            }}
-          />
+        {mapWarning && !mapError ? (
+          <Text style={[s.warning, { top: topH + space.s }]} accessibilityRole="alert">
+            {t('map.warning')}
+          </Text>
         ) : null}
+
+        {/* the drawer: a handle to drag or tap, then the list or the chosen place */}
+        <Animated.View style={[s.drawer, { height: drawerH }]}>
+          <Animated.View style={[s.nearMe, { bottom: Animated.add(drawerH, space.s) }]} pointerEvents="box-none">
+            {snap < 2 ? (
+              <Pressable accessibilityRole="button" accessibilityHint={t('map.nearMeHint')} onPress={nearMe} style={({ pressed }) => [s.nearMeBtn, pressed && s.pressed]}>
+                <MaterialCommunityIcons name="crosshairs-gps" size={22} color={colors.ink} aria-hidden />
+                <Text style={s.nearMeText}>{t('map.nearMe')}</Text>
+              </Pressable>
+            ) : null}
+          </Animated.View>
+          <View {...pan.panHandlers} style={s.handleZone}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={snap === 2 ? t('discover.collapse') : t('discover.expand')}
+              onPress={() => setSnap(snap === 2 ? 0 : ((snap + 1) as 1 | 2))}
+              hitSlop={12}
+              style={s.handleBtn}
+            >
+              <View style={s.handle} />
+            </Pressable>
+          </View>
+          <View style={s.drawerBody}>{picked ? detail() : list()}</View>
+        </Animated.View>
       </View>
     </SafeAreaView>
   );
 }
 
+function DetailHead({ title, onClose }: { title: string; onClose: () => void }) {
+  return (
+    <View style={s.detailHead}>
+      <Text style={s.detailTitle} accessibilityRole="header">
+        {title}
+      </Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={t('discover.backToList')} onPress={onClose} hitSlop={10} style={s.iconBtn}>
+        <MaterialCommunityIcons name="close" size={24} color={colors.ink} aria-hidden />
+      </Pressable>
+    </View>
+  );
+}
+
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
-  viewSwitch: { paddingVertical: 10, paddingHorizontal: 16, borderRadius: 999, backgroundColor: colors.ink },
-  viewSwitchText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.white },
-  searchRow: { flexDirection: 'row', alignItems: 'center', gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
-  search: {
-    flex: 1,
-    fontFamily: fonts.body,
-    fontSize: 17,
-    color: colors.ink,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.line,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  filterButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 50,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  filterButtonOn: { backgroundColor: colors.ink, borderColor: colors.ink },
-  filterButtonText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink },
-  onInk: { color: colors.white },
-  sheet: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: colors.paper },
-  sheetInner: { paddingHorizontal: space.m, paddingTop: space.s, paddingBottom: space.m },
-  sheetTitle: { fontFamily: fonts.bodyBold, fontSize: 20, color: colors.ink, marginBottom: space.s },
-  sheetFoot: { padding: space.m, borderTopWidth: 1, borderColor: colors.line },
-  filterItem: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 56, borderBottomWidth: 1, borderColor: colors.line },
-  filterDot: { width: 14, height: 14, borderRadius: 7 },
-  filterItemText: { fontFamily: fonts.bodyBold, fontSize: 18, color: colors.ink },
-  stopsRow: { flexDirection: 'row', alignItems: 'center', gap: space.m, minHeight: 72, paddingTop: space.s },
-  stopsLine: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, marginTop: 2 },
-  nearMe: {
-    position: 'absolute',
-    right: space.m,
-    top: space.m,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 52,
-    paddingHorizontal: 16,
-    borderRadius: 26,
-    backgroundColor: colors.paper,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  nearMeText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink },
-  // above the map's own attribution button in the bottom corner, which must stay reachable
-  tip: {
-    position: 'absolute',
-    left: space.m,
-    right: space.m,
-    bottom: 44,
+  area: { flex: 1 },
+  pressed: { opacity: 0.8 },
+  top: { position: 'absolute', left: space.m, right: space.m, top: space.s, gap: space.s },
+  ask: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.s,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 14,
-    backgroundColor: colors.scrim,
+    backgroundColor: colors.white,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    paddingLeft: 14,
+    paddingRight: 6,
+    minHeight: 56,
   },
-  tipText: { flex: 1, fontFamily: fonts.bodyBold, fontSize: 16, lineHeight: 22, color: colors.onScrim },
-  locNote: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, paddingHorizontal: space.m, paddingBottom: space.s },
-  mapWrap: { flex: 1 },
-  map: { flex: 1 },
-  list: { backgroundColor: colors.stone },
-  briefWrap: { marginHorizontal: space.m, marginBottom: space.s },
+  askInput: { flex: 1, fontFamily: fonts.body, fontSize: 17, color: colors.ink, paddingVertical: 12 },
+  iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  go: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  goOff: { opacity: 0.35 },
+  modes: { flexDirection: 'row', gap: 6, backgroundColor: colors.paper, borderRadius: 14, padding: 4, borderWidth: 1, borderColor: colors.line },
+  mode: { flex: 1, minHeight: 48, borderRadius: 10, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  modeText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
+  modeTextOn: { color: colors.white },
+  readingNote: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink, backgroundColor: colors.paper, borderRadius: 10, padding: space.s, overflow: 'hidden' },
+  understood: { backgroundColor: colors.white, borderRadius: 14, borderWidth: 1.5, borderColor: colors.gilt, padding: 10, gap: 8 },
+  understoodLabel: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.6, textTransform: 'uppercase', color: colors.gilt },
+  understoodChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  uChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 40,
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: '#FBF6EA',
+    borderWidth: 1.5,
+    borderColor: colors.gilt,
+  },
+  uChipText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
+  locNote: { fontFamily: fonts.body, fontSize: 13, color: colors.ink, backgroundColor: colors.paper, borderRadius: 8, padding: 6, overflow: 'hidden' },
+  drawer: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.paper,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    borderTopWidth: 1,
+    borderColor: colors.line,
+  },
+  handleZone: { alignItems: 'center', paddingTop: 4 },
+  handleBtn: { width: 88, height: 28, alignItems: 'center', justifyContent: 'center' },
+  handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: colors.line },
+  drawerBody: { flex: 1 },
+  nearMe: { position: 'absolute', right: space.m },
+  nearMeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 48,
+    paddingHorizontal: 14,
+    borderRadius: 24,
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  nearMeText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
+  filterRow: { gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
+  countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.s, paddingHorizontal: space.m, minHeight: 36 },
+  count: { flex: 1, fontFamily: fonts.monoBold, fontSize: 12, color: colors.mute, letterSpacing: 0.3 },
+  stayCta: { paddingHorizontal: space.m, paddingBottom: space.s, gap: 4 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -486,20 +900,58 @@ const s = StyleSheet.create({
     padding: space.s,
     paddingRight: space.m,
     borderRadius: 14,
-    backgroundColor: colors.paper,
+    backgroundColor: colors.white,
     borderWidth: 1,
     borderColor: colors.line,
   },
-  rowPhoto: { width: 64, height: 64, borderRadius: 10 },
-  rowName: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink, marginBottom: 2 },
-  rowHours: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, marginTop: 2 },
-  rowOpen: { fontFamily: fonts.bodyBold, color: colors.patina },
-  openToggle: { flexDirection: 'row', marginTop: space.s },
+  rowPhoto: { width: 60, height: 60, borderRadius: 10 },
+  rowIcon: { width: 48, height: 48, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  rowBody: { flex: 1, gap: 2 },
+  rowName: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  rowMeta: { fontFamily: fonts.body, fontSize: 14, color: colors.mute },
+  rowTags: { flexDirection: 'row', alignItems: 'center', gap: space.s, flexWrap: 'wrap' },
+  open: { fontFamily: fonts.bodyBold, color: colors.patina },
+  badge: {
+    fontFamily: fonts.monoBold,
+    fontSize: 10.5,
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+    color: colors.gilt,
+    borderWidth: 1.5,
+    borderColor: colors.gilt,
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  badgeBig: { alignSelf: 'flex-start' },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  rowSlim: { flexDirection: 'row', alignItems: 'center', gap: space.s, minHeight: 48, borderBottomWidth: 1, borderColor: colors.line },
+  rowNameSlim: { flex: 1, fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink },
+  nightBlock: { paddingHorizontal: space.m, paddingTop: space.m, paddingBottom: space.l },
+  sectionTitle: { fontFamily: fonts.display, fontSize: 26, color: colors.ink, marginBottom: space.s },
+  expCard: {
+    marginHorizontal: space.m,
+    marginBottom: space.s,
+    padding: space.m,
+    gap: 6,
+    borderRadius: 14,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.line,
+  },
+  expNote: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.ink },
+  detail: { paddingHorizontal: space.m, paddingBottom: space.l, gap: space.s },
+  detailHead: { flexDirection: 'row', alignItems: 'flex-start', gap: space.s },
+  detailTitle: { flex: 1, fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.ink },
+  detailLine: { fontFamily: fonts.body, fontSize: 16, lineHeight: 22, color: colors.ink },
+  actions: { gap: space.s, marginTop: space.s },
+  fine: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: colors.mute },
+  credit: { fontFamily: fonts.body, fontSize: 12, color: colors.mute, paddingHorizontal: space.m, paddingVertical: space.s },
+  hint: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, padding: space.m, textAlign: 'center' },
   error: {
     position: 'absolute',
     left: space.m,
     right: space.m,
-    top: space.l,
     backgroundColor: colors.paper,
     borderRadius: 16,
     padding: space.m,
@@ -512,8 +964,7 @@ const s = StyleSheet.create({
   warning: {
     position: 'absolute',
     left: space.m,
-    right: 96,
-    bottom: space.s,
+    right: space.m,
     fontFamily: fonts.body,
     fontSize: 13,
     color: colors.ink,
@@ -522,7 +973,4 @@ const s = StyleSheet.create({
     padding: space.s,
     overflow: 'hidden',
   },
-  hint: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, padding: space.m, textAlign: 'center' },
-  count: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.mute, marginTop: space.s },
-  liveEmpty: { height: 0 },
 });

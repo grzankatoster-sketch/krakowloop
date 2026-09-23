@@ -39,6 +39,8 @@ export interface Place {
   blurb: string;
   lensId?: string;
   booking?: Booking;
+  /** food places for a coffee or a snack (cafés, markets): never offered as the day's dinner */
+  noDinner?: true;
 }
 
 /** In the session's language (src/i18n). */
@@ -147,8 +149,8 @@ export const places: Place[] = [
   { id: 'st-anne', name: 'St Anne’s Church', local: 'Kolegiata św. Anny', cat: 'history', zone: 'old-town', lat: 50.0624, lon: 19.93356, address: 'Świętej Anny 13, Kraków', minutes: 20, priority: 1, blurb: 'The collegiate church of the Jagiellonian University, on St Anne Street in the Old Town.' },
   { id: 'matejko-house', name: 'Jan Matejko House', local: 'Dom Jana Matejki', cat: 'museum', zone: 'old-town', lat: 50.06383, lon: 19.941, address: 'Floriańska 41, Kraków', minutes: 45, priority: 1, blurb: 'A museum of the painter Jan Matejko, opened in 1895 and a branch of the National Museum since 1904.' },
   { id: 'wierzynek', name: 'Wierzynek', cat: 'food', zone: 'old-town', lat: 50.06038, lon: 19.93741, address: 'Rynek Główny 16, Kraków', minutes: 90, priority: 1, blurb: 'A restaurant on the Main Square, spread over four floors with eight dining rooms.' },
-  { id: 'noworolski', name: 'Noworolski Café', local: 'Noworolski', cat: 'food', zone: 'old-town', lat: 50.06155, lon: 19.93747, address: 'Rynek Główny 1, Kraków', minutes: 45, priority: 1, blurb: 'A café in the Cloth Hall on the Main Square.' },
-  { id: 'jama-michalika', name: 'Jama Michalika Café', local: 'Jama Michalika', cat: 'food', zone: 'old-town', lat: 50.06408, lon: 19.94093, address: 'Floriańska 45, Kraków', minutes: 45, priority: 1, blurb: 'A historic café on Floriańska Street, established in 1895.' },
+  { id: 'noworolski', name: 'Noworolski Café', local: 'Noworolski', cat: 'food', zone: 'old-town', lat: 50.06155, lon: 19.93747, address: 'Rynek Główny 1, Kraków', minutes: 45, priority: 1, blurb: 'A café in the Cloth Hall on the Main Square.', noDinner: true },
+  { id: 'jama-michalika', name: 'Jama Michalika Café', local: 'Jama Michalika', cat: 'food', zone: 'old-town', lat: 50.06408, lon: 19.94093, address: 'Floriańska 45, Kraków', minutes: 45, priority: 1, blurb: 'A historic café on Floriańska Street, established in 1895.', noDinner: true },
   { id: 'milk-bar-temida', name: 'Pod Temidą Milk Bar', local: 'Bar Mleczny Pod Temidą', cat: 'food', zone: 'old-town', lat: 50.05773, lon: 19.93793, address: 'Grodzka 43, Kraków', minutes: 30, priority: 1, blurb: 'A milk bar, a cheap self-service canteen for simple Polish dishes, on Grodzka Street.' },
   { id: 'pod-jaszczurami', name: 'Pod Jaszczurami Club', local: 'Klub Pod Jaszczurami', cat: 'night', zone: 'old-town', lat: 50.06085, lon: 19.93819, address: 'Rynek Główny 8, Kraków', minutes: 120, priority: 1, blurb: 'One of the oldest student clubs in Poland, open since 1960 and known for jazz, in a townhouse on the Main Square.' },
   { id: 'piwnica-pod-baranami', name: 'Piwnica pod Baranami', cat: 'night', zone: 'old-town', lat: 50.0616, lon: 19.9354, address: 'Rynek Główny 27, Kraków', minutes: 120, priority: 1, blurb: 'A literary cabaret founded by Piotr Skrzynecki in 1956, still in its original cellar on the Main Square.' },
@@ -176,8 +178,8 @@ export const places: Place[] = [
   { id: 'liban-quarry', name: 'Liban Quarry', local: 'Kamieniołom Liban', cat: 'remembrance', zone: 'podgorze', lat: 50.03634, lon: 19.95645, address: 'Za Torem 22, Kraków', minutes: 30, priority: 1, blurb: 'A former limestone quarry where the Germans ran a penal labour camp during the occupation. Now a nature reserve.' },
   { id: 'plaszow-memorial', name: 'Płaszów Camp Memorial', local: 'Pomnik Ofiar Faszyzmu, Płaszów', cat: 'remembrance', zone: 'podgorze', lat: 50.02955, lon: 19.96167, address: 'Abrahama, Kraków', minutes: 45, priority: 1, blurb: 'The grounds of the German Nazi Płaszów camp, marked by a large monument to its victims.' },
   { id: 'wyspianski-museum', name: 'Stanisław Wyspiański Museum', local: 'Muzeum Stanisława Wyspiańskiego', cat: 'museum', zone: 'city', lat: 50.06143, lon: 19.92914, address: 'Plac Sikorskiego 6, Kraków', minutes: 60, priority: 1, blurb: 'A National Museum branch devoted to the painter and playwright Stanisław Wyspiański.' },
-  { id: 'massolit', name: 'Massolit Books & Café', local: 'Massolit', cat: 'food', zone: 'city', lat: 50.05845, lon: 19.9296, address: 'Felicjanek 4, Kraków', minutes: 45, priority: 1, blurb: 'A bookshop café on Felicjanek Street.' },
-  { id: 'stary-kleparz', name: 'Stary Kleparz Market', local: 'Stary Kleparz', cat: 'food', zone: 'city', lat: 50.06738, lon: 19.94109, address: 'Rynek Kleparski 20, Kraków', minutes: 30, priority: 1, blurb: 'An open-air market on Kleparz Square, just north of the Old Town.' },
+  { id: 'massolit', name: 'Massolit Books & Café', local: 'Massolit', cat: 'food', zone: 'city', lat: 50.05845, lon: 19.9296, address: 'Felicjanek 4, Kraków', minutes: 45, priority: 1, blurb: 'A bookshop café on Felicjanek Street.', noDinner: true },
+  { id: 'stary-kleparz', name: 'Stary Kleparz Market', local: 'Stary Kleparz', cat: 'food', zone: 'city', lat: 50.06738, lon: 19.94109, address: 'Rynek Kleparski 20, Kraków', minutes: 30, priority: 1, blurb: 'An open-air market on Kleparz Square, just north of the Old Town.', noDinner: true },
   { id: 'blonia', name: 'Błonia Meadow', local: 'Błonia', cat: 'view', zone: 'city', lat: 50.05979, lon: 19.91096, minutes: 30, priority: 1, blurb: 'A historic 48-hectare meadow, about 700 metres west of the Old Town.' },
   { id: 'jordan-park', name: 'Jordan Park', local: 'Park im. Henryka Jordana', cat: 'view', zone: 'city', lat: 50.06273, lon: 19.91607, address: 'Reymonta, Kraków', minutes: 30, priority: 1, blurb: 'Opened in 1889 as the first public playground in Kraków, beside the Błonia.' },
   { id: 'zoo', name: 'Kraków Zoo', local: 'Ogród Zoologiczny', cat: 'view', zone: 'city', lat: 50.05351, lon: 19.84951, address: 'Aleja Kasy Oszczędności Miasta Krakowa, Kraków', minutes: 180, priority: 1, blurb: 'A zoo founded in 1929 in the Wolski Forest, with about 1,500 animals.' },
@@ -206,32 +208,43 @@ export const places: Place[] = [
   { id: 'chocholow-termy', name: 'Chochołów Thermal Baths', local: 'Chochołowskie Termy', cat: 'daytrip', zone: 'out', lat: 49.35183, lon: 19.82391, minutes: 300, priority: 1, blurb: 'A thermal pool complex in Chochołów, near Zakopane.' },
 ];
 
+export type ExperienceKind = 'extreme' | 'sightseeing' | 'food' | 'water' | 'night';
+
 export interface Experience {
   id: string;
   name: string;
   note: string;
+  /** Discover filter group; 'extreme' also covers games and adrenaline (paintball, karts, escape rooms) */
+  kind: ExperienceKind;
+  /** typical length, only where the note states it ("half-day" = 240) */
+  minutes?: number;
+  /** true only where the note says hotel pickup is included */
+  pickup?: boolean;
   season?: string;
   booking: Booking;
 }
 
 export const experiences: Experience[] = [
-  { id: 'shooting', name: 'Shooting range', note: 'Usually with hotel pickup.', booking: tour('Krakow shooting range') },
-  { id: 'quads', name: 'Quad biking off-road', note: 'Half-day trips outside the city.', booking: tour('Krakow quad bike tour') },
-  { id: 'pierogi', name: 'Pierogi cooking class', note: 'Make and eat Polish dumplings.', booking: tour('Krakow pierogi cooking class') },
-  { id: 'chopin', name: 'Chopin concert', note: 'Evening recitals in the Old Town.', booking: tour('Chopin concert Krakow') },
-  { id: 'rafting', name: 'Dunajec River rafting', note: 'Wooden rafts through the Pieniny gorge.', season: 'Spring to autumn', booking: tour('Dunajec rafting from Krakow') },
-  { id: 'balloon', name: 'Hot air balloon flight', note: 'Weather dependent, early starts.', booking: tour('Krakow hot air balloon') },
-  { id: 'sleigh', name: 'Sleigh ride with bonfire', note: 'In the mountains near Zakopane.', season: 'Winter', booking: tour('Zakopane sleigh ride') },
+  { id: 'shooting', name: 'Shooting range', note: 'Usually with hotel pickup.', kind: 'extreme', pickup: true, booking: tour('Krakow shooting range') },
+  { id: 'quads', name: 'Quad biking off-road', note: 'Half-day trips outside the city.', kind: 'extreme', minutes: 240, booking: tour('Krakow quad bike tour') },
+  { id: 'pierogi', name: 'Pierogi cooking class', note: 'Make and eat Polish dumplings.', kind: 'food', booking: tour('Krakow pierogi cooking class') },
+  { id: 'chopin', name: 'Chopin concert', note: 'Evening recitals in the Old Town.', kind: 'night', booking: tour('Chopin concert Krakow') },
+  { id: 'rafting', name: 'Dunajec River rafting', note: 'Wooden rafts through the Pieniny gorge.', kind: 'water', season: 'Spring to autumn', booking: tour('Dunajec rafting from Krakow') },
+  { id: 'balloon', name: 'Hot air balloon flight', note: 'Weather dependent, early starts.', kind: 'extreme', booking: tour('Krakow hot air balloon') },
+  { id: 'sleigh', name: 'Sleigh ride with bonfire', note: 'In the mountains near Zakopane.', kind: 'sightseeing', season: 'Winter', booking: tour('Zakopane sleigh ride') },
   // added 21.09.2026 from 02_dane/LISTA_ATRAKCJI_KURATORSKA.md; notes say only what the activity is, not prices or pickups
-  { id: 'paintball', name: 'Paintball', note: 'Team games on an outdoor field.', booking: tour('Krakow paintball') },
-  { id: 'karting', name: 'Go-karting', note: 'Races on a kart track.', booking: tour('Krakow go karting') },
-  { id: 'escape-room', name: 'Escape room', note: 'Solve puzzles against the clock, in a team.', booking: tour('Krakow escape room') },
-  { id: 'pub-crawl', name: 'Pub crawl', note: 'An evening round of bars with a guide and a group.', booking: tour('Krakow pub crawl') },
-  { id: 'vodka-tasting', name: 'Vodka tasting', note: 'Polish vodkas with snacks. Adults only.', booking: tour('Krakow vodka tasting') },
-  { id: 'food-tour', name: 'Food tour', note: 'Polish dishes tasted with a local guide.', booking: tour('Krakow food tour') },
-  { id: 'jewish-tour', name: 'Jewish Kraków with a guide', note: 'Kazimierz and Podgórze, their history and people.', booking: tour('Jewish Krakow guided tour') },
-  { id: 'nowa-huta-tour', name: 'Nowa Huta communism tour', note: 'The socialist-era district, often by Trabant.', booking: tour('Nowa Huta communism tour') },
-  { id: 'river-cruise', name: 'Vistula river cruise', note: 'Past Wawel by boat from the Vistula Boulevards.', booking: tour('Krakow Vistula river cruise') },
+  { id: 'paintball', name: 'Paintball', note: 'Team games on an outdoor field.', kind: 'extreme', booking: tour('Krakow paintball') },
+  { id: 'karting', name: 'Go-karting', note: 'Races on a kart track.', kind: 'extreme', booking: tour('Krakow go karting') },
+  { id: 'escape-room', name: 'Escape room', note: 'Solve puzzles against the clock, in a team.', kind: 'extreme', booking: tour('Krakow escape room') },
+  { id: 'pub-crawl', name: 'Pub crawl', note: 'An evening round of bars with a guide and a group.', kind: 'night', booking: tour('Krakow pub crawl') },
+  { id: 'vodka-tasting', name: 'Vodka tasting', note: 'Polish vodkas with snacks. Adults only.', kind: 'food', booking: tour('Krakow vodka tasting') },
+  { id: 'food-tour', name: 'Food tour', note: 'Polish dishes tasted with a local guide.', kind: 'food', booking: tour('Krakow food tour') },
+  { id: 'jewish-tour', name: 'Jewish Kraków with a guide', note: 'Kazimierz and Podgórze, their history and people.', kind: 'sightseeing', booking: tour('Jewish Krakow guided tour') },
+  { id: 'nowa-huta-tour', name: 'Nowa Huta communism tour', note: 'The socialist-era district, often by Trabant.', kind: 'sightseeing', booking: tour('Nowa Huta communism tour') },
+  { id: 'river-cruise', name: 'Vistula river cruise', note: 'Past Wawel by boat from the Vistula Boulevards.', kind: 'water', booking: tour('Krakow Vistula river cruise') },
+  // added 23.09.2026 for the Discover screen: GetYourGuide searches only, no prices, no durations
+  { id: 'golf-cart', name: 'Golf cart city tour', note: 'Old Town and Kazimierz by electric cart with a guide.', kind: 'sightseeing', booking: tour('Krakow golf cart tour') },
+  { id: 'wieliczka-tour', name: 'Wieliczka Salt Mine guided tour', note: 'Guided route through the UNESCO-listed salt mine near Kraków.', kind: 'sightseeing', booking: tour('Wieliczka Salt Mine guided tour from Krakow') },
 ];
 
 export const placeById = (id: string) => places.find((p) => p.id === id);

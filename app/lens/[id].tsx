@@ -3,7 +3,8 @@ import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from '
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Button, TopBar } from '../../src/components/ui';
+import { Button, ScreenHeader } from '../../src/components/ui';
+import { lensName, lensWhere } from '../../src/components/placeName';
 import { LensLayer, LensPoint, cameraProblem, firstShown, lensById } from '../../src/data/lens';
 import { openLink } from '../../src/lib/openLink';
 import { t } from '../../src/i18n';
@@ -16,7 +17,7 @@ export default function LensScreen() {
   if (!point) {
     return (
       <SafeAreaView style={s.safe}>
-        <TopBar title={t('lens.title')} />
+        <ScreenHeader title={t('lens.title')} />
         <Text style={s.empty}>{t('lens.unknown')}</Text>
       </SafeAreaView>
     );
@@ -97,10 +98,10 @@ function LensViewer({ point }: { point: LensPoint }) {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title={point.name} />
       <ScrollView contentContainerStyle={s.scroll}>
+        <ScreenHeader title={lensName(point)} />
         <View style={s.col}>
-          <Text style={s.where}>{t('lens.standAt', { where: point.where })}</Text>
+          <Text style={s.where}>{t('lens.standAt', { where: lensWhere(point) })}</Text>
 
           {choices.length ? (
             <>
@@ -249,7 +250,7 @@ const s = StyleSheet.create({
   yearOn: { backgroundColor: colors.ink },
   yearText: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
   yearTextOn: { color: colors.white },
-  credit: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.mute },
+  credit: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute },
   section: { gap: space.s, marginTop: space.m },
   h2: { fontFamily: fonts.bodyBold, fontSize: 22, color: colors.ink },
   line: { fontFamily: fonts.body, fontSize: 16, lineHeight: 23, color: colors.ink },

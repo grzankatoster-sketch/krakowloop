@@ -14,7 +14,8 @@ export const ACTIVITY_WORDS: Record<string, string[]> = {
   'pub-crawl': ['pub crawl', 'pubcrawl', 'bar crawl', 'kneipentour', 'pub crawl po barach', 'objazd po barach'],
   'vodka-tasting': ['vodka', 'vodka tasting', 'wodka', 'wodkaverkostung', 'wodka tasting', 'degustacja wodki', 'wodki'],
   'food-tour': ['food tour', 'street food tour', 'essenstour', 'food tour po krakowie'],
-  pierogi: ['pierogi', 'dumpling', 'dumplings', 'kochkurs', 'warsztaty pierogow', 'lepienie pierogow'],
+  // "pierogi" alone is a dish to eat (a cuisine, see CUISINE_WORDS); only a class is this activity
+  pierogi: ['pierogi class', 'pierogi cooking', 'pierogi workshop', 'dumpling class', 'dumpling making', 'cooking class', 'kochkurs', 'pierogi kochkurs', 'warsztaty pierogow', 'warsztaty z pierogow', 'lepienie pierogow', 'kurs gotowania', 'warsztaty kulinarne'],
   chopin: ['chopin', 'concert', 'konzert', 'koncert'],
   balloon: ['balloon', 'hot air balloon', 'ballon', 'balon', 'lot balonem'],
   rafting: ['rafting', 'dunajec', 'splyw', 'splyw dunajcem', 'flossfahrt'],
@@ -58,16 +59,22 @@ export const LOW_WALKING_WORDS = [
   'nie chodzic',
   'nie chcemy chodzic',
   'malo chodzenia',
+  'malo chodzic',
   'bez chodzenia',
-  'duzo chodzic',
 ];
+
+/**
+ * "we want to walk a lot": a wish for normal walking, and a low one only after a refusal
+ * ("nie chcemy dużo chodzić"). Kept apart from LOW_WALKING_WORDS, which it used to be part of.
+ */
+export const LOTS_OF_WALKING_WORDS = ['duzo chodzic', 'duzo chodzenia', 'duzo spacerowac', 'walk a lot', 'lots of walking', 'walk much', 'a lot of walking', 'viel laufen', 'viel zu fuss', 'viel spazieren'];
 
 /** an evening meal asked for on purpose, not just "food" as an interest */
 export const DINNER_WORDS = ['dinner', 'dinners', 'eat out', 'supper', 'abendessen', 'essen gehen', 'kolacja', 'kolacje', 'obiad', 'obiady', 'kolacyjki'];
 
 export const DAY_TRIP_WORDS = ['day trip', 'day trips', 'out of the city', 'outside the city', 'wieliczka', 'zakopane', 'tagesausflug', 'tagesausfluge', 'ausserhalb', 'wycieczka', 'wycieczki', 'poza miasto', 'poza miastem'];
 
-/** words that turn the rest of their clause into a refusal */
+/** words that turn the next thing named after them into a refusal ("quads and no pub crawl") */
 export const NEGATION_WORDS = [
   'no',
   'not',
@@ -84,7 +91,12 @@ export const NEGATION_WORDS = [
   'ohne',
   'nie',
   'bez',
+  'zadnych',
+  'zadnego',
 ];
+
+/** a refusal carries over a list joined by these: "no quads or paintball" refuses both */
+export const OR_WORDS = ['or', 'nor', 'oder', 'noch', 'ani', 'lub', 'albo', 'czy'];
 
 /** numbers a traveller writes instead of digits */
 export const NUMBER_WORDS: Record<string, number> = {
@@ -105,3 +117,40 @@ export const NUMBER_WORDS: Record<string, number> = {
 };
 
 export const DAY_WORDS = ['day', 'days', 'tag', 'tage', 'dzien', 'dni'];
+
+/**
+ * The words below are compared as the start of a word ("tani" matches "tanio" and "tanie"), after
+ * plain() in wish.ts.
+ */
+
+/** cheap, without a number: read as a cap of CHEAP_PRICE_PLN per person */
+export const CHEAP_WORDS = ['tanio', 'tanie', 'tani', 'tania', 'niedrogo', 'niedrogi', 'nie za drogo', 'nie drogo', 'budzetow', 'studenck', 'ekonomiczn', 'cheap', 'inexpensive', 'budget', 'affordable', 'not too expensive', 'billig', 'gunstig', 'preiswert', 'nicht zu teuer'];
+export const CHEAP_PRICE_PLN = 50;
+
+/** a currency word after a number: "do 80 zł" (zł → zl after plain), "under 80 PLN" */
+export const PLN_WORDS = ['zl', 'zloty', 'zlote', 'zlotych', 'zlotys', 'pln'];
+
+/** well rated, without a number */
+export const TOP_RATED_WORDS = ['highly rated', 'top rated', 'best rated', 'najlepiej ocenian', 'najwyzej ocenian', 'bestbewertet', 'am besten bewertet', 'sehr gut bewertet'];
+export const WELL_RATED_WORDS = ['well rated', 'good reviews', 'good ratings', 'dobrze ocenian', 'dobre opinie', 'dobrych opinii', 'gut bewertet', 'gute bewertungen'];
+/** a word that makes "4" or "4.5" a rating: "4.5 stars", "ocena 4", "4,5 gwiazdki" */
+export const STAR_WORDS = ['star', 'gwiazd', 'stern', 'ocen', 'rating', 'rated', 'bewert', 'opinie'];
+
+/** open right now, or this evening */
+export const NOW_WORDS = ['now', 'right now', 'open now', 'teraz', 'w tej chwili', 'otwarte teraz', 'jetzt', 'sofort', 'gerade offen', 'dzis wieczorem', 'dzisiaj wieczorem', 'tonight', 'this evening', 'heute abend'];
+
+export type ExperienceKind = 'extreme' | 'sightseeing' | 'food' | 'water' | 'night';
+export const EXPERIENCE_KIND_KEYS: ExperienceKind[] = ['extreme', 'sightseeing', 'food', 'water', 'night'];
+export const EXPERIENCE_KIND_WORDS: Record<ExperienceKind, string[]> = {
+  extreme: ['ekstrem', 'adrenalin', 'extreme', 'thrill', 'adventure', 'przygod', 'mocne wrazen', 'action', 'abenteuer', 'nervenkitzel', 'emocj'],
+  sightseeing: ['zwiedza', 'sightseeing', 'sights', 'zabytk', 'besichtig', 'sehenswurdig', 'sightsee'],
+  food: ['kulinar', 'culinary', 'foodie', 'kulinarisch', 'jedzeni', 'food', 'essen'],
+  water: ['woda', 'wodzie', 'wodn', 'water', 'wasser', 'kajak', 'kayak', 'splyw', 'rafting', 'rejs', 'basen', 'termy', 'thermal', 'aquapark', 'pool', 'baden'],
+  night: ['nightlife', 'night out', 'party', 'partie', 'clubbing', 'imprez', 'zycie nocne', 'klub', 'club', 'nachtleben', 'bary', 'bars', 'ausgehen', 'disco', 'dyskotek'],
+};
+
+/** somewhere to sleep */
+export const STAY_WORDS = ['nocleg', 'hotel', 'airbnb', 'apartament', 'apartment', 'hostel', 'pensjonat', 'pension', 'zakwaterowan', 'gdzie spac', 'accommodation', 'place to stay', 'where to stay', 'somewhere to stay', 'bed and breakfast', 'unterkunft', 'ubernachtung', 'zimmer'];
+
+/** words that say a sentence is about eating, so "Polish" or "Jewish" there names a cuisine */
+export const FOOD_CONTEXT_WORDS = ['food', 'eat', 'restaurant', 'dinner', 'lunch', 'cuisine', 'dish', 'meal', 'jedzeni', 'jesc', 'zjesc', 'zjem', 'restaurac', 'knajp', 'kolacj', 'obiad', 'kuchni', 'dani', 'lokal', 'bistro', 'essen', 'kuche', 'gericht', 'speise', 'abendessen', 'mittag'];

@@ -90,10 +90,15 @@ async function answerDirections(page: Page) {
   return requests;
 }
 
+/** Discover, sights door: the list lives in the drawer under the map; tap its handle to raise it. */
+async function openDrawer(page: Page, path = '/map') {
+  await page.goto(path);
+  await page.getByRole('button', { name: 'Show more of the list' }).click();
+}
+
 async function openPlaceFromList(page: Page, name: RegExp) {
-  await page.goto('/map');
-  await page.getByRole('button', { name: 'Show list' }).click();
-  await page.getByRole('button', { name }).click();
+  await openDrawer(page);
+  await page.getByRole('button', { name }).first().click();
 }
 
 test.describe('home', () => {
@@ -103,22 +108,24 @@ test.describe('home', () => {
     await expect(page.getByRole('heading', { name: 'Kraków, at your pace', level: 1 })).toBeVisible();
     await expect(page.getByRole('img', { name: 'The Main Square in Kraków with the Cloth Hall, seen from above' })).toBeVisible();
     await expect(page.getByText('Poland’s royal capital for five centuries', { exact: false })).toBeVisible();
-    await expect(page.getByText('no account, no tracking', { exact: false })).toBeVisible();
-    // one obvious thing to do, and the rest quietly below it
-    await expect(page.getByRole('link', { name: 'Plan my days', exact: true })).toBeVisible();
-    for (const name of ['Explore the 3D map', 'See Kraków in the past', 'Find a day trip']) {
-      await expect(page.getByRole('link', { name, exact: true })).toBeVisible();
+    // four doors into Discover on the first screen, then the plan and the rest
+    for (const door of [/^See\. /, /^Eat\. /, /^Do\. /, /^Stay\. /]) await expect(page.getByRole('link', { name: door })).toBeVisible();
+    for (const name of [/^Plan my days\./, /^Kraków in the past\./, /^Day trips\./, /^What Kraków is known for\./]) {
+      await expect(page.getByRole('link', { name })).toBeAttached();
     }
-    await page.getByRole('link', { name: 'Plan my days', exact: true }).click();
-    await expect(page).toHaveURL(/\/plan$/);
+    await page.getByRole('link', { name: /^Eat\. / }).click();
+    await expect(page).toHaveURL(/\/map\?mode=eat$/);
+    await expect(page.getByRole('tab', { name: 'Eat', exact: true })).toHaveAttribute('aria-selected', 'true');
     await page.getByRole('tab', { name: 'Home', exact: true }).click();
-    await page.getByRole('tab', { name: 'Map', exact: true }).click();
-    await expect(page).toHaveURL(/\/map$/);
+    await page.getByRole('link', { name: /^Plan my days\./ }).click();
+    await expect(page).toHaveURL(/\/plan$/);
+    await page.getByRole('tab', { name: 'Discover', exact: true }).click();
+    await expect(page).toHaveURL(/\/map/);
   });
 
   test('"What Kraków is known for" tells seven things, with sources', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('link', { name: 'What Kraków is known for', exact: true }).click();
+    await page.getByRole('link', { name: /^What Kraków is known for\./ }).click();
     await expect(page).toHaveURL(/\/city$/);
     for (const name of ['The royal city', 'World Heritage since 1978', 'The hejnał', 'The Wawel dragon', 'Jewish Kazimierz', 'Obwarzanek', 'Christmas cribs']) {
       await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible();
@@ -143,8 +150,8 @@ test.describe('language from the phone', () => {
       await expect(page.locator('html')).toHaveAttribute('lang', 'de');
       await page.getByRole('tab', { name: 'Mein Plan', exact: true }).click();
       await expect(page.getByRole('button', { name: 'Plan erstellen' })).toBeVisible();
-      await page.getByRole('tab', { name: 'Karte', exact: true }).click();
-      await expect(page.getByRole('button', { name: /^Orte filtern/ })).toBeVisible();
+      await page.getByRole('tab', { name: 'Entdecken', exact: true }).click();
+      await expect(page.getByLabel('Schreib, was du essen oder unternehmen möchtest')).toBeVisible();
     });
   });
 
@@ -174,7 +181,7 @@ test.describe('map', () => {
     // the data reached the map…
     await expect.poll(async () => (await mapState(page)).points).toBeGreaterThan(40);
     // …and pins were really drawn in view, the Main Square among them
-    await expect.poll(async () => renderedPins(page), { timeout: 20_000 }).toEqual(expect.arrayContaining(['main-square']));
+    await expect.poll(async () => renderedPins(page), { timeout: 20_000 }).toEqual(expect.arrayContaining(['cloth-hall']));
     // the first view is close to the Main Square: only the pins around it are in view
     expect((await renderedPins(page)).length).toBeGreaterThan(3);
     await expect(page.getByText('The map didn’t load')).toHaveCount(0);
@@ -221,22 +228,23 @@ test.describe('map', () => {
     await expect(page.getByRole('heading', { name: pick!.name }).last()).toBeVisible();
   });
 
-  test('switches to the list and takes the covered map out of the focus order', async ({ page }) => {
-    await page.goto('/map');
-    await page.getByRole('button', { name: 'Show list' }).click();
-    await expect(page.getByRole('button', { name: /Wawel Royal Castle/ })).toBeVisible();
+  test('raising the drawer over the map takes the covered map out of the focus order', async ({ page }) => {
+    await openDrawer(page);
+    await expect(page.getByRole('button', { name: /Czartoryski Museum/ })).toBeVisible();
+    await page.getByRole('button', { name: 'Show more of the list' }).click();
     await expect(page.locator('iframe[title="Map"]')).toHaveAttribute('tabindex', '-1');
     await expect(page.getByRole('button', { name: 'Near me', exact: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Show map' }).click();
+    await page.getByRole('button', { name: 'Show the map' }).click();
     await expect(page.locator('iframe[title="Map"]')).toHaveAttribute('tabindex', '0');
   });
 
-  test('search narrows the list, accent-insensitive', async ({ page }) => {
-    await page.goto('/map');
-    await page.getByRole('button', { name: 'Show list' }).click();
-    await page.getByLabel('Search places').fill('koscius');
+  test('a word the app cannot filter by searches the names, accent-insensitive', async ({ page }) => {
+    await openDrawer(page);
+    await page.getByLabel('Write what you would like to do or eat').fill('koscius');
+    await page.keyboard.press('Enter');
     await expect(page.getByRole('button', { name: /Kościuszko Mound/ })).toBeVisible();
     await expect(page.getByRole('button', { name: /Wawel Royal Castle/ })).toHaveCount(0);
+    await expect(page.getByText(/^Found: 1/)).toBeVisible();
   });
 
   test('a place from the list opens its page, with the photo and the description', async ({ page }) => {
@@ -244,44 +252,50 @@ test.describe('map', () => {
     await expect(page).toHaveURL(/\/place\/czartoryski$/);
     await expect(page.getByRole('heading', { name: 'Czartoryski Museum' }).last()).toBeVisible();
     await expect(page.getByText("Home of Leonardo da Vinci's Lady with an Ermine.")).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Walk here', exact: true })).toBeVisible();
   });
 
-  test('map controls say what they are and what state they are in', async ({ page }) => {
+  test('the four doors are tabs that say which one is open, and filters say whether they are on', async ({ page }) => {
     await page.goto('/map');
-    // filters sit behind one button that says whether it is open
-    const filters = page.getByRole('button', { name: /^Filter places/ });
-    await expect(filters).toHaveAttribute('aria-expanded', 'false');
-    await filters.click();
-    await expect(filters).toHaveAttribute('aria-expanded', 'true');
-    // categories are boxes to tick, each with its name
-    const sights = page.getByRole('checkbox', { name: 'Sights', exact: true });
-    await expect(sights).toHaveAttribute('aria-checked', 'true');
-    await sights.click();
-    await expect(sights).toHaveAttribute('aria-checked', 'false');
-    await expect(filters).toHaveAccessibleName(/5 of 8 shown/);
-    await sights.click();
-    await expect(page.getByRole('switch', { name: 'Tram and bus stops' })).not.toBeChecked();
-    await page.getByRole('button', { name: 'Show the map' }).click();
-    await expect(filters).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByRole('button', { name: 'Near me', exact: true })).toBeVisible();
-    // the list announces how many places match
-    await page.getByRole('button', { name: 'Show list' }).click();
-    await page.getByLabel('Search places').fill('czartoryski');
-    await expect(page.getByText('1 place', { exact: true })).toBeVisible();
+    const see = page.getByRole('tab', { name: 'See', exact: true });
+    const eat = page.getByRole('tab', { name: 'Eat', exact: true });
+    await expect(see).toHaveAttribute('aria-selected', 'true');
+    await eat.click();
+    await expect(eat).toHaveAttribute('aria-selected', 'true');
+    await expect(see).toHaveAttribute('aria-selected', 'false');
+    const open = page.getByRole('button', { name: 'Open now', exact: true });
+    await expect(open).toHaveAttribute('aria-pressed', 'false');
+    await open.click();
+    await expect(open).toHaveAttribute('aria-pressed', 'true');
   });
 
-  test('one line of help, which the traveller can close', async ({ page }) => {
+  test('"sushi" finds the sushi places, shows what it understood and opens a place card', async ({ page }) => {
     await page.goto('/map');
-    await expect(page.getByText('Tap a place to see its photo and details.')).toBeVisible();
-    await page.getByRole('button', { name: 'Close the tip' }).click();
-    await expect(page.getByText('Tap a place to see its photo and details.')).toHaveCount(0);
+    await page.getByLabel('Write what you would like to do or eat').fill('sushi');
+    await page.keyboard.press('Enter');
+    await expect(page.getByRole('tab', { name: 'Eat', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByText('Understood as')).toBeVisible();
+    const chip = page.getByRole('button', { name: 'Remove: Sushi' });
+    await expect(chip).toBeVisible();
+    await page.getByRole('button', { name: /^Megami/ }).click();
+    await expect(page.getByRole('heading', { name: 'Megami' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Take me there' })).toBeVisible();
+    await expect(page.getByText(/© OpenStreetMap contributors/).first()).toBeVisible();
+    // taking the chip back widens the list again
+    await page.getByRole('button', { name: 'Back to the list' }).click();
+    await chip.click();
+    await expect(page.getByRole('button', { name: /^Remove: / })).toHaveCount(0);
+  });
+
+  test('the do door lists activities and the stay door offers rooms', async ({ page }) => {
+    await openDrawer(page, '/map?mode=do');
+    await expect(page.getByText('Shooting range')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Dates and prices on GetYourGuide' }).first()).toBeVisible();
+    await page.getByRole('tab', { name: 'Stay', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Check prices and free rooms' })).toBeVisible();
   });
 
   test('keyboard users can reach every place through the list', async ({ page }) => {
-    await page.goto('/map');
-    await page.getByRole('button', { name: 'Show list' }).focus();
-    await page.keyboard.press('Enter');
+    await openDrawer(page);
     const row = page.getByRole('button', { name: /Czartoryski Museum/ });
     await row.focus();
     await page.keyboard.press('Enter');
@@ -292,9 +306,7 @@ test.describe('map', () => {
     await page.goto('/map');
     await expect.poll(async () => (await mapState(page)).points, { timeout: 30_000 }).toBeGreaterThan(40);
     const before = (await mapState(page)).points;
-    await page.getByRole('button', { name: /^Filter places/ }).click();
-    await page.getByRole('switch', { name: 'Tram and bus stops' }).click();
-    await page.getByRole('button', { name: 'Show the map' }).click();
+    await page.getByRole('button', { name: 'Tram and bus stops', exact: true }).click();
     // several hundred bus stops join the tram stops, none of them cut off by the map's point limit
     await expect.poll(async () => (await mapState(page)).points, { timeout: 15_000 }).toBeGreaterThan(before + 900);
   });
@@ -609,7 +621,7 @@ test.describe('place page', () => {
 test.describe('day trips', () => {
   test('lists trips with road time and opens their place page', async ({ page }) => {
     await page.goto('/');
-    await page.getByRole('link', { name: 'Find a day trip', exact: true }).click();
+    await page.getByRole('link', { name: /^Day trips\./ }).click();
     await expect(page).toHaveURL(/\/trips$/);
     await expect(page.getByText(/^About \d+( h)?( \d+)? min each way|^About \d+ h each way/).first()).toBeVisible();
     await page.getByRole('link', { name: 'Open Wieliczka Salt Mine' }).click();
@@ -654,8 +666,8 @@ test.describe('open now', () => {
     await page.clock.setFixedTime(new Date('2026-10-13T11:00:00+02:00'));
     await page.goto('/now');
     await expect(page).toHaveURL(/\/now$/);
-    await expect(page.getByRole('heading', { name: /^Open now \(\d+\)$/ })).toBeVisible();
-    await expect(row(page, 'Czartoryski Museum')).toContainText('Museums · Closes 18:00');
+    await expect(page.getByRole('heading', { name: /^Open now · \d+$/ })).toBeVisible();
+    await expect(row(page, 'Czartoryski Museum')).toContainText(/Museums\s*(·\s*)?Closes 18:00/);
   });
 
   test('on a Monday it is closed all day, and the museum filter keeps it', async ({ page }) => {
@@ -713,7 +725,8 @@ test.describe('about', () => {
     // focus follows the jump, so the keyboard and screen readers carry on from the section
     await expect(page.getByRole('heading', { name: 'Images' })).toBeFocused();
     const placePhotos = page.getByRole('button', { name: /Place photos \(\d+\)/ });
-    await expect(placePhotos).toBeInViewport();
+    await expect(page.getByRole('heading', { name: 'Images' })).toBeInViewport();
+    await placePhotos.scrollIntoViewIfNeeded();
     await expect(placePhotos).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByText('Barbican', { exact: true })).toHaveCount(0);
     await placePhotos.click();

@@ -33,6 +33,25 @@ const PRICE: Record<string, GooglePlaceInfo['priceLevel']> = {
 /** Google place ids are URL-safe base64-like strings. */
 export const isGooglePlaceId = (id: unknown): id is string => typeof id === 'string' && /^[A-Za-z0-9_-]{10,300}$/.test(id);
 
+/**
+ * A Google Maps link we are willing to open: https, no user name or password, and exactly one of
+ * Google's map hosts. Parsed as a URL, so look-alikes such as maps.google.com.example.net or
+ * maps.google.com@example.net are refused (a prefix check would let them through).
+ */
+export function safeGoogleMapsUrl(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  let u: URL;
+  try {
+    u = new URL(value);
+  } catch {
+    return null;
+  }
+  if (u.protocol !== 'https:' || u.username || u.password || u.port) return null;
+  const host = u.hostname.toLowerCase();
+  const ok = host === 'maps.google.com' || host === 'maps.app.goo.gl' || (host === 'www.google.com' && u.pathname.startsWith('/maps'));
+  return ok ? u.toString() : null;
+}
+
 /** Reads a Places API (New) place object; anything malformed becomes null, never a wrong number. */
 export function parseGooglePlace(body: unknown): GooglePlaceInfo | null {
   if (!body || typeof body !== 'object') return null;
@@ -42,7 +61,7 @@ export function parseGooglePlace(body: unknown): GooglePlaceInfo | null {
   const priceLevel = typeof b.priceLevel === 'string' && b.priceLevel in PRICE ? PRICE[b.priceLevel] : null;
   const hours = b.currentOpeningHours as Record<string, unknown> | undefined;
   const openNow = hours && typeof hours.openNow === 'boolean' ? hours.openNow : null;
-  const mapsUrl = typeof b.googleMapsUri === 'string' && /^https:\/\/(maps\.google\.com|www\.google\.com\/maps|maps\.app\.goo\.gl)/.test(b.googleMapsUri) ? b.googleMapsUri : null;
+  const mapsUrl = safeGoogleMapsUrl(b.googleMapsUri);
   if (rating === null && reviews === null && priceLevel === null && openNow === null) return null;
   return { rating, reviews, priceLevel, openNow, mapsUrl };
 }
@@ -64,7 +83,11 @@ export async function fetchGooglePlace(
   if (hit && now - hit.at < TTL_MS) return hit.value;
   const value = (async () => {
     try {
-      const res = await fetcher(`${proxyUrl}/place?id=${encodeURIComponent(placeId)}`);
+      // a proxy that never answers must not leave the card waiting: give up after 8 s
+      const res = await Promise.race([
+        fetcher(`${proxyUrl}/place?id=${encodeURIComponent(placeId)}`),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
+      ]);
       return res.ok ? parseGooglePlace(await res.json()) : null;
     } catch {
       return null;

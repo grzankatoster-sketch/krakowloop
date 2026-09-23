@@ -1,8 +1,9 @@
-import { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, TextStyle, View, ViewStyle, StyleProp } from 'react-native';
+import { ReactNode, useState } from 'react';
+import { Image, ImageSourcePropType, ImageStyle, Pressable, StyleSheet, Text, TextStyle, View, ViewStyle, StyleProp } from 'react-native';
 import { useRouter } from 'expo-router';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { t } from '../i18n';
-import { colors, fonts, space } from '../theme';
+import { colors, fonts, radius, space, typeScale } from '../theme';
 
 export function Eyebrow({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
   return <Text style={[s.eyebrow, style]}>{children}</Text>;
@@ -95,7 +96,94 @@ export function Button({
   );
 }
 
+/**
+ * The header of every inner screen: a round back chevron (named for screen readers) and the screen
+ * title in the display face. `eyebrow` is an optional mono line above the title.
+ */
+export function ScreenHeader({ title, eyebrow, right }: { title: string; eyebrow?: string; right?: ReactNode }) {
+  const router = useRouter();
+  return (
+    <View style={s.header}>
+      <View style={s.headerRow}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t('ui.goBack')}
+          hitSlop={4}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+          style={({ pressed }) => [s.chevron, pressed && s.pressed]}
+        >
+          <View aria-hidden importantForAccessibility="no-hide-descendants">
+            <MaterialCommunityIcons name="chevron-left" size={30} color={colors.ink} />
+          </View>
+        </Pressable>
+        <View style={s.barRight}>{right}</View>
+      </View>
+      {eyebrow ? <Text style={s.headerEyebrow}>{eyebrow}</Text> : null}
+      <Text style={s.headerTitle} role="heading" aria-level={1}>
+        {title}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * A photo shown whole: its box takes the picture's own proportions (read when it loads), so nothing
+ * is cut off. `ratio` is the width/height used until then. With `height`, the width follows instead.
+ */
+export function Photo({
+  source,
+  ratio = 1.5,
+  height,
+  style,
+  accessibilityLabel,
+}: {
+  source: ImageSourcePropType;
+  ratio?: number;
+  height?: number;
+  style?: StyleProp<ImageStyle>;
+  accessibilityLabel?: string;
+}) {
+  const [aspect, setAspect] = useState(ratio);
+  return (
+    <Image
+      source={source}
+      resizeMode="cover"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityIgnoresInvertColors
+      onLoad={(e) => {
+        const src = (e.nativeEvent as { source?: { width?: number; height?: number } }).source;
+        if (src?.width && src?.height) setAspect(src.width / src.height);
+      }}
+      style={[height ? { height, width: Math.round(height * aspect) } : { width: '100%', aspectRatio: aspect }, { backgroundColor: colors.line }, style]}
+    />
+  );
+}
+
+/** The card every inner screen uses: paper on stone, one border, one radius. */
+export const card: ViewStyle = {
+  backgroundColor: colors.paper,
+  borderRadius: radius.m,
+  borderWidth: 1,
+  borderColor: colors.line,
+  overflow: 'hidden',
+};
+
 const s = StyleSheet.create({
+  header: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m, paddingTop: space.s, paddingBottom: space.m },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 48 },
+  chevron: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.paper,
+    borderWidth: 1,
+    borderColor: colors.line,
+    marginLeft: -4,
+  },
+  headerEyebrow: { ...typeScale.meta, color: colors.mute, textTransform: 'uppercase', marginTop: space.m },
+  headerTitle: { ...typeScale.title, color: colors.ink, marginTop: space.xs },
   eyebrow: { fontFamily: fonts.mono, fontSize: 11, letterSpacing: 0.6, color: colors.mute, textTransform: 'uppercase' },
   bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.m, paddingVertical: space.s, gap: space.s },
   back: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 999, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
