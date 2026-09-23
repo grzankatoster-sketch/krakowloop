@@ -8,6 +8,7 @@ import { krakowWallClock } from '../src/lib/cityTime';
 import { formatDay } from '../src/lib/dates';
 import { formatTime, hoursOn, HOURS_EXPORTED } from '../src/lib/hours';
 import { closingSoon, groupOpenNow, OpenRow, statusLabel } from '../src/lib/openNow';
+import { t } from '../src/i18n';
 import { colors, fonts, space } from '../src/theme';
 
 type Filter = 'all' | 'museum';
@@ -40,7 +41,7 @@ function Group({
               <Pressable
                 nativeID={linkId(row.place.id)}
                 accessibilityRole="link"
-                accessibilityLabel={`Open ${row.place.name}`}
+                accessibilityLabel={t('now.openLabel', { name: row.place.name })}
                 onFocus={() => onFocusPlace(row.place.id)}
                 onBlur={() => onFocusPlace(null)}
               >
@@ -95,22 +96,22 @@ export default function OpenNow() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title="Open now" />
+      <TopBar title={t('now.title')} />
       <ScrollView contentContainerStyle={s.scroll}>
         <View style={s.col}>
           <Eyebrow>
-            {formatDay(now)} · {formatTime(minutes)} in Kraków
+            {t('now.clock', { day: formatDay(now), time: formatTime(minutes) })}
           </Eyebrow>
           <View style={s.chips}>
-            <Chip label="Everything" active={filter === 'all'} onPress={() => setFilter('all')} />
-            <Chip label="Museums" active={filter === 'museum'} onPress={() => setFilter('museum')} />
+            <Chip label={t('now.everything')} active={filter === 'all'} onPress={() => setFilter('all')} />
+            <Chip label={t('now.museums')} active={filter === 'museum'} onPress={() => setFilter('museum')} />
           </View>
-          <Group title="Open now" rows={groups.open} minutes={minutes} empty="Nothing we know of is open right now." onFocusPlace={setFocusedPlace} />
-          <Group title="Opens later today" rows={groups.later} minutes={minutes} empty="Nothing else opens later today." onFocusPlace={setFocusedPlace} />
-          <Group title="Closed" rows={groups.closed} minutes={minutes} empty="Nothing is closed for the day." onFocusPlace={setFocusedPlace} />
+          <Group title={t('now.open')} rows={groups.open} minutes={minutes} empty={t('now.emptyOpen')} onFocusPlace={setFocusedPlace} />
+          <Group title={t('now.later')} rows={groups.later} minutes={minutes} empty={t('now.emptyLater')} onFocusPlace={setFocusedPlace} />
+          <Group title={t('now.closed')} rows={groups.closed} minutes={minutes} empty={t('now.emptyClosed')} onFocusPlace={setFocusedPlace} />
           <Text style={s.note}>
-            Hours from OpenStreetMap (exported {HOURS_EXPORTED}), without public holidays or last entry times.
-            {groups.unknown ? ` We have no hours for ${groups.unknown} more places; their place pages link to the official websites.` : ''}
+            {t('now.note', { date: HOURS_EXPORTED })}
+            {groups.unknown ? t('now.unknown', { n: groups.unknown }) : ''}
           </Text>
         </View>
       </ScrollView>

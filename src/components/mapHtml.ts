@@ -21,6 +21,10 @@ export interface MapPoint {
   label?: string;
   /** category icon drawn inside the pin (badge and teardrop pins) */
   glyph?: Glyph;
+  /** importance, 1–3: when pins crowd, zoomed out, the higher rank stays on the map */
+  rank?: 1 | 2 | 3;
+  /** faded, for a place that is closed at this moment (our own opening hours) */
+  dim?: boolean;
 }
 
 export interface MapPayload {
@@ -50,8 +54,12 @@ const LOAD_TIMEOUT_MS = 15000;
 export const MAP_PROVIDER: 'mapbox' | 'openfreemap' = MAPBOX_TOKEN ? 'mapbox' : 'openfreemap';
 
 /** Mapbox basemaps to choose from (src/config/mapLook.ts). Standard themes are set through its config. */
-const MAPBOX_STYLES: Record<string, { url: string; theme?: string }> = {
+const MAPBOX_STYLES: Record<string, { url: string; theme?: string; lightPreset?: string; colors?: Record<string, string> }> = {
   standard: { url: 'mapbox://styles/mapbox/standard' },
+  // Standard with livelier parks and water (documented colour properties of its basemap config)
+  'standard-colour': { url: 'mapbox://styles/mapbox/standard', colors: { colorGreenspace: '#8FD18B', colorWater: '#6CB8EA' } },
+  'standard-dusk': { url: 'mapbox://styles/mapbox/standard', lightPreset: 'dusk' },
+  'standard-satellite': { url: 'mapbox://styles/mapbox/standard-satellite' },
   'standard-faded': { url: 'mapbox://styles/mapbox/standard', theme: 'faded' },
   'standard-monochrome': { url: 'mapbox://styles/mapbox/standard', theme: 'monochrome' },
   streets: { url: 'mapbox://styles/mapbox/streets-v12' },
@@ -71,8 +79,10 @@ const config = MAPBOX_TOKEN
       cssIntegrity: 'sha384-ybStW03vjH/S7ZApCJT0nH1D7iITNZEYRxjmkJWtpkDDUhwI+hXoHm7JcDvL6spf',
       jsIntegrity: 'sha384-irwCnVYwxiOAcXldUHjrozDrOWFxnXxgojV8LjaKFdnBzTVUqmdBgP4OpNtXNK6Q',
       style: mapboxStyle.url,
-      standard: mapboxStyle.url.endsWith('/standard'),
+      standard: /\/standard(-satellite)?$/.test(mapboxStyle.url),
       theme: mapboxStyle.theme ?? 'default',
+      lightPreset: mapboxStyle.lightPreset ?? null,
+      colors: mapboxStyle.colors ?? {},
       token: MAPBOX_TOKEN,
       font: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
       // GUGiK landmark models for the 3D view (Mapbox only: MapLibre has no model layer)
@@ -88,6 +98,8 @@ const config = MAPBOX_TOKEN
       style: `https://tiles.openfreemap.org/styles/${colors.dark ? 'dark' : 'positron'}`,
       standard: false,
       theme: 'default',
+      lightPreset: null,
+      colors: {},
       token: null,
       font: ['Noto Sans Bold'],
       models: [] as { id: string; position: number[] }[],
@@ -124,15 +136,17 @@ export const MAP_HTML = `<!doctype html>
   // Read-only state for the end-to-end tests: whether the style loaded, how many points were
   // drawn, how long the drawn route is, and where a coordinate sits on screen (to tap a real pin).
   // Changes nothing on the map.
-  var debug={ready:false,points:0,route:0,models:0,
+  // every layer that draws a tappable pin: all of them count for taps and for the tests
+  var FIT_MIN_ZOOM=7.6,NEAR_ZOOM=16.5,PIN_LAYERS=['pts-far','pts-icon','pts-icon-sel','pts-circle'];
+  var debug={ready:false,points:0,route:0,models:0,zoom:function(){return map?map.getZoom():null},
     project:function(lon,lat){if(!map)return null;var p=map.project([lon,lat]);return{x:p.x,y:p.y}},
     hit:function(x,y){if(!map||!ready)return[];
-      return map.queryRenderedFeatures([x,y],{layers:['pts-icon','pts-circle']}).map(function(f){return String(f.properties.id)})},
+      return map.queryRenderedFeatures([x,y],{layers:PIN_LAYERS}).map(function(f){return String(f.properties.id)})},
     // ids of the pins actually drawn in the current view (not just the data handed to the map)
     // route line pieces actually drawn in the current view
     routeDrawn:function(){if(!map||!ready)return 0;return map.queryRenderedFeatures({layers:['route-line']}).length},
     rendered:function(){if(!map||!ready)return[];var seen={};
-      map.queryRenderedFeatures({layers:['pts-icon','pts-circle']}).forEach(function(f){seen[String(f.properties.id)]=1});
+      map.queryRenderedFeatures({layers:PIN_LAYERS}).forEach(function(f){seen[String(f.properties.id)]=1});
       return Object.keys(seen)}};
   window.__krk=debug;
   function fail(message){if(ready||failed)return;failed=true;post({type:'error',message:message})}
@@ -144,11 +158,12 @@ export const MAP_HTML = `<!doctype html>
   function num(n,a,b){return typeof n==='number'&&isFinite(n)&&n>=a&&n<=b}
   function clean(d){
     if(!d||typeof d!=='object')return null;
-    var pts=Array.isArray(d.points)?d.points.slice(0,800).filter(function(p){
+    var pts=Array.isArray(d.points)?d.points.slice(0,1600).filter(function(p){
       return p&&typeof p.id==='string'&&p.id.length<=64&&num(p.lat,-90,90)&&num(p.lon,-180,180)
         &&typeof p.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(p.color)&&(p.order==null||num(p.order,1,99))
         &&(p.kind==null||KINDS[p.kind]===1)&&(p.label==null||(typeof p.label==='string'&&p.label.length<=80))
-        &&(p.glyph==null||(typeof p.glyph==='string'&&Object.prototype.hasOwnProperty.call(C.glyphs,p.glyph)))}):[];
+        &&(p.glyph==null||(typeof p.glyph==='string'&&Object.prototype.hasOwnProperty.call(C.glyphs,p.glyph)))
+        &&(p.rank==null||num(p.rank,1,3))&&(p.dim==null||typeof p.dim==='boolean')}):[];
     var route=Array.isArray(d.route)?d.route.slice(0,5000).filter(function(c){
       return Array.isArray(c)&&num(c[0],-180,180)&&num(c[1],-90,90)}):[];
     var f=d.focus;
@@ -159,33 +174,42 @@ export const MAP_HTML = `<!doctype html>
   // Pins with a category icon are drawn once per icon and colour on a canvas and added to the map
   // as images. Numbered plan stops, the traveller and tram stops stay plain circles.
   function drawPin(shape,glyph,color){
-    var tear=shape==='teardrop',w=tear?72:64,h=tear?92:64,cx=w/2,cy=tear?36:32,r=tear?30:28;
+    // drawn at 3x: 44 css px, sharp on high-density phones, with room for a shadow that lifts it off pale buildings
+    var tear=shape==='teardrop',w=tear?144:132,h=tear?184:132,cx=w/2,cy=66,r=54;
     var cv=document.createElement('canvas');cv.width=w;cv.height=h;var g=cv.getContext('2d');
     g.beginPath();
-    if(tear){g.arc(cx,cy,r,Math.PI*0.8,Math.PI*0.2,false);g.lineTo(cx,h-4);g.closePath()}
+    if(tear){g.arc(cx,cy,r,Math.PI*0.8,Math.PI*0.2,false);g.lineTo(cx,h-12);g.closePath()}
     else{g.arc(cx,cy,r,0,Math.PI*2)}
-    g.fillStyle=color;g.fill();g.lineWidth=4;g.strokeStyle='#FFFFFF';g.stroke();
-    var s=(r*1.2)/24;g.save();g.translate(cx-12*s,cy-12*s);g.scale(s,s);g.fillStyle='#FFFFFF';
+    g.save();g.shadowColor='rgba(0,0,0,0.35)';g.shadowBlur=12;g.shadowOffsetY=3;g.fillStyle=color;g.fill();g.restore();
+    g.lineWidth=9;g.strokeStyle='#FFFFFF';g.stroke();
+    var s=(r*1.25)/24;g.save();g.translate(cx-12*s,cy-12*s);g.scale(s,s);g.fillStyle='#FFFFFF';
     g.fill(new Path2D(C.glyphs[glyph]));g.restore();
     return g.getImageData(0,0,w,h);
   }
   function iconFor(p){
     if(C.pins==='dots'||!p.glyph||p.kind==='stop'||p.kind==='me'||p.order!=null)return'';
     var key='pin-'+C.pins+'-'+p.glyph+'-'+p.color.slice(1);
-    if(map&&!map.hasImage(key)){try{map.addImage(key,drawPin(C.pins,p.glyph,p.color),{pixelRatio:2})}catch(e){return''}}
+    if(map&&!map.hasImage(key)){try{map.addImage(key,drawPin(C.pins,p.glyph,p.color),{pixelRatio:3})}catch(e){return''}}
     return key;
   }
   function fc(d){return{type:'FeatureCollection',features:d.points.map(function(p){
     return{type:'Feature',geometry:{type:'Point',coordinates:[p.lon,p.lat]},
-      properties:{id:p.id,color:p.color,order:p.order==null?'':String(p.order),sel:p.id===d.selectedId?1:0,
-        kind:p.kind||'place',label:p.label||'',icon:iconFor(p)}}})}}
+      properties:{id:p.id,color:p.color,rank:p.rank==null?2:p.rank,order:p.order==null?'':String(p.order),sel:p.id===d.selectedId?1:0,
+        kind:p.kind||'place',label:p.label||'',icon:iconFor(p),dim:p.dim===true?1:0}}})}}
   function line(d){return{type:'Feature',properties:{},geometry:{type:'LineString',coordinates:d.route.length>1?d.route:[]}}}
   /** the route when asked for and present, otherwise the places (tram stops left out) */
   function fitTo(d,target){
     var b=new lib.LngLatBounds(),n=0;
     if(target!=='points'&&d.route.length>1){d.route.forEach(function(c){b.extend(c);n++})}
     else{d.points.forEach(function(p){if(p.kind!=='stop'){b.extend([p.lon,p.lat]);n++}})}
-    if(n)map.fitBounds(b,{padding:{top:80,bottom:80,left:48,right:48},maxZoom:16,duration:600});
+    if(!n)return;
+    var pad={top:80,bottom:80,left:48,right:48};
+    // Day trips reach from Czestochowa to the Tatras: fitting them all in a small map zooms out to
+    // half of Europe, where every pin merges into one. Below FIT_MIN_ZOOM the map stays at the
+    // region around the places instead, and the far ones are a short pan away.
+    var cam=map.cameraForBounds(b,{padding:pad,maxZoom:16});
+    if(cam&&cam.zoom<FIT_MIN_ZOOM){map.easeTo({center:b.getCenter(),zoom:FIT_MIN_ZOOM,duration:600});return}
+    map.fitBounds(b,{padding:pad,maxZoom:16,duration:600});
   }
   function apply(d){
     if(!ready){pending=d;return}
@@ -208,8 +232,10 @@ export const MAP_HTML = `<!doctype html>
       threeD=d.threeD;
       ['krk-buildings-3d','krk-models'].forEach(function(id){
         if(map.getLayer(id))map.setLayoutProperty(id,'visibility',threeD?'visible':'none')});
-      cam.pitch=threeD?58:0;cam.bearing=threeD?-20:0;
-      if(threeD&&!fitted)cam.zoom=Math.max(cam.zoom||map.getZoom(),15.6);
+      // north stays up: a turned map confuses visitors who read it like a paper one
+      // steep enough, and close enough, that the buildings around the Main Square read as 3D at once
+      cam.pitch=threeD?60:0;cam.bearing=0;
+      if(threeD&&!fitted)cam.zoom=Math.max(cam.zoom||map.getZoom(),16.2);
       move=true;
     }
     if(move){
@@ -225,7 +251,9 @@ export const MAP_HTML = `<!doctype html>
     if(CFG.token)lib.accessToken=CFG.token;
     var opts={container:'m',style:CFG.style,center:VIEW.center,zoom:VIEW.zoom};
     if(CFG.provider==='mapbox'&&CFG.standard){
-      opts.config={basemap:{lightPreset:C.dark?'night':'day',theme:CFG.theme,showPointOfInterestLabels:false}}}
+      var basemap={lightPreset:CFG.lightPreset||(C.dark?'night':'day'),theme:CFG.theme,showPointOfInterestLabels:false,showLandmarkIconLabels:false};
+      for(var k in CFG.colors)basemap[k]=CFG.colors[k];
+      opts.config={basemap:basemap}}
     else{opts.attributionControl={compact:true}}
     try{map=new lib.Map(opts)}catch(err){fail('The map could not start: '+(err&&err.message));return}
 
@@ -270,7 +298,10 @@ export const MAP_HTML = `<!doctype html>
           var specs={};
           CFG.models.forEach(function(m){specs[m.id]={uri:location.origin+'/models/'+m.id+'.glb',position:m.position,orientation:[0,0,0]}});
           map.addSource('krk-models',{type:'model',models:specs});
-          map.addLayer({id:'krk-models',type:'model',source:'krk-models',layout:{visibility:'none'},paint:{'model-opacity':1}});
+          // in the middle slot, so the buildings never cover the pins and names drawn in the top slot
+          var models={id:'krk-models',type:'model',source:'krk-models',layout:{visibility:'none'},paint:{'model-opacity':1}};
+          if(CFG.standard)models.slot='middle';
+          map.addLayer(models);
           debug.models=CFG.models.length;
         }catch(e){}
       }
@@ -287,35 +318,66 @@ export const MAP_HTML = `<!doctype html>
         paint:{'line-color':C.gilt,'line-width':3.5,'line-dasharray':[2,1.2]}});
       // tram stops: small rings, drawn under the places
       layer({id:'stops',type:'circle',source:'pts',minzoom:13,filter:isStop,paint:{
-        'circle-color':C.stone,'circle-radius':['interpolate',['linear'],['zoom'],13,2.5,17,5],
-        'circle-stroke-color':C.ink,'circle-stroke-width':1.5}});
+        // ringed in the stop's own colour: trams and buses are told apart at a glance
+        'circle-color':C.stone,'circle-radius':['interpolate',['linear'],['zoom'],13,2.5,17,6],
+        'circle-stroke-color':['get','color'],'circle-stroke-width':['interpolate',['linear'],['zoom'],13,1.5,17,2.5]}});
       layer({id:'pts-circle',type:'circle',source:'pts',filter:['all',notStop,['==',['get','icon'],'']],paint:{
         'circle-color':['get','color'],
+        'circle-opacity':['case',['all',['==',['get','dim'],1],['!=',['get','sel'],1]],0.45,1],
         'circle-radius':['case',['==',['get','sel'],1],13,['==',['get','kind'],'me'],9,['==',['get','kind'],'lens'],9,['!=',['get','order'],''],11,7],
         'circle-stroke-color':['case',['==',['get','sel'],1],C.ink,['==',['get','kind'],'lens'],C.ink,C.white],
         'circle-stroke-width':['case',['==',['get','sel'],1],3,['==',['get','kind'],'me'],4,['==',['get','kind'],'lens'],3,2]}});
       var tear=C.pins==='teardrop',hasIcon=['!=',['get','icon'],''];
       // a ring around the selected icon pin (for teardrops, around its round head)
       layer({id:'pts-sel',type:'circle',source:'pts',filter:['all',hasIcon,['==',['get','sel'],1]],paint:{
-        'circle-radius':tear?21:22,'circle-color':'rgba(0,0,0,0)','circle-stroke-color':C.ink,'circle-stroke-width':3,
-        'circle-translate':tear?[0,-33]:[0,0]}});
-      layer({id:'pts-icon',type:'symbol',source:'pts',filter:hasIcon,layout:{'icon-image':['get','icon'],
-        'icon-anchor':tear?'bottom':'center','icon-allow-overlap':true,'icon-ignore-placement':true,
-        'icon-size':['case',['==',['get','sel'],1],1.2,1]}});
+        'circle-radius':tear?25:26,'circle-color':'rgba(0,0,0,0)','circle-stroke-color':C.ink,'circle-stroke-width':3,
+        'circle-translate':tear?[0,-39]:[0,0]}});
+      // Crowding. Zoomed out, a pin and its name are placed together and give way to more important
+      // neighbours (a cafe beside St Mary's), so fewer, readable pins remain; zoomed in, every pin shows.
+      var notSel=['!=',['get','sel'],1],isSel=['==',['get','sel'],1],byRank=['-',4,['get','rank']];
+      // a closed place is faded, so what is open stands out; the chosen pin always stays solid
+      var dimmed=['case',['all',['==',['get','dim'],1],notSel],0.45,1];
+      function pin(extra){var l={'icon-image':['get','icon'],'icon-anchor':tear?'bottom':'center',
+        'icon-size':['case',isSel,1.2,1]};for(var k in extra)l[k]=extra[k];return l}
+      var pinPaint={'icon-opacity':dimmed};
+      // a name moves to whichever side of its pin is free, instead of hiding under a neighbour
+      function named(l,field){l['text-field']=field;l['text-font']=CFG.font;
+        l['text-size']=['interpolate',['linear'],['zoom'],14,13,17,16];
+        l['text-variable-anchor']=['top','bottom','right','left'];l['text-radial-offset']=tear?1.2:1.9;
+        l['text-max-width']=8;l['text-optional']=true;return l}
+      var namePaint={'text-color':C.ink,'text-halo-color':'#FFFFFF','text-halo-width':2.5};
+      function merge(a,b){var o={};for(var k in a)o[k]=a[k];for(var j in b)o[j]=b[j];return o}
+      layer({id:'pts-far',type:'symbol',source:'pts',maxzoom:NEAR_ZOOM,filter:['all',hasIcon,notSel],
+        layout:named(pin({'icon-allow-overlap':false,'icon-padding':2,'symbol-sort-key':byRank}),
+          ['step',['zoom'],'',13.8,['get','label']]),paint:merge(namePaint,pinPaint)});
+      layer({id:'pts-icon',type:'symbol',source:'pts',minzoom:NEAR_ZOOM,filter:['all',hasIcon,notSel],
+        layout:pin({'icon-allow-overlap':true,'icon-ignore-placement':false,'symbol-sort-key':byRank}),paint:pinPaint});
+      // the chosen place always shows, with its name, whatever is around it
+      layer({id:'pts-icon-sel',type:'symbol',source:'pts',filter:['all',hasIcon,isSel],
+        layout:named(pin({'icon-allow-overlap':true,'icon-ignore-placement':true}),['get','label']),paint:namePaint});
       layer({id:'pts-order',type:'symbol',source:'pts',filter:['!=',['get','order'],''],layout:{'text-field':['get','order'],
         'text-font':CFG.font,'text-size':11,'text-allow-overlap':true},paint:{'text-color':C.white}});
-      layer({id:'pts-label',type:'symbol',source:'pts',minzoom:14.6,filter:['all',notStop,['!=',['get','label'],'']],
-        layout:{'text-field':['get','label'],'text-font':CFG.font,'text-size':11,
-          'text-offset':tear?[0,0.4]:C.pins==='badges'?[0,1.5]:[0,1.1],'text-anchor':'top',
-          'text-max-width':9,'text-optional':true},
-        paint:{'text-color':C.ink,'text-halo-color':C.stone,'text-halo-width':1.6}});
+      // names of plain markers (plan stops, dot pins), and of icon pins once zoomed in
+      layer({id:'pts-label',type:'symbol',source:'pts',minzoom:13.8,
+        filter:['all',notStop,['==',['get','icon'],''],['!=',['get','label'],'']],
+        layout:named({},['get','label']),paint:namePaint});
+      layer({id:'pts-label-near',type:'symbol',source:'pts',minzoom:NEAR_ZOOM,
+        filter:['all',hasIcon,notSel,['!=',['get','label'],'']],
+        layout:named({},['get','label']),paint:namePaint});
       layer({id:'stops-label',type:'symbol',source:'pts',minzoom:16,filter:isStop,
         layout:{'text-field':['get','label'],'text-font':CFG.font,'text-size':10,'text-offset':[0,0.9],'text-anchor':'top',
           'text-max-width':8,'text-optional':true},
         paint:{'text-color':C.mute,'text-halo-color':C.stone,'text-halo-width':1.4}});
-      ['pts-circle','pts-icon'].forEach(function(id){
-        map.on('click',id,function(e){var f=e.features&&e.features[0];
-          if(f&&f.properties.kind!=='me')post({type:'select',id:String(f.properties.id)})});
+      // A tap opens the nearest place within 24 px, pin or name: fingers rarely hit a 44 px pin exactly.
+      map.on('click',function(e){
+        var p=e.point,r=24,best=null,bestD=Infinity;
+        map.queryRenderedFeatures([[p.x-r,p.y-r],[p.x+r,p.y+r]],{layers:PIN_LAYERS.concat(['pts-label','pts-label-near'])}).forEach(function(f){
+          var k=f.properties.kind;if(k==='me'||k==='stop'||!f.geometry||!f.geometry.coordinates)return;
+          var q=map.project(f.geometry.coordinates),d=(q.x-p.x)*(q.x-p.x)+(q.y-p.y)*(q.y-p.y);
+          if(d<bestD){bestD=d;best=f}});
+        if(best)post({type:'select',id:String(best.properties.id)});
+      });
+      PIN_LAYERS.concat(['pts-label','pts-label-near']).forEach(function(id){
         map.on('mouseenter',id,function(){map.getCanvas().style.cursor='pointer'});
         map.on('mouseleave',id,function(){map.getCanvas().style.cursor=''});
       });

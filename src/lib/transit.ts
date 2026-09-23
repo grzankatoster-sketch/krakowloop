@@ -1,3 +1,4 @@
+import busData from '../data/busStops.json';
 import data from '../data/transit.json';
 import { LatLon, distance, walkingMinutes } from './geo';
 
@@ -155,3 +156,52 @@ export function findTram(a: LatLon, b: LatLon, date?: Date | null): TramRide | n
   cache.set(key, ride);
   return ride;
 }
+
+type BusStop = { name: string; lat: number; lon: number; lines: string[] };
+const BUS_STOPS: BusStop[] = (busData as { stops: BusStop[] }).stops;
+
+/** A stop near a place, trams and buses together: one row per stop name, as a traveller sees it. */
+export interface NearbyTransit {
+  name: string;
+  metres: number;
+  trams: string[];
+  buses: string[];
+}
+
+/**
+ * The closest tram and bus stops within walking distance, nearest first. A tram stop and a bus
+ * stop with the same name are one stop on the street (the platforms stand side by side), so they
+ * share a row. Bus stops come from the ZTP bus feed (scripts/build-bus-stops.mjs): lines only, no times.
+ */
+export function nearbyTransitIn(
+  tt: Timetable | undefined,
+  buses: BusStop[],
+  p: LatLon,
+  options: { limit?: number; maxMetres?: number } = {},
+): NearbyTransit[] {
+  const limit = options.limit ?? 4;
+  const maxMetres = options.maxMetres ?? 600;
+  const rows = new Map<string, NearbyTransit>();
+  const add = (name: string, metres: number, kind: 'trams' | 'buses', lines: string[]) => {
+    const row = rows.get(name) ?? { name, metres, trams: [], buses: [] };
+    row.metres = Math.min(row.metres, metres);
+    for (const l of lines) if (!row[kind].includes(l)) row[kind].push(l);
+    rows.set(name, row);
+  };
+  for (const s of nearbyTramStopsIn(tt, p, { limit: 8, maxMetres })) add(s.name, s.metres, 'trams', s.lines);
+  for (const s of buses) {
+    const metres = Math.round(distance(p, s));
+    if (metres <= maxMetres) add(s.name, metres, 'buses', s.lines);
+  }
+  const byNumber = (a: string, b: string) => a.localeCompare(b, 'pl', { numeric: true });
+  return [...rows.values()]
+    .map((r) => ({ ...r, trams: r.trams.sort(byNumber), buses: r.buses.sort(byNumber) }))
+    .sort((a, b) => a.metres - b.metres)
+    .slice(0, limit);
+}
+
+export const nearbyTransit = (p: LatLon, options?: { limit?: number; maxMetres?: number }) =>
+  nearbyTransitIn(undefined, BUS_STOPS, p, options);
+
+/** Every bus stop, for the stops layer on the map. */
+export const BUS_STOP_LIST: readonly BusStop[] = BUS_STOPS;

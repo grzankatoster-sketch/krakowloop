@@ -33,6 +33,7 @@ const PAIRS: [string, string][] = [
   ['white', 'patina'],
   ['white', 'gilt'],
   ['white', 'remembrance'],
+  ['white', 'night'],
 ];
 
 describe('palettes', () => {

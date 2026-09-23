@@ -1,7 +1,7 @@
 import { describe, expect, it } from '@jest/globals';
 import { dispatchMapMessage, parseMapMessage } from '../src/components/mapMessages';
 import { places } from '../src/data/places';
-import { paramsToPlan, planToParams, shareUrl, shareableParams } from '../src/lib/planParams';
+import { parseActivities, paramsToPlan, planToParams, shareUrl, shareableParams } from '../src/lib/planParams';
 import { PlanOptions } from '../src/lib/planner';
 
 const ids = new Set(places.map((p) => p.id));
@@ -134,5 +134,25 @@ describe('map messages', () => {
     expect(parseMapMessage('{"type":"select","id":42}')).toBeNull();
     expect(parseMapMessage('{"type":"eval"}')).toBeNull();
     expect(parseMapMessage('x'.repeat(3000))).toBeNull();
+  });
+});
+
+describe('activities in a plan link', () => {
+  it('keeps known activities on days the plan has, each once', () => {
+    expect(parseActivities('2:pub-crawl,3:food-tour,2:pub-crawl', 3)).toEqual([
+      { day: 2, id: 'pub-crawl' },
+      { day: 3, id: 'food-tour' },
+    ]);
+  });
+
+  it('drops unknown activities, days outside the plan and anything malformed', () => {
+    expect(parseActivities('9:pub-crawl,1:skydiving,x:food-tour,2:<script>,0:quads', 3)).toEqual([]);
+    expect(parseActivities(undefined, 3)).toEqual([]);
+  });
+
+  it('survives a round trip through the link', () => {
+    const o = { days: 3, pace: 'steady' as const, interests: [], dayTrips: false, activities: [{ day: 2, id: 'river-cruise' }] };
+    const back = paramsToPlan(planToParams(o) as unknown as Record<string, string>, new Set());
+    expect(back?.activities).toEqual([{ day: 2, id: 'river-cruise' }]);
   });
 });

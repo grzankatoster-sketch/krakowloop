@@ -8,7 +8,10 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.krakowloop.app"
+      "bundleIdentifier": "com.krakowloop.app",
+      "infoPlist": {
+        "LSApplicationQueriesSchemes": ["comgooglemaps"]
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -44,7 +47,8 @@
           "microphonePermission": false,
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "scheme": "krakowloop"
   }

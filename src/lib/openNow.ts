@@ -1,4 +1,5 @@
 import type { Place } from '../data/places';
+import { t } from '../i18n';
 import { formatTime, type Interval } from './hours';
 
 /** Where a place stands at a moment of the day, from that day's opening intervals. */
@@ -34,13 +35,13 @@ export function closingSoon(status: OpenState, minutes: number): boolean {
 export function statusLabel(status: OpenState, minutes: number): string {
   if (status.state === 'open') {
     const left = status.closesAt - minutes;
-    const at = status.closesAt >= 1440 ? 'at midnight' : formatTime(status.closesAt);
-    if (left <= CLOSING_SOON_MINUTES) return `Closes ${at}, in ${left} min`;
-    return status.closesAt >= 1440 ? 'Open until midnight' : `Closes ${at}`;
+    const at = status.closesAt >= 1440 ? t('open.atMidnight') : formatTime(status.closesAt);
+    if (left <= CLOSING_SOON_MINUTES) return t('open.closesSoon', { time: at, minutes: left });
+    return status.closesAt >= 1440 ? t('open.untilMidnight') : t('open.closes', { time: at });
   }
-  if (status.state === 'later') return `Opens ${formatTime(status.opensAt)}`;
-  if (status.state === 'done') return 'Closed for the rest of today';
-  return 'Closed today';
+  if (status.state === 'later') return t('open.opens', { time: formatTime(status.opensAt) });
+  if (status.state === 'done') return t('open.doneToday');
+  return t('open.closedToday');
 }
 
 export interface OpenRow {

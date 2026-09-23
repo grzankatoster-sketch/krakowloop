@@ -1,3 +1,5 @@
+import { t } from '../i18n';
+
 // Partner IDs come from environment variables (.env, never committed).
 // A link counts as affiliate only when a partner ID is actually attached.
 const GYG_PARTNER_ID = process.env.EXPO_PUBLIC_GYG_PARTNER_ID;
@@ -9,5 +11,6 @@ export function getYourGuideSearch(query: string): { url: string; affiliate: boo
     : { url, affiliate: false };
 }
 
-// Label required for paid links (UOKiK guidance on advertising disclosure).
-export const AFFILIATE_NOTE = 'Affiliate link: we may earn a commission';
+// Label required for paid links (UOKiK guidance on advertising disclosure): it has to be clear to
+// every reader, so it says "advertising" and comes in the reader's language.
+export const AFFILIATE_NOTE = t('ui.affiliateNote');

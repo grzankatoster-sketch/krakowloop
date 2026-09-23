@@ -55,6 +55,18 @@ const LINKS = {
   'podgorze-museum': 'Muzeum Podgórza',
   'nowa-huta-underground': 'Podziemna Nowa Huta',
   'ciolek-palace': 'Pałac Biskupa Erazma Ciołka',
+  // food and bars added 17.09.2026 (only names that are unique in the export and carry hours;
+  // the Wódka Café Bar has two objects, so it is left out until the right one is confirmed)
+  wierzynek: 'Wierzynek',
+  massolit: 'Massolit',
+  'piwnica-pod-baranami': 'Piwnica Pod Baranami',
+  'house-of-beer': 'House of Beer',
+  'multi-qlti': 'Multi Qlti Tap Bar',
+  hevre: 'Hevre',
+  mleczarnia: 'Mleczarnia',
+  eszeweria: 'Eszeweria',
+  'piekny-pies': 'Piękny Pies',
+  drukarnia: 'Drukarnia',
 };
 
 const features = JSON.parse(readFileSync(SOURCE, 'utf8')).features;

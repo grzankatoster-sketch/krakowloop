@@ -1,12 +1,16 @@
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { GrenzeGotisch_600SemiBold } from '@expo-google-fonts/grenze-gotisch';
 import { AtkinsonHyperlegible_400Regular, AtkinsonHyperlegible_700Bold } from '@expo-google-fonts/atkinson-hyperlegible';
 import { MartianMono_400Regular, MartianMono_600SemiBold } from '@expo-google-fonts/martian-mono';
+import { LANG } from '../src/i18n';
 import { colors } from '../src/theme';
+
+// the language comes from the phone (src/i18n): tell the browser too, for screen readers and translation offers
+if (Platform.OS === 'web' && typeof document !== 'undefined') document.documentElement.lang = LANG;
 
 export default function RootLayout() {
   // If the fonts fail to load, the app still opens with system fonts.

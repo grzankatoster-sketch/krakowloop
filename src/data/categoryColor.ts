@@ -9,4 +9,5 @@ export const CATEGORY_COLOR: Record<Category, string> = {
   food: colors.gilt,
   daytrip: colors.ink,
   remembrance: colors.remembrance,
+  night: colors.night,
 };

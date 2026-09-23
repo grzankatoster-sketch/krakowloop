@@ -16,14 +16,20 @@ const OUT = path.resolve(APP, '../05_podglad/mapy');
 const TMP = path.join(os.tmpdir(), 'krakowloop-looks');
 const PORT = 5111;
 
-const STYLES = [
+const ALL_STYLES = [
   ['standard', 'Mapbox Standard'],
+  ['standard-colour', 'Standard · kolorowa zieleń i woda'],
+  ['standard-dusk', 'Standard · zmierzch'],
+  ['standard-satellite', 'Standard · satelita'],
   ['standard-faded', 'Standard · faded'],
   ['standard-monochrome', 'Standard · monochrome'],
   ['streets', 'Mapbox Streets'],
   ['outdoors', 'Mapbox Outdoors'],
   ['light', 'Mapbox Light'],
 ];
+// LOOKS=standard,standard-dusk renders only those styles (and no pin board): one build per look
+const ONLY = process.env.LOOKS ? process.env.LOOKS.split(',') : null;
+const STYLES = ONLY ? ALL_STYLES.filter(([k]) => ONLY.includes(k)) : ALL_STYLES;
 const PINS = [
   ['dots', 'Kropki (dotychczas)'],
   ['badges', 'Odznaki z ikoną'],
@@ -111,7 +117,7 @@ const browser = await chromium.launch({ channel: 'msedge' });
 try {
   const jobs = [
     ...STYLES.map(([style]) => ({ name: `styl_${style}`, style, pins: 'badges' })),
-    ...PINS.filter(([p]) => p !== 'badges').map(([pins]) => ({ name: `pins_${pins}`, style: 'standard', pins })),
+    ...(ONLY ? [] : PINS.filter(([p]) => p !== 'badges').map(([pins]) => ({ name: `pins_${pins}`, style: 'standard', pins }))),
   ];
   for (const job of jobs) {
     setLook(job.style, job.pins);

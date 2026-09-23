@@ -1,24 +1,28 @@
 import { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, View, ViewStyle, StyleProp } from 'react-native';
 import { useRouter } from 'expo-router';
+import { t } from '../i18n';
 import { colors, fonts, space } from '../theme';
 
 export function Eyebrow({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
   return <Text style={[s.eyebrow, style]}>{children}</Text>;
 }
 
-export function TopBar({ title, right }: { title: string; right?: ReactNode }) {
+/** @param back false on the tab screens, where the tab bar is the way around */
+export function TopBar({ title, right, back = true }: { title: string; right?: ReactNode; back?: boolean }) {
   const router = useRouter();
   return (
     <View style={s.bar}>
+      {back ? (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Go back"
+        accessibilityLabel={t('ui.goBack')}
         onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
         style={({ pressed }) => [s.back, pressed && s.pressed]}
       >
-        <Text style={s.backText}>Back</Text>
+        <Text style={s.backText}>{t('ui.back')}</Text>
       </Pressable>
+      ) : null}
       <Text style={s.barTitle} numberOfLines={1} accessibilityRole="header">
         {title}
       </Text>
@@ -94,23 +98,23 @@ export function Button({
 const s = StyleSheet.create({
   eyebrow: { fontFamily: fonts.mono, fontSize: 11, letterSpacing: 0.6, color: colors.mute, textTransform: 'uppercase' },
   bar: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.m, paddingVertical: space.s, gap: space.s },
-  back: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
-  backText: { fontFamily: fonts.bodyBold, color: colors.ink, fontSize: 14 },
-  barTitle: { flex: 1, fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  back: { minHeight: 48, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 999, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  backText: { fontFamily: fonts.bodyBold, color: colors.ink, fontSize: 16 },
+  barTitle: { flex: 1, fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
   barRight: { minWidth: 1 },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    minHeight: 48,
+    paddingHorizontal: 16,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.line,
     backgroundColor: colors.paper,
   },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  chipText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
+  chipText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink },
   button: { backgroundColor: colors.ink, paddingVertical: 15, paddingHorizontal: 20, borderRadius: 14, alignItems: 'center' },
   buttonQuiet: { backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
   buttonText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.white },

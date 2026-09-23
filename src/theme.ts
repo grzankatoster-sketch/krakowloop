@@ -23,6 +23,8 @@ export interface Palette {
   vistula: string;
   jewish: string;
   remembrance: string;
+  /** bars & clubs */
+  night: string;
   /** translucent ground behind captions laid over photos */
   scrim: string;
   /** text on the scrim */
@@ -50,6 +52,7 @@ const PALETTES: Record<ThemeName, Palette> = {
     vistula: '#3E5C76',
     jewish: '#2F6F68',
     remembrance: '#707875',
+    night: '#7A3B63',
     scrim: 'rgba(19,50,46,0.72)',
     onScrim: '#FFFFFF',
     water: '#AFC3C6',
@@ -72,6 +75,7 @@ const PALETTES: Record<ThemeName, Palette> = {
     vistula: '#86AEE8',
     jewish: '#B9A2E8',
     remembrance: '#A3ABBE',
+    night: '#E3A6CF',
     scrim: 'rgba(15,27,61,0.78)',
     onScrim: '#F2E6C4',
     water: '#1C3170',
@@ -94,6 +98,7 @@ const PALETTES: Record<ThemeName, Palette> = {
     vistula: '#2B67A0',
     jewish: '#74549F',
     remembrance: '#646A80',
+    night: '#7E3A68',
     scrim: 'rgba(28,37,80,0.74)',
     onScrim: '#FFFFFF',
     water: '#A9C0DD',
@@ -116,6 +121,7 @@ const PALETTES: Record<ThemeName, Palette> = {
     vistula: '#2F5D7C',
     jewish: '#5E4B8B',
     remembrance: '#6E6763',
+    night: '#7A3456',
     scrim: 'rgba(46,31,26,0.72)',
     onScrim: '#FFFFFF',
     water: '#B9CBD3',

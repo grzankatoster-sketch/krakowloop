@@ -8,10 +8,12 @@ import { LANDMARKS_3D_CREDIT } from '../src/data/landmarks3d';
 import { lensPoints } from '../src/data/lens';
 import { PLACE_MEDIA } from '../src/data/placeMedia';
 import { placeById } from '../src/data/places';
+import { WISH_PROXY_URL } from '../src/config/wish';
 import { WALKING_ROUTES_ENABLED } from '../src/lib/directions';
 import { HOURS_EXPORTED } from '../src/lib/hours';
 import { openLink } from '../src/lib/openLink';
 import { TRANSIT_FEED_VERSION } from '../src/lib/transit';
+import { t } from '../src/i18n';
 import { colors, fonts, space } from '../src/theme';
 
 interface Credit {
@@ -24,7 +26,7 @@ interface Credit {
 
 const LENS_CREDITS: Credit[] = lensPoints.flatMap((p) => [
   ...(p.reference
-    ? [{ key: `${p.id}-ref`, title: `${p.name} today`, credit: p.reference.credit, license: p.reference.license, url: p.reference.sourceUrl }]
+    ? [{ key: `${p.id}-ref`, title: t('about.today', { name: p.name }), credit: p.reference.credit, license: p.reference.license, url: p.reference.sourceUrl }]
     : []),
   ...p.layers
     .filter((l) => l.image)
@@ -38,11 +40,11 @@ const PLACE_CREDITS: Credit[] = Object.entries(PLACE_MEDIA)
 
 type SectionKey = 'privacy' | 'links' | 'accuracy' | 'data' | 'images';
 const SECTIONS: { key: SectionKey; label: string }[] = [
-  { key: 'privacy', label: 'Privacy' },
-  { key: 'links', label: 'Booking links' },
-  { key: 'accuracy', label: 'Accuracy' },
-  { key: 'data', label: 'Data sources' },
-  { key: 'images', label: 'Images' },
+  { key: 'privacy', label: t('about.privacy') },
+  { key: 'links', label: t('about.links') },
+  { key: 'accuracy', label: t('about.accuracy') },
+  { key: 'data', label: t('about.data') },
+  { key: 'images', label: t('about.images') },
 ];
 
 function Section({
@@ -91,7 +93,7 @@ function CreditGroup({ title, credits, initiallyOpen }: { title: string; credits
         <Text style={s.groupTitle}>
           {title} ({credits.length})
         </Text>
-        <Text style={s.link}>{open ? 'Hide' : 'Show'}</Text>
+        <Text style={s.link}>{open ? t('brief.hide') : t('brief.show')}</Text>
       </Pressable>
       {open
         ? credits.map((c) => (
@@ -140,15 +142,15 @@ export default function About() {
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title="About, sources and privacy" />
+      <TopBar title={t('about.title')} />
       <ScrollView ref={scroll} contentContainerStyle={s.scroll}>
         <View style={s.col}>
-          <View style={s.jumps} accessibilityLabel="On this page">
+          <View style={s.jumps} accessibilityLabel={t('about.onThisPage')}>
             {SECTIONS.map((sec) => (
               <Pressable
                 key={sec.key}
                 accessibilityRole="button"
-                accessibilityLabel={`Go to ${sec.label}`}
+                accessibilityLabel={t('about.goTo', { section: sec.label })}
                 onPress={() => jump(sec.key)}
                 style={({ pressed }) => [s.jump, pressed && { opacity: 0.8 }]}
               >
@@ -157,53 +159,49 @@ export default function About() {
             ))}
           </View>
 
-          <Section title="Privacy" onLayout={remember('privacy')} ref={privacyHeading}>
-            <Text style={s.p}>KrakowLoop has no accounts and no analytics. It doesn’t collect your name, email or history.</Text>
-            <Text style={s.p}>The camera picture for Time Lens stays on your phone. Nothing is recorded or uploaded.</Text>
+          <Section title={t('about.privacy')} onLayout={remember('privacy')} ref={privacyHeading}>
+            <Text style={s.p}>{t('about.p1')}</Text>
+            <Text style={s.p}>{t('about.p2')}</Text>
             <Text style={s.p}>
-              Your location is used only when you tap “Near me”, “Walk here”, “Show the nearest first” or “Where I am now”.
-              It sorts places by distance on your phone.
-              {WALKING_ROUTES_ENABLED
-                ? ' For a walking route, your position and the destination are sent to Mapbox to calculate it.'
-                : ''}{' '}
-              A shared plan link contains the start point to about 100 m.
+              {t('about.p3', { nearMe: t('map.nearMe'), walkHere: t('walk.here'), whereIAm: t('plan.whereIAm') })}
+              {WALKING_ROUTES_ENABLED ? t('about.p3route') : ''}
+              {t('about.p3share')}
             </Text>
+            <Text style={s.p}>{t('about.rides')}</Text>
+            {WISH_PROXY_URL ? <Text style={s.p}>{t('about.wish')}</Text> : null}
             <Text style={s.p}>
-              Maps load from {MAP_PROVIDER === 'mapbox' ? 'Mapbox' : 'OpenFreeMap'}, which, like any website, sees your IP address.
-            </Text>
-          </Section>
-
-          <Section title="Booking links" onLayout={remember('links')} ref={linksHeading}>
-            <Text style={s.p}>
-              Links marked “affiliate link” may earn us a commission at no extra cost to you. {AFFILIATE_NOTE}. Auschwitz-Birkenau
-              entry cards are only linked to the official website, without any commission.
+              {t('about.p4', { provider: MAP_PROVIDER === 'mapbox' ? 'Mapbox' : 'OpenFreeMap' })}
             </Text>
           </Section>
 
-          <Section title="How accurate is it" onLayout={remember('accuracy')} ref={accuracyHeading}>
+          <Section title={t('about.links')} onLayout={remember('links')} ref={linksHeading}>
             <Text style={s.p}>
-              Opening hours come from OpenStreetMap (exported {HOURS_EXPORTED}) and don’t include public holidays. Tram
-              suggestions use the ZTP Kraków timetable (feed {TRANSIT_FEED_VERSION}) without live delays. Day-trip travel
-              times are estimates. Always check before you go.
+              {t('about.linksText', { note: AFFILIATE_NOTE })}
             </Text>
           </Section>
 
-          <Section title="Data sources" onLayout={remember('data')} ref={dataHeading}>
-            <Text style={s.p}>Place locations and opening hours: © OpenStreetMap contributors, ODbL.</Text>
+          <Section title={t('about.accuracyTitle')} onLayout={remember('accuracy')} ref={accuracyHeading}>
+            <Text style={s.p}>
+              {t('about.accuracyText', { date: HOURS_EXPORTED, feed: TRANSIT_FEED_VERSION })}
+            </Text>
+          </Section>
+
+          <Section title={t('about.data')} onLayout={remember('data')} ref={dataHeading}>
+            <Text style={s.p}>{t('about.osm')}</Text>
             <Link label="openstreetmap.org/copyright" url="https://www.openstreetmap.org/copyright" />
-            <Text style={s.p}>Tram timetable: Zarząd Transportu Publicznego w Krakowie, GTFS.</Text>
+            <Text style={s.p}>{t('about.gtfs')}</Text>
             <Link label="gtfs.ztp.krakow.pl" url="https://gtfs.ztp.krakow.pl/" />
-            <Text style={s.p}>Place photos and official websites: Wikimedia Commons and Wikidata.</Text>
+            <Text style={s.p}>{t('about.wiki')}</Text>
             {MAP_PROVIDER === 'mapbox' ? <Text style={s.p}>{LANDMARKS_3D_CREDIT}.</Text> : null}
             <Text style={s.p}>
-              Map: {MAP_PROVIDER === 'mapbox' ? '© Mapbox, © OpenStreetMap' : 'OpenFreeMap, © OpenMapTiles, © OpenStreetMap'}.
-              {WALKING_ROUTES_ENABLED ? ' Walking routes: Mapbox Directions.' : ''}
+              {t('about.map', { credit: MAP_PROVIDER === 'mapbox' ? '© Mapbox, © OpenStreetMap' : 'OpenFreeMap, © OpenMapTiles, © OpenStreetMap' })}
+              {WALKING_ROUTES_ENABLED ? t('about.routes') : ''}
             </Text>
           </Section>
 
-          <Section title="Images" onLayout={remember('images')} ref={imagesHeading}>
-            <CreditGroup title="Time Lens images" credits={LENS_CREDITS} initiallyOpen />
-            <CreditGroup title="Place photos" credits={PLACE_CREDITS} initiallyOpen={false} />
+          <Section title={t('about.images')} onLayout={remember('images')} ref={imagesHeading}>
+            <CreditGroup title={t('lens.title')} credits={LENS_CREDITS} initiallyOpen />
+            <CreditGroup title={t('about.placePhotos')} credits={PLACE_CREDITS} initiallyOpen={false} />
           </Section>
         </View>
       </ScrollView>

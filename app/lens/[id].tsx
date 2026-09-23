@@ -1,13 +1,12 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { Image, PanResponder, PanResponderGestureState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useRef, useState } from 'react';
+import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Button, Eyebrow, TopBar } from '../../src/components/ui';
-import { EpochRuler } from '../../src/components/EpochRuler';
-import { DragSlider } from '../../src/components/DragSlider';
-import { LensPoint, lensById } from '../../src/data/lens';
+import { Button, TopBar } from '../../src/components/ui';
+import { LensLayer, LensPoint, cameraProblem, firstShown, lensById } from '../../src/data/lens';
 import { openLink } from '../../src/lib/openLink';
+import { t } from '../../src/i18n';
 import { colors, fonts, space } from '../../src/theme';
 
 export default function LensScreen() {
@@ -17,227 +16,251 @@ export default function LensScreen() {
   if (!point) {
     return (
       <SafeAreaView style={s.safe}>
-        <TopBar title="Time Lens" />
-        <Text style={s.empty}>This viewpoint doesn’t exist. Go back and pick one from the list.</Text>
+        <TopBar title={t('lens.title')} />
+        <Text style={s.empty}>{t('lens.unknown')}</Text>
       </SafeAreaView>
     );
   }
-  // A new viewpoint gets a fresh viewer: first layer, overlay centred.
   return <LensViewer key={point.id} point={point} />;
 }
 
-const ORIGIN = { x: 0, y: 0 };
-/** one tap of a move button, in points */
-const STEP = 16;
+function Credit({ title, credit, license, url }: { title: string; credit: string; license: string; url: string }) {
+  return (
+    <Pressable accessibilityRole="link" onPress={() => openLink(url)} hitSlop={6}>
+      <Text style={s.credit}>
+        {title}. {credit} · {license} · Wikimedia Commons
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Release the camera whenever this screen is not the one in front, and remember whether it is. */
+function useReleaseCamera(focusedRef: { current: boolean }, setCameraWanted: (on: boolean) => void) {
+  useFocusEffect(
+    useCallback(() => {
+      focusedRef.current = true;
+      return () => {
+        focusedRef.current = false;
+        setCameraWanted(false);
+      };
+    }, [focusedRef, setCameraWanted]),
+  );
+}
+
+function environment() {
+  const web = Platform.OS === 'web';
+  return {
+    web,
+    secure: !web || (typeof window !== 'undefined' && window.isSecureContext),
+    mediaDevices: !web || (typeof navigator !== 'undefined' && !!navigator.mediaDevices?.getUserMedia),
+  };
+}
 
 function LensViewer({ point }: { point: LensPoint }) {
+  const photos = point.layers.filter((l) => l.kind === 'photo');
+  const artworks = point.layers.filter((l) => l.kind === 'artwork');
+  const today = point.reference;
+  const [shown, setShown] = useState(() => firstShown(point));
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraWanted, setCameraWanted] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const [layerIdx, setLayerIdx] = useState(0);
-  const [opacity, setOpacity] = useState(0.6);
-  const [scale, setScale] = useState(1);
-  const [placed, setPlaced] = useState(ORIGIN);
-  const [dragging, setDragging] = useState(ORIGIN);
-  const [more, setMore] = useState(false);
-  const focused = useRef(true);
+  const [showOld, setShowOld] = useState(true);
+  const focusedRef = useRef(true);
 
-  // Release the camera whenever this screen is not the one in front.
-  useFocusEffect(
-    useCallback(() => {
-      focused.current = true;
-      return () => {
-        focused.current = false;
-        setCameraWanted(false);
-      };
-    }, []),
-  );
+  useReleaseCamera(focusedRef, setCameraWanted);
 
-  const drag = useMemo(() => {
-    const commit = (g: PanResponderGestureState) => {
-      setPlaced((p) => ({ x: p.x + g.dx, y: p.y + g.dy }));
-      setDragging(ORIGIN);
-    };
-    return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, g) => setDragging({ x: g.dx, y: g.dy }),
-      onPanResponderRelease: (_, g) => commit(g),
-      onPanResponderTerminate: (_, g) => commit(g),
-    });
-  }, []);
-
-  const move = (dx: number, dy: number) => setPlaced((p) => ({ x: p.x + dx, y: p.y + dy }));
-  const resetOverlay = () => {
-    setPlaced(ORIGIN);
-    setDragging(ORIGIN);
-    setScale(1);
-  };
-
-  const layer = point.layers[Math.min(layerIdx, point.layers.length - 1)];
+  const current: LensLayer | undefined = photos.find((p) => p.key === shown);
+  const choices = [...photos.map((p) => ({ key: p.key, label: p.year })), ...(today ? [{ key: 'today', label: t('lens.today') }] : [])];
   const cameraOn = cameraWanted && !!permission?.granted;
-  const referenceVisible = !cameraOn && !!point.reference;
-  const offset = { x: placed.x + dragging.x, y: placed.y + dragging.y };
+  const overlay = current ?? photos[0];
 
   const startCamera = async () => {
+    const problem = cameraProblem(environment());
+    if (problem) {
+      setCameraError(problem);
+      return;
+    }
     try {
       const res = permission?.granted ? permission : await requestPermission();
       // the permission dialog can outlive the screen: never start a camera nobody sees
-      if (!focused.current) return;
+      if (!focusedRef.current) return;
       if (res.granted) {
         setCameraError(null);
         setCameraWanted(true);
       } else {
-        setCameraError('Camera access was not allowed, so the reference photo is shown instead.');
+        setCameraError(t('lens.denied'));
       }
     } catch {
-      if (focused.current) setCameraError('The camera could not be started on this device.');
+      if (focusedRef.current) setCameraError(t('lens.cannotStart'));
     }
   };
 
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <TopBar title={point.name} />
-      <View style={s.stage}>
-        {cameraOn ? (
-          <CameraView
-            style={StyleSheet.absoluteFill}
-            facing="back"
-            onMountError={(e) => {
-              setCameraWanted(false);
-              setCameraError(`The camera could not start: ${e.message}`);
-            }}
-          />
-        ) : point.reference ? (
-          <Image source={point.reference.image} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        ) : !layer.image ? (
-          <Text style={s.stageHint}>Turn on the camera at the spot to see the present day.</Text>
-        ) : null}
+      <ScrollView contentContainerStyle={s.scroll}>
+        <View style={s.col}>
+          <Text style={s.where}>{t('lens.standAt', { where: point.where })}</Text>
 
-        {layer.image ? (
-          <View style={StyleSheet.absoluteFill} {...drag.panHandlers}>
-            <Image
-              source={layer.image}
-              resizeMode="contain"
-              style={[
-                StyleSheet.absoluteFill,
-                { opacity, transform: [{ translateX: offset.x }, { translateY: offset.y }, { scale }] },
-              ]}
-              accessibilityLabel={layer.title}
-            />
-          </View>
-        ) : null}
-        <Text style={s.standAt}>Stand at: {point.where}</Text>
-        {layer.image ? <Text style={s.dragHint}>Drag the picture to line it up</Text> : null}
-      </View>
+          {choices.length ? (
+            <>
+              <View style={s.frame}>
+                {current ? (
+                  <Image source={current.image} style={s.picture} resizeMode="contain" accessibilityLabel={current.title} />
+                ) : today ? (
+                  <Image source={today.image} style={s.picture} resizeMode="contain" accessibilityLabel={today.title} />
+                ) : null}
+                <Text style={s.badge}>{current ? current.year : t('lens.today')}</Text>
+              </View>
 
-      {/* Everything needed while framing stays within thumb reach; the rest opens on demand. */}
-      <View style={s.panel}>
-        <View style={s.panelInner}>
-          <EpochRuler items={point.layers} index={layerIdx} onChange={setLayerIdx} />
-          <Text style={s.title} numberOfLines={1}>
-            {layer.image ? layer.title : 'Today'}
-          </Text>
-          {layer.image ? <DragSlider label="See-through" value={opacity} onChange={setOpacity} /> : null}
-          <View style={s.row}>
-            {cameraOn ? (
-              <Button label="Stop the camera" kind="quiet" onPress={() => setCameraWanted(false)} style={s.grow} />
-            ) : (
-              <Button label="Use my camera" onPress={startCamera} style={s.grow} />
-            )}
-            <Button label={more ? 'Less' : 'Adjust & sources'} kind="quiet" onPress={() => setMore((v) => !v)} style={s.grow} />
-          </View>
-          {cameraError ? (
-            <Text style={s.error} accessibilityLiveRegion="polite">
-              {cameraError}
-            </Text>
+              {choices.length > 1 ? (
+                <>
+                  <Text style={s.hint}>{t('lens.tapYear')}</Text>
+                  <View style={s.years}>
+                    {choices.map((c) => {
+                      const on = c.key === shown;
+                      return (
+                        <Pressable
+                          key={c.key}
+                          accessibilityRole="button"
+                          accessibilityLabel={c.key === 'today' ? t('lens.today') : t('lens.photoFrom', { year: c.label })}
+                          aria-pressed={on}
+                          onPress={() => setShown(c.key)}
+                          style={StyleSheet.flatten([s.year, on && s.yearOn])}
+                        >
+                          <Text style={StyleSheet.flatten([s.yearText, on && s.yearTextOn])}>{c.label}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : null}
+
+              {current ? (
+                <Credit title={current.title} credit={current.credit} license={current.license} url={current.sourceUrl} />
+              ) : today ? (
+                <Credit title={today.title} credit={today.credit} license={today.license} url={today.sourceUrl} />
+              ) : null}
+            </>
           ) : null}
-          {permission && !permission.granted && !permission.canAskAgain ? (
-            <Text style={s.credit}>Camera access is off. Turn it on for KrakowLoop in your phone’s settings.</Text>
+
+          {artworks.length ? (
+            <View style={s.section}>
+              <Text style={s.h2} accessibilityRole="header">
+                {t('lens.artist')}
+              </Text>
+              <Text style={s.line}>{t('lens.artistLine')}</Text>
+              {artworks.map((a) => (
+                <View key={a.key} style={s.card}>
+                  <Image source={a.image} style={s.artwork} resizeMode="contain" accessibilityLabel={a.title} />
+                  <Text style={s.cardTitle}>
+                    {a.year} · {a.title}
+                  </Text>
+                  <Credit title={t('lens.source')} credit={a.credit} license={a.license} url={a.sourceUrl} />
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {overlay ? (
+            <View style={s.section}>
+              <Text style={s.h2} accessibilityRole="header">
+                {t('lens.there')}
+              </Text>
+              <Text style={s.line}>{t('lens.thereLine')}</Text>
+              {cameraOn ? (
+                <>
+                  <View style={s.cameraBox}>
+                    <CameraView
+                      style={StyleSheet.absoluteFill}
+                      facing="back"
+                      onMountError={(e) => {
+                        setCameraWanted(false);
+                        setCameraError(t('lens.startError', { message: e.message }));
+                      }}
+                    />
+                    {showOld ? (
+                      <Image source={overlay.image} style={s.cameraOverlay} resizeMode="contain" accessibilityLabel={overlay.title} />
+                    ) : null}
+                  </View>
+                  <View style={s.row}>
+                    <Button
+                      label={showOld ? t('lens.hideOld') : t('lens.showOld')}
+                      kind="quiet"
+                      onPress={() => setShowOld((v) => !v)}
+                      style={s.grow}
+                    />
+                    <Button label={t('lens.stopCamera')} kind="quiet" onPress={() => setCameraWanted(false)} style={s.grow} />
+                  </View>
+                  <Text style={s.credit}>{t('lens.live')}</Text>
+                </>
+              ) : (
+                <Button label={t('lens.compare')} onPress={startCamera} />
+              )}
+              {cameraError ? (
+                <Text style={s.error} accessibilityLiveRegion="polite">
+                  {cameraError}
+                </Text>
+              ) : null}
+              {permission && !permission.granted && !permission.canAskAgain ? (
+                <Text style={s.credit}>{t('lens.off')}</Text>
+              ) : null}
+            </View>
           ) : null}
         </View>
-
-        {more ? (
-          <ScrollView style={s.more} contentContainerStyle={s.moreInner}>
-            {layer.image ? (
-              <>
-                <Eyebrow>Line up the picture</Eyebrow>
-                <View style={s.row}>
-                  <Button label="←" kind="quiet" onPress={() => move(-STEP, 0)} style={s.grow} />
-                  <Button label="↑" kind="quiet" onPress={() => move(0, -STEP)} style={s.grow} />
-                  <Button label="↓" kind="quiet" onPress={() => move(0, STEP)} style={s.grow} />
-                  <Button label="→" kind="quiet" onPress={() => move(STEP, 0)} style={s.grow} />
-                </View>
-                <View style={s.row}>
-                  <Button label="Smaller" kind="quiet" onPress={() => setScale((v) => Math.max(0.4, +(v - 0.1).toFixed(2)))} style={s.grow} />
-                  <Button label="Bigger" kind="quiet" onPress={() => setScale((v) => Math.min(3, +(v + 0.1).toFixed(2)))} style={s.grow} />
-                  <Button label="Reset" kind="quiet" onPress={resetOverlay} style={s.grow} />
-                </View>
-              </>
-            ) : null}
-
-            <Eyebrow>Sources</Eyebrow>
-            {layer.image ? (
-              <Pressable accessibilityRole="link" onPress={() => openLink(layer.sourceUrl)}>
-                <Text style={s.credit}>
-                  {layer.title}: {layer.credit} · {layer.license} · Wikimedia Commons
-                </Text>
-              </Pressable>
-            ) : null}
-            {cameraOn ? <Text style={s.credit}>Live camera. Nothing is recorded or uploaded.</Text> : null}
-            {referenceVisible && point.reference ? (
-              <Pressable accessibilityRole="link" onPress={() => openLink(point.reference!.sourceUrl)}>
-                <Text style={s.credit}>
-                  {layer.image ? 'Behind it: ' : ''}photo by {point.reference.credit} · {point.reference.license} · Wikimedia Commons
-                </Text>
-              </Pressable>
-            ) : null}
-          </ScrollView>
-        ) : null}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
-  stage: { flex: 1, minHeight: 240, backgroundColor: colors.ink, overflow: 'hidden', justifyContent: 'center' },
-  stageHint: { fontFamily: fonts.body, fontSize: 15, color: colors.stone, textAlign: 'center', padding: space.l },
-  standAt: {
+  scroll: { paddingBottom: space.xl },
+  col: { width: '100%', maxWidth: 620, alignSelf: 'center', paddingHorizontal: space.m, gap: space.m },
+  where: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  frame: { width: '100%', aspectRatio: 4 / 3, backgroundColor: colors.ink, borderRadius: 14, overflow: 'hidden' },
+  picture: { width: '100%', height: '100%' },
+  badge: {
     position: 'absolute',
     top: space.s,
     left: space.s,
-    right: space.s,
     fontFamily: fonts.bodyBold,
-    fontSize: 13,
+    fontSize: 18,
     color: colors.onScrim,
     backgroundColor: colors.scrim,
-    paddingHorizontal: 10,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 10,
-    overflow: 'hidden',
-  },
-  dragHint: {
-    position: 'absolute',
-    bottom: space.s,
-    alignSelf: 'center',
-    fontFamily: fonts.mono,
-    fontSize: 11,
-    color: colors.onScrim,
-    backgroundColor: colors.scrim,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
     borderRadius: 999,
     overflow: 'hidden',
   },
-  panel: { backgroundColor: colors.paper, borderTopWidth: 1, borderColor: colors.line },
-  panelInner: { padding: space.m, gap: space.s, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  more: { maxHeight: 220, borderTopWidth: 1, borderColor: colors.line },
-  moreInner: { padding: space.m, gap: space.s, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  title: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
-  credit: { fontFamily: fonts.body, fontSize: 13, color: colors.mute },
-  error: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.brick },
-  row: { flexDirection: 'row', gap: space.s },
-  grow: { flex: 1, paddingHorizontal: 8 },
-  empty: { fontFamily: fonts.body, fontSize: 16, color: colors.ink, padding: space.m },
+  hint: { fontFamily: fonts.body, fontSize: 16, color: colors.mute },
+  years: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s },
+  year: {
+    minHeight: 56,
+    minWidth: 96,
+    paddingHorizontal: 18,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: colors.ink,
+    backgroundColor: colors.paper,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  yearOn: { backgroundColor: colors.ink },
+  yearText: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
+  yearTextOn: { color: colors.white },
+  credit: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.mute },
+  section: { gap: space.s, marginTop: space.m },
+  h2: { fontFamily: fonts.bodyBold, fontSize: 22, color: colors.ink },
+  line: { fontFamily: fonts.body, fontSize: 16, lineHeight: 23, color: colors.ink },
+  card: { backgroundColor: colors.paper, borderRadius: 14, borderWidth: 1, borderColor: colors.line, padding: space.s, gap: 6 },
+  // the card's own colour behind the letterbox, so an engraving doesn't sit in a grey box
+  artwork: { width: '100%', aspectRatio: 4 / 3, backgroundColor: colors.paper, borderRadius: 10 },
+  cardTitle: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  cameraBox: { width: '100%', aspectRatio: 3 / 4, maxHeight: 520, backgroundColor: colors.ink, borderRadius: 14, overflow: 'hidden' },
+  cameraOverlay: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0.55 },
+  error: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.brick },
+  row: { flexDirection: 'row', gap: space.s, flexWrap: 'wrap' },
+  grow: { flexGrow: 1, paddingHorizontal: 8 },
+  empty: { fontFamily: fonts.body, fontSize: 17, color: colors.ink, padding: space.m },
 });

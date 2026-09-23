@@ -3,6 +3,7 @@
 import { CITY } from '../config/city';
 import { MAX_YEAR, parseISODate } from './dates';
 import { LatLon, distance } from './geo';
+import { experiences } from '../data/places';
 import { INTEREST_KEYS, MAX_PLAN_DAYS, PACE_KEYS, PlanOptions } from './planner';
 
 export interface PlanParams {
@@ -14,6 +15,14 @@ export interface PlanParams {
   date: string;
   from: string;
   skip: string;
+  /** the plan's shuffle (planner.ts): the same link shows the same days on every phone */
+  seed: string;
+  /** activities added to days, "2:pub-crawl,3:food-tour" */
+  acts: string;
+  /** "low" when the traveller does not want to walk much */
+  walk: string;
+  /** "1" when a place to eat belongs in every day */
+  dine: string;
 }
 
 type RawParams = Record<string, string | string[] | undefined>;
@@ -31,6 +40,10 @@ export function planToParams(o: PlanOptions): PlanParams {
     // about 100 m: enough for walking directions, not a street address
     from: o.start ? `${o.start.lat.toFixed(3)},${o.start.lon.toFixed(3)}` : '',
     skip: (o.exclude ?? []).join(','),
+    seed: o.seed ? String(o.seed) : '',
+    acts: (o.activities ?? []).map((a) => `${a.day}:${a.id}`).join(','),
+    walk: o.walking === 'low' ? 'low' : '',
+    dine: o.dinner ? '1' : '',
   };
 }
 
@@ -57,6 +70,34 @@ export function parseStart(value: string | undefined): LatLon | undefined {
   return distance(p, CITY.centre) <= CITY.maxStartMetres ? p : undefined;
 }
 
+const ACTIVITY_IDS: ReadonlySet<string> = new Set(experiences.map((x) => x.id));
+const MAX_ACTIVITIES = 20;
+
+/** Activities from a link: known ones only, on a day the plan has, each once per day. */
+export function parseActivities(value: string | undefined, days: number): { day: number; id: string }[] {
+  const seen = new Set<string>();
+  const out: { day: number; id: string }[] = [];
+  for (const part of (value ?? '').split(',')) {
+    const m = /^(\d{1,2}):([a-z0-9-]{1,40})$/.exec(part);
+    if (!m) continue;
+    const day = Number(m[1]);
+    if (day < 1 || day > days || !ACTIVITY_IDS.has(m[2]) || seen.has(part)) continue;
+    seen.add(part);
+    out.push({ day, id: m[2] });
+    if (out.length >= MAX_ACTIVITIES) break;
+  }
+  return out;
+}
+
+const activitiesOf = (list: { day: number; id: string }[]) => (list.length ? { activities: list } : {});
+
+/** A shuffle seed from a link: a positive 31-bit integer, or none. */
+export function parseSeed(value: string | undefined): number | undefined {
+  if (!value || !/^\d{1,10}$/.test(value)) return undefined;
+  const n = Number(value);
+  return n >= 1 && n <= 2147483647 ? n : undefined;
+}
+
 export function paramsToPlan(raw: RawParams, knownIds: ReadonlySet<string>): PlanOptions | null {
   const days = Number(first(raw.days));
   if (!Number.isInteger(days) || days < 1 || days > MAX_PLAN_DAYS) return null;
@@ -74,5 +115,10 @@ export function paramsToPlan(raw: RawParams, knownIds: ReadonlySet<string>): Pla
     startDate,
     start: parseStart(first(raw.from)),
     exclude: skip,
+    seed: parseSeed(first(raw.seed)),
+    // left out when empty, like the seed: an old link and a new one give equal options
+    ...activitiesOf(parseActivities(first(raw.acts), days)),
+    ...(first(raw.walk) === 'low' ? { walking: 'low' as const } : {}),
+    ...(first(raw.dine) === '1' ? { dinner: true } : {}),
   };
 }

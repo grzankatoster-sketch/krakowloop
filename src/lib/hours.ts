@@ -1,4 +1,5 @@
 import data from '../data/hours.json';
+import { t } from '../i18n';
 
 /** [open, close] in minutes after midnight */
 export type Interval = [number, number];
@@ -42,6 +43,6 @@ const hm = formatTime;
 /** "10:00–18:00", "Closed", or null when unknown */
 export function formatHours(hours: Interval[] | null): string | null {
   if (hours === null) return null;
-  if (!hours.length) return 'Closed';
-  return hours.map(([a, b]) => (a === 0 && b === 1440 ? 'Open all day' : `${hm(a)}–${hm(b)}`)).join(', ');
+  if (!hours.length) return t('hours.closed');
+  return hours.map(([a, b]) => (a === 0 && b === 1440 ? t('hours.allDay') : `${hm(a)}–${hm(b)}`)).join(', ');
 }

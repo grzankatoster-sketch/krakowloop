@@ -2,7 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { CITY } from '../src/config/city';
 import { placeById } from '../src/data/places';
 import { leg } from '../src/lib/legs';
-import { TRAM_WAIT_MINUTES, TRANSIT_FEED_VERSION, Timetable, findTram, findTramIn } from '../src/lib/transit';
+import { TRAM_WAIT_MINUTES, TRANSIT_FEED_VERSION, Timetable, TramStop, findTram, findTramIn, nearbyTransit, nearbyTransitIn } from '../src/lib/transit';
 
 describe('findTramIn with a controlled timetable', () => {
   // two stops 2 km apart; the only line runs on Mondays only (bit 0)
@@ -75,5 +75,28 @@ describe('leg', () => {
     expect(l.mode).not.toBe('walk');
     expect(l.minutes).toBeLessThan(l.onFootMinutes);
     if (l.mode === 'tram') expect(l.tram).toBeDefined();
+  });
+});
+
+describe('trams and buses near a place', () => {
+  const tt = { stops: [['Poczta Główna', 50.0597, 19.9442]] as TramStop[], patterns: [{ r: '1', h: 'Salwator', s: [0], n: 10, t: 2 }] } as unknown as Timetable;
+  const buses = [
+    { name: 'Poczta Główna', lat: 50.0595, lon: 19.9424, lines: ['609', '124'] },
+    { name: 'Far away', lat: 50.1, lon: 19.9, lines: ['999'] },
+  ];
+
+  it('puts a tram stop and a bus stop of the same name in one row, with both kinds of lines', () => {
+    const rows = nearbyTransitIn(tt, buses, { lat: 50.0598, lon: 19.9435 });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: 'Poczta Główna', trams: ['1'], buses: ['124', '609'] });
+  });
+
+  it('leaves out stops beyond a short walk', () => {
+    expect(nearbyTransitIn(tt, buses, { lat: 50.0598, lon: 19.9435 }).some((r) => r.name === 'Far away')).toBe(false);
+  });
+
+  it('finds real bus stops around the Main Square in the ZTP data', () => {
+    const rows = nearbyTransit({ lat: 50.0615, lon: 19.9374 }, { maxMetres: 900 });
+    expect(rows.some((r) => r.buses.length > 0)).toBe(true);
   });
 });

@@ -1,5 +1,7 @@
 // Calendar dates as local YYYY-MM-DD strings: no time zones, safe in URLs.
 
+import { LANG, type Lang } from '../i18n';
+
 const ISO = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 export function parseISODate(value: string | undefined): Date | null {
@@ -28,10 +30,21 @@ export function addDays(date: Date, days: number): Date {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS: Record<Lang, string[]> = {
+  en: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  de: ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'],
+  pl: ['nie', 'pon', 'wto', 'śro', 'czw', 'pią', 'sob'],
+};
+const MONTHS: Record<Lang, string[]> = {
+  en: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+  de: ['Jan.', 'Feb.', 'März', 'Apr.', 'Mai', 'Juni', 'Juli', 'Aug.', 'Sept.', 'Okt.', 'Nov.', 'Dez.'],
+  pl: ['sty', 'lut', 'mar', 'kwi', 'maj', 'cze', 'lip', 'sie', 'wrz', 'paź', 'lis', 'gru'],
+};
 
-/** "Mon 12 Oct", independent of the device's Intl support */
-export function formatDay(date: Date): string {
-  return `${WEEKDAYS[date.getDay()]} ${date.getDate()} ${MONTHS[date.getMonth()]}`;
+/** "Mon 12 Oct", "Mo, 12. Okt.", "pon 12 paź": independent of the device's Intl support */
+export function formatDay(date: Date, lang: Lang = LANG): string {
+  const wd = WEEKDAYS[lang][date.getDay()];
+  const mo = MONTHS[lang][date.getMonth()];
+  if (lang === 'de') return `${wd}, ${date.getDate()}. ${mo}`;
+  return `${wd} ${date.getDate()} ${mo}`;
 }

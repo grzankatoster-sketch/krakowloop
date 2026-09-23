@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as Location from 'expo-location';
 import { CITY } from '../config/city';
 import { LatLon, distance } from './geo';
+import { t } from '../i18n';
 
 export interface MyLocation {
   status: 'idle' | 'asking' | 'ok' | 'denied' | 'error';
@@ -31,8 +32,8 @@ export function useMyLocation() {
         next = {
           status: 'denied',
           message: permission.canAskAgain
-            ? 'Location access was not allowed.'
-            : 'Location access is off. Turn it on for KrakowLoop in your phone’s settings.',
+            ? t('loc.denied')
+            : t('loc.off'),
         };
       } else {
         const last = await Location.getLastKnownPositionAsync({ maxAge: 60000, requiredAccuracy: 200 });
@@ -41,7 +42,7 @@ export function useMyLocation() {
         next = { status: 'ok', coords, outsideCity: distance(coords, CITY.centre) > CITY.maxStartMetres };
       }
     } catch {
-      next = { status: 'error', message: 'Your location could not be found.' };
+      next = { status: 'error', message: t('loc.notFound') };
     }
     if (alive.current) setState(next);
     return next;

@@ -8,6 +8,7 @@ import { PLACE_MEDIA } from '../src/data/placeMedia';
 import { places } from '../src/data/places';
 import { roadMinutes } from '../src/lib/geo';
 import { openLink } from '../src/lib/openLink';
+import { t } from '../src/i18n';
 import { colors, fonts, space } from '../src/theme';
 
 const fmt = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`);
@@ -22,26 +23,23 @@ export default function Trips() {
   const router = useRouter();
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <TopBar title="Day trips" />
+      <TopBar title={t('trips.title')} />
       <ScrollView contentContainerStyle={s.scroll}>
         <View style={s.col}>
-          <Text style={s.intro}>
-            Full days out of Kraków. Travel times are road estimates from the Main Square, each way; check the operator’s
-            timetable before you go.
-          </Text>
+          <Text style={s.intro}>{t('trips.intro')}</Text>
           {TRIPS.map(({ place, travel }) => {
             const media = PLACE_MEDIA[place.id];
             return (
               <View key={place.id} style={s.card}>
                 {media?.image ? (
-                  <Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={`Photo of ${place.name}`} />
+                  <Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={t('place.photoAlt', { name: place.name })} />
                 ) : null}
                 <View style={s.body}>
                   <Eyebrow>
-                    About {fmt(travel)} each way · {fmt(place.minutes)} there
+                    {t('trips.eyebrow', { travel: fmt(travel), stay: fmt(place.minutes) })}
                   </Eyebrow>
                   <Link href={`/place/${place.id}`} asChild>
-                    <Pressable accessibilityRole="link" accessibilityLabel={`Open ${place.name}`}>
+                    <Pressable accessibilityRole="link" accessibilityLabel={t('trips.openLabel', { name: place.name })}>
                       <Text style={s.name}>{place.name}</Text>
                     </Pressable>
                   </Link>
@@ -50,12 +48,12 @@ export default function Trips() {
                     {place.booking ? (
                       <Button label={place.booking.label} kind="quiet" onPress={() => openLink(place.booking!.url)} style={s.grow} />
                     ) : null}
-                    <Button label="Details" kind="quiet" onPress={() => router.push(`/place/${place.id}`)} style={s.grow} />
+                    <Button label={t('trips.details')} kind="quiet" onPress={() => router.push(`/place/${place.id}`)} style={s.grow} />
                   </View>
                   {place.booking?.affiliate ? <Text style={s.note}>{AFFILIATE_NOTE}</Text> : null}
                   {media?.image ? (
                     <Text style={s.credit} numberOfLines={1}>
-                      Photo: {media.credit} · {media.license}
+                      {t('ui.photo')}: {media.credit} · {media.license}
                     </Text>
                   ) : null}
                 </View>
