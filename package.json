@@ -56,7 +56,9 @@
     "data:stays": "node scripts/build-stays.mjs",
     "proxy:wish": "node proxy/wish/server.mjs",
     "proxy:test": "node --test proxy/wish/test.mjs",
-    "proxy:eval": "node proxy/wish/eval.mjs"
+    "proxy:eval": "node proxy/wish/eval.mjs",
+    "preview:build": "node scripts/build-preview.mjs",
+    "preview:deploy": "cd deploy/preview && npx wrangler@4 deploy"
   },
   "jest": {
     "preset": "jest-expo",

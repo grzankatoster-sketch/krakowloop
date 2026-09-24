@@ -46,3 +46,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# private web preview build (deploy/preview)
+dist-preview/

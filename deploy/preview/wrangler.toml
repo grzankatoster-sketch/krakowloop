@@ -1,0 +1,17 @@
+# Private preview of the web build at https://krakowloop.myhotelos.pl (behind a token).
+# Build:  npm run preview:build     Deploy: npm run preview:deploy
+# Token:  npx wrangler secret put PREVIEW_TOKEN   (from this folder)
+# Remove: npx wrangler delete --name krakowloop-preview
+# Its own Worker and subdomain: the myhotelos.pl Workers (www, hk-phone) are not touched.
+name = "krakowloop-preview"
+main = "worker.js"
+compatibility_date = "2026-09-01"
+workers_dev = false
+
+routes = [{ pattern = "krakowloop.myhotelos.pl", custom_domain = true }]
+
+[assets]
+directory = "../../dist-preview"
+binding = "ASSETS"
+run_worker_first = true
+not_found_handling = "single-page-application"
