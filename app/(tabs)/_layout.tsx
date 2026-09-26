@@ -14,7 +14,7 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Label>{t('tab.now')}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="location.north.circle.fill" md="near_me" />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="map">
+      <NativeTabs.Trigger name="discover">
         <NativeTabs.Trigger.Label>{t('tab.discover')}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="map.fill" md="explore" />
       </NativeTabs.Trigger>

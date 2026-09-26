@@ -666,6 +666,20 @@ export const en = {
   'story.go': "Take me there",
   'story.seeThen': "See how it was",
   'story.openMap': "Open the map",
+  'discover.native.title': "Discover",
+  'discover.native.nearRynek': "A short walk from the Main Square",
+  'discover.native.sights': "Sights to walk to",
+  'discover.native.allOnMap': "All sights on the map",
+  'discover.native.hungry': "Hungry?",
+  'discover.native.food': "What do you fancy?",
+  'discover.native.places': "{n} places",
+  'discover.native.doEyebrow': "Adrenaline and sightseeing",
+  'discover.native.do': "Things to do",
+  'discover.native.book': "Dates and prices",
+  'discover.native.pastEyebrow': "Then and now",
+  'discover.native.past': "Kraków in the past",
+  'discover.native.stay': "Where to sleep",
+  'discover.native.stayLine': "{n} hotels, hostels and flats on the map",
 };
 
 export type StringKey = keyof typeof en;

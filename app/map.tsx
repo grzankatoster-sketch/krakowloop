@@ -18,20 +18,20 @@ import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
-import LoopMap from '../../src/components/LoopMap';
-import type { MapPoint } from '../../src/components/mapHtml';
-import { Button, Chip, Eyebrow } from '../../src/components/ui';
-import { stay22Link } from '../../src/config/affiliates';
-import { CITY } from '../../src/config/city';
-import { CATEGORY_COLOR } from '../../src/data/categoryColor';
-import { CuisineKey } from '../../src/data/cuisines';
-import { FOOD_INFO } from '../../src/data/foodInfo';
-import { lensPoints } from '../../src/data/lens';
-import { PLACE_MEDIA } from '../../src/data/placeMedia';
-import { CATEGORY_LABEL, Category, Experience, ZONE_LABEL, experiences, places } from '../../src/data/places';
-import { RESTAURANTS, Restaurant, cuisineCounts, restaurantHoursOn } from '../../src/data/restaurants';
-import { STAYS, Stay } from '../../src/data/stays';
-import { krakowWallClock } from '../../src/lib/cityTime';
+import LoopMap from '../src/components/LoopMap';
+import type { MapPoint } from '../src/components/mapHtml';
+import { Button, Chip, Eyebrow } from '../src/components/ui';
+import { stay22Link } from '../src/config/affiliates';
+import { CITY } from '../src/config/city';
+import { CATEGORY_COLOR } from '../src/data/categoryColor';
+import { CUISINE_KEYS, CuisineKey } from '../src/data/cuisines';
+import { FOOD_INFO } from '../src/data/foodInfo';
+import { lensPoints } from '../src/data/lens';
+import { PLACE_MEDIA } from '../src/data/placeMedia';
+import { CATEGORY_LABEL, Category, Experience, ZONE_LABEL, experiences, places } from '../src/data/places';
+import { RESTAURANTS, Restaurant, cuisineCounts, restaurantHoursOn } from '../src/data/restaurants';
+import { STAYS, Stay } from '../src/data/stays';
+import { krakowWallClock } from '../src/lib/cityTime';
 import {
   DiscoverIntent,
   DiscoverMode,
@@ -47,20 +47,20 @@ import {
   removeEatChip,
   toggleCuisine,
   topCuisines,
-} from '../../src/lib/discover';
-import { distance, formatDistance, LatLon } from '../../src/lib/geo';
-import { formatHours, hoursOn } from '../../src/lib/hours';
-import { openWalkingDirections } from '../../src/lib/navigate';
-import { openLink, safeWebUrl } from '../../src/lib/openLink';
-import { openState, statusLabel } from '../../src/lib/openNow';
-import { BUS_STOP_LIST, TRAM_STOPS } from '../../src/lib/transit';
-import { placeName } from '../../src/components/placeName';
-import { useMyLocation } from '../../src/lib/useMyLocation';
-import { useReducedMotion } from '../../src/lib/useReducedMotion';
-import { readWishAnywhere, warmWishProxy } from '../../src/lib/wishProxy';
-import { t } from '../../src/i18n';
-import type { StringKey } from '../../src/i18n/en';
-import { colors, fonts, space } from '../../src/theme';
+} from '../src/lib/discover';
+import { distance, formatDistance, LatLon } from '../src/lib/geo';
+import { formatHours, hoursOn } from '../src/lib/hours';
+import { openWalkingDirections } from '../src/lib/navigate';
+import { openLink, safeWebUrl } from '../src/lib/openLink';
+import { openState, statusLabel } from '../src/lib/openNow';
+import { BUS_STOP_LIST, TRAM_STOPS } from '../src/lib/transit';
+import { placeName } from '../src/components/placeName';
+import { useMyLocation } from '../src/lib/useMyLocation';
+import { useReducedMotion } from '../src/lib/useReducedMotion';
+import { readWishAnywhere, warmWishProxy } from '../src/lib/wishProxy';
+import { t } from '../src/i18n';
+import type { StringKey } from '../src/i18n/en';
+import { colors, fonts, space } from '../src/theme';
 
 const ME = '__me';
 const LENS_PREFIX = 'lens:';
@@ -129,7 +129,7 @@ const chipLabel = (key: 'cuisine' | 'openNow' | 'picks' | 'veg', cuisine?: Cuisi
 
 export default function DiscoverScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mode?: string; wish?: string; at?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; wish?: string; at?: string; cuisine?: string }>();
   const calm = useReducedMotion();
   const me = useMyLocation();
   const here = me.status === 'ok' && !me.outsideCity ? me.coords ?? null : null;
@@ -154,7 +154,10 @@ export default function DiscoverScreen() {
   const [reading, setReading] = useState<'idle' | 'busy' | 'notUnderstood'>('idle');
   const readRun = useRef(0);
 
-  const [eat, setEat] = useState<EatFilters>(NO_EAT_FILTERS);
+  // a cuisine tile in Discover opens the map on that cuisine (/map?mode=eat&cuisine=sushi)
+  const [eat, setEat] = useState<EatFilters>(() =>
+    (CUISINE_KEYS as readonly string[]).includes(params.cuisine ?? '') ? { ...NO_EAT_FILTERS, cuisines: [params.cuisine as CuisineKey] } : NO_EAT_FILTERS,
+  );
   const [seeCats, setSeeCats] = useState<Set<Category>>(DEFAULT_SEE);
   const [stayKinds, setStayKinds] = useState<Set<Stay['kind']>>(new Set());
   const [expKind, setExpKind] = useState<(typeof EXP_KINDS)[number] | null>(null);
@@ -714,7 +717,10 @@ export default function DiscoverScreen() {
         {/* the question, the four doors and what was understood, over the top of the map */}
         <View style={s.top} onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
           <View style={s.ask}>
-            <MaterialCommunityIcons name="magnify" size={22} color={colors.mute} aria-hidden />
+            {/* the map is a tool opened from Today or Discover: one tap back */}
+            <Pressable accessibilityRole="button" accessibilityLabel={t('ui.goBack')} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} hitSlop={8} style={s.iconBtn}>
+              <MaterialCommunityIcons name="chevron-left" size={28} color={colors.ink} aria-hidden />
+            </Pressable>
             <TextInput
               value={text}
               onChangeText={(v) => {
