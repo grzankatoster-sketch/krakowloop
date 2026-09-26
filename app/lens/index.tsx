@@ -1,5 +1,5 @@
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { card, ScreenHeader } from '../../src/components/ui';
 import { lensName } from '../../src/components/placeName';
@@ -19,11 +19,13 @@ function offer(p: LensPoint): string {
 }
 
 export default function LensList() {
+  const inTabs = (useSegments() as string[])[0] === '(tabs)';
   const router = useRouter();
   return (
     <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
       <ScrollView contentContainerStyle={s.scroll}>
-        <ScreenHeader title={t('lens.title')} />
+        {/* also the Time Lens tab: there the tab bar is the way back */}
+        <ScreenHeader title={t('lens.title')} back={!inTabs} />
         <View style={s.col}>
           <Text style={s.intro}>{t('lens.intro')}</Text>
           {lensPoints.map((p) => {

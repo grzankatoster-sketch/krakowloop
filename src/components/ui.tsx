@@ -100,22 +100,25 @@ export function Button({
  * The header of every inner screen: a round back chevron (named for screen readers) and the screen
  * title in the display face. `eyebrow` is an optional mono line above the title.
  */
-export function ScreenHeader({ title, eyebrow, right }: { title: string; eyebrow?: string; right?: ReactNode }) {
+/** @param back false on a tab, where the tab bar is the way around and "back" leads nowhere */
+export function ScreenHeader({ title, eyebrow, right, back = true }: { title: string; eyebrow?: string; right?: ReactNode; back?: boolean }) {
   const router = useRouter();
   return (
     <View style={s.header}>
       <View style={s.headerRow}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={t('ui.goBack')}
-          hitSlop={4}
-          onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-          style={({ pressed }) => [s.chevron, pressed && s.pressed]}
-        >
-          <View aria-hidden importantForAccessibility="no-hide-descendants">
-            <MaterialCommunityIcons name="chevron-left" size={30} color={colors.ink} />
-          </View>
-        </Pressable>
+        {back ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t('ui.goBack')}
+            hitSlop={4}
+            onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+            style={({ pressed }) => [s.chevron, pressed && s.pressed]}
+          >
+            <View aria-hidden importantForAccessibility="no-hide-descendants">
+              <MaterialCommunityIcons name="chevron-left" size={30} color={colors.ink} />
+            </View>
+          </Pressable>
+        ) : null}
         <View style={s.barRight}>{right}</View>
       </View>
       {eyebrow ? <Text style={s.headerEyebrow}>{eyebrow}</Text> : null}
