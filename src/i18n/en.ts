@@ -642,6 +642,19 @@ export const en = {
   'plan.native.howMany': "How many days do you have?",
   'plan.native.quickNote': "One tap and the walks are ready: sights, food and the usual pace. You can change everything afterwards.",
   'plan.native.tune': "Set the details first",
+  'welcome.skip': "Skip",
+  'welcome.next': "Next",
+  'welcome.start': "Let’s go",
+  'welcome.page': "Page {n} of {total}",
+  'welcome.now.title': "Kraków in your pocket",
+  'welcome.now.text': "The map shows what is open right now, a short walk from where you stand.",
+  'welcome.standing.title': "You are standing at…",
+  'welcome.standing.text': "Walk past a sight and the phone gives a small nudge and tells you its story. Your position stays on the phone.",
+  'welcome.standing.allow': "Turn it on",
+  'welcome.standing.on': "On. The app will tell you where you stand.",
+  'welcome.standing.later': "You can turn it on later on the Now screen.",
+  'welcome.wish.title': "Say what you would like",
+  'welcome.wish.text': "Sushi, pierogi, quads or a hotel: one sentence is enough, typed or spoken.",
 };
 
 export type StringKey = keyof typeof en;

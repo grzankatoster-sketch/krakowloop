@@ -1,6 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { WELCOME_KEY } from '../welcome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
@@ -25,6 +27,7 @@ import { LANG, t } from '../../src/i18n';
 import { colors, fonts, space } from '../../src/theme';
 
 const RYNEK = { lat: CITY.mapCentre.lat, lon: CITY.mapCentre.lon };
+let welcomeChecked = false;
 const SIGHTS = places.filter((p) => p.zone !== 'out' && p.cat !== 'food' && p.cat !== 'night');
 const PICKS = RESTAURANTS.filter((r) => r.pick);
 const KIND_COLOR = { sight: colors.brick, lens: colors.gilt, eat: colors.patina } as const;
@@ -58,10 +61,27 @@ export default function NowScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const live = useLiveLocation();
+  // the first start opens the welcome pages once
+  useEffect(() => {
+    // once per launch: effects can run twice (development, a remount), the welcome must not stack
+    if (welcomeChecked) return;
+    welcomeChecked = true;
+    AsyncStorage.getItem(WELCOME_KEY)
+      .then((seen) => {
+        if (!seen) router.push('/welcome');
+      })
+      .catch(() => {});
+  }, [router]);
   const origin = live.here ?? RYNEK;
 
-  // recomputed when the traveller moves ~20 m (a new position), not on every render
-  const sources = useMemo(() => momentSources(), [live.here]); // eslint-disable-line react-hooks/exhaustive-deps
+  // opening hours change with the clock, not only with a step: a new minute refreshes the cards too
+  const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
+  useEffect(() => {
+    const id = setInterval(() => setMinute(Math.floor(Date.now() / 60000)), 30000);
+    return () => clearInterval(id);
+  }, []);
+  // recomputed when the traveller moves ~20 m or a minute passes, not on every render
+  const sources = useMemo(() => momentSources(), [live.here, minute]); // eslint-disable-line react-hooks/exhaustive-deps
   const moments = useMemo(() => pickMoments(sources, origin, 8), [sources, origin]);
   const until = useMemo(() => new Map(sources.map((s) => [s.id, s.until])), [sources]);
   // one sentence about the place, in the app language when we have it
@@ -79,11 +99,11 @@ export default function NowScreen() {
   const [seen, setSeen] = useState<Set<string>>(() => new Set());
   const [dismissed, setDismissed] = useState<string | null>(null);
   const standing = useMemo(() => (live.here ? standingAt(SIGHTS, live.here, seen) : null), [live.here, seen]);
-  const [announced, setAnnounced] = useState<string | null>(null);
-  if (standing && standing.id !== announced && standing.id !== dismissed) {
-    setAnnounced(standing.id);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-  }
+  // one nudge when a new place is reached, the same moment its card slides in (an effect, not a render)
+  const standingId = standing && standing.id !== dismissed ? standing.id : null;
+  useEffect(() => {
+    if (standingId) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, [standingId]);
   const about = standing ? aboutOf(standing.id) : null;
 
   const closeStanding = () => {

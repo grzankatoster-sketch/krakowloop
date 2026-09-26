@@ -41,6 +41,8 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.stone } }}>
           {/* the tabs come first: the first listed screen is where the app opens */}
           <Stack.Screen name="(tabs)" />
+          {/* the first start: three pages, full screen, fading in over the tabs */}
+          <Stack.Screen name="welcome" options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
           {/* the wish: a real platform sheet, half height, pulled up to full */}
           <Stack.Screen
             name="wish"
