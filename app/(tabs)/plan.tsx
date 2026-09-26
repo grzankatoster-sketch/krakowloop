@@ -4,6 +4,7 @@ import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import LoopMap from '../../src/components/LoopMap';
@@ -125,6 +126,7 @@ function ChoiceRow({ label, line, chosen, onPress, kind }: { label: string; line
 }
 
 export default function PlanScreen() {
+  const tabSpace = useTabBarSpace();
   const { days, pace, likes, trips, date, from, skip, seed, acts, walk: walkWish, dine } = useLocalSearchParams<{
     days?: string;
     pace?: string;
@@ -312,7 +314,7 @@ export default function PlanScreen() {
       <Text style={s.bigTitle} accessibilityRole="header">
         {hasPlan && !editing ? t('plan.native.yours') : t('plan.native.title')}
       </Text>
-      <ScrollView ref={scrollRef} contentContainerStyle={StyleSheet.flatten([s.scroll, result && s.scrollWithBar])}>
+      <ScrollView ref={scrollRef} contentContainerStyle={StyleSheet.flatten([s.scroll, result && s.scrollWithBar, { paddingBottom: (result ? 150 : space.xl) + tabSpace }])}>
         {hasPlan && !editing && options ? (
           <View style={[s.col, s.summaryBar]}>
             <View style={{ flex: 1 }}>
@@ -600,7 +602,7 @@ export default function PlanScreen() {
 
       {result ? (
         // the two actions a finished plan needs most stay in reach, whatever the scroll
-        <View style={s.bar}>
+        <View style={[s.bar, { bottom: tabSpace }]}>
           {shareNote ? (
             <Text style={s.barNote} selectable>
               {shareNote}

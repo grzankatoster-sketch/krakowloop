@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FlatList, Image, Pressable, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -20,6 +21,7 @@ const PAGES = lensPoints.flatMap((l) => l.layers.filter((x) => x.image).map((lay
 export default function LensGallery() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabSpace = useTabBarSpace();
   const { width } = useWindowDimensions();
   const [height, setHeight] = useState(0);
   const [page, setPage] = useState(0);
@@ -48,7 +50,7 @@ export default function LensGallery() {
               <Image source={item.layer.image} style={s.photo} resizeMode={item.layer.kind === 'artwork' ? 'contain' : 'cover'} accessibilityLabel={item.layer.title} />
               <LinearGradient colors={['rgba(8,11,30,0.55)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
               <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.92)']} locations={[0, 0.6]} style={s.shadeBottom} pointerEvents="none" />
-              <View style={[s.words, { paddingBottom: space.l }]}>
+              <View style={[s.words, { paddingBottom: space.l + tabSpace }]}>
                 <Text style={s.year}>{item.layer.year}</Text>
                 <Text style={s.name} numberOfLines={2}>
                   {lensName(item.point)}

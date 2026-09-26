@@ -3,6 +3,7 @@ import { FlatList, Image, ImageSourcePropType, Pressable, StyleSheet, Text, View
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -86,6 +87,7 @@ function storySources(): (MomentSource & { image?: ImageSourcePropType; line: st
 export default function TodayScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabSpace = useTabBarSpace();
   const live = useLiveLocation();
   const origin = live.here ?? RYNEK;
   const [height, setHeight] = useState(0);
@@ -207,7 +209,7 @@ export default function TodayScreen() {
               <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.55)', 'rgba(8,11,30,0.92)']} locations={[0, 0.35, 1]} style={s.shadeBottom} pointerEvents="none" />
               {st.kind === 'lens' && st.year ? <Text style={[s.year, { top: insets.top + 70 }]}>{st.year}</Text> : null}
 
-              <View style={[s.words, { paddingBottom: 110 }]}>
+              <View style={[s.words, { paddingBottom: 110 + tabSpace }]}>
                 <Text style={[s.eyebrow, st.here && s.eyebrowHere]}>{st.eyebrow}</Text>
                 <Text style={s.title} accessibilityRole="header" numberOfLines={3}>
                   {st.name}
@@ -283,7 +285,7 @@ export default function TodayScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
           router.push('/wish');
         }}
-        style={({ pressed }) => [s.ask, pressed && s.pressed]}
+        style={({ pressed }) => [s.ask, { bottom: 24 + tabSpace }, pressed && s.pressed]}
       >
         <MaterialCommunityIcons name="microphone" size={22} color={colors.white} />
         <Text style={s.askText}>{t('moment.ask')}</Text>

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -41,6 +42,7 @@ function expText(id: string, field: 'name' | 'note', fallback: string): string {
 export default function DiscoverScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const tabSpace = useTabBarSpace();
   const { width } = useWindowDimensions();
   const tileW = (width - space.l * 2 - space.s) / 2;
 
@@ -56,7 +58,7 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={{ paddingTop: insets.top + space.m, paddingBottom: insets.bottom + 110 }}>
+    <ScrollView style={s.root} contentContainerStyle={{ paddingTop: insets.top + space.m, paddingBottom: Math.max(insets.bottom, tabSpace) + space.xl }}>
       <View style={s.head}>
         <Text style={s.title} accessibilityRole="header">
           {t('discover.native.title')}
