@@ -655,6 +655,17 @@ export const en = {
   'welcome.standing.later': "You can turn it on later on the Now screen.",
   'welcome.wish.title': "Say what you would like",
   'welcome.wish.text': "Sushi, pierogi, quads or a hotel: one sentence is enough, typed or spoken.",
+  'story.openUntil': "Open now, until {time}",
+  'story.lensLine': "This very place in {year}. Swipe on for today.",
+  'story.eatLine': "Our pick for a meal nearby.",
+  'story.kind.sight': "Sight",
+  'story.kind.lens': "Then and now",
+  'story.kind.eat': "Our pick to eat",
+  'story.walk': "{n} min walk",
+  'story.standingAt': "You are standing at",
+  'story.go': "Take me there",
+  'story.seeThen': "See how it was",
+  'story.openMap': "Open the map",
 };
 
 export type StringKey = keyof typeof en;

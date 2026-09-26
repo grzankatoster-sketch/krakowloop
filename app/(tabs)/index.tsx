@@ -1,21 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlatList, Image, ImageSourcePropType, Pressable, StyleSheet, Text, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { WELCOME_KEY } from '../welcome';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
-import Animated, { FadeInDown, FadeOutUp, ReduceMotion } from 'react-native-reanimated';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import LoopMap from '../../src/components/LoopMap';
-import type { MapPoint } from '../../src/components/mapHtml';
-import { placeName } from '../../src/components/placeName';
+import { LinearGradient } from 'expo-linear-gradient';
+import { lensName, placeName, placeText } from '../../src/components/placeName';
 import { CITY } from '../../src/config/city';
 import { lensPoints } from '../../src/data/lens';
-import { aboutOf } from '../../src/data/placeAbout';
-import { places } from '../../src/data/places';
+import { PLACE_MEDIA } from '../../src/data/placeMedia';
+import { CATEGORY_LABEL, places, Place } from '../../src/data/places';
 import { RESTAURANTS, restaurantHoursOn } from '../../src/data/restaurants';
 import { krakowWallClock } from '../../src/lib/cityTime';
 import { formatTime, hoursOn, Interval } from '../../src/lib/hours';
@@ -24,13 +20,26 @@ import { openWalkingDirections } from '../../src/lib/navigate';
 import { openState } from '../../src/lib/openNow';
 import { useLiveLocation } from '../../src/lib/useLiveLocation';
 import { LANG, t } from '../../src/i18n';
+import type { StringKey } from '../../src/i18n/en';
 import { colors, fonts, space } from '../../src/theme';
+import { WELCOME_KEY } from '../welcome';
 
 const RYNEK = { lat: CITY.mapCentre.lat, lon: CITY.mapCentre.lon };
 let welcomeChecked = false;
-const SIGHTS = places.filter((p) => p.zone !== 'out' && p.cat !== 'food' && p.cat !== 'night');
+
+/** Sights with a photo of their own: a story needs a picture to stand on. */
+const SIGHTS = places.filter((p) => p.zone !== 'out' && p.cat !== 'food' && p.cat !== 'night' && PLACE_MEDIA[p.id]?.image);
 const PICKS = RESTAURANTS.filter((r) => r.pick);
-const KIND_COLOR = { sight: colors.brick, lens: colors.gilt, eat: colors.patina } as const;
+
+interface Story extends Moment {
+  image?: ImageSourcePropType;
+  eyebrow: string;
+  line: string;
+  /** "standing at": the place the traveller is at right now */
+  here?: boolean;
+  place?: Place;
+  year?: string;
+}
 
 function openInfo(hours: Interval[] | null, minutes: number): { open: boolean | null; closesIn: number | null; until: string | null } {
   if (!hours) return { open: null, closesIn: null, until: null };
@@ -39,29 +48,49 @@ function openInfo(hours: Interval[] | null, minutes: number): { open: boolean | 
   return { open: true, closesIn: st.closesAt - minutes, until: st.closesAt >= 1440 ? '24:00' : formatTime(st.closesAt) };
 }
 
-/** Everything that could be a "now" card, with its opening state at this minute in Kraków. */
-function momentSources(): (MomentSource & { until: string | null; cat?: string })[] {
+const firstSentence = (text: string) => text.split(/(?<=\.)\s/)[0];
+
+/** Everything that could be a story now, each with its picture and the one line that says why now. */
+function storySources(): (MomentSource & { image?: ImageSourcePropType; line: string; place?: Place; year?: string; cat?: string })[] {
   const now = krakowWallClock(new Date());
   const minutes = now.getHours() * 60 + now.getMinutes();
-  const out: (MomentSource & { until: string | null; cat?: string })[] = [];
+  const out: (MomentSource & { image?: ImageSourcePropType; line: string; place?: Place; year?: string; cat?: string })[] = [];
   for (const p of SIGHTS) {
     const o = openInfo(hoursOn(p.id, now), minutes);
-    out.push({ id: p.id, name: placeName(p), kind: 'sight', lat: p.lat, lon: p.lon, rank: p.priority, cat: p.cat, ...o });
+    out.push({
+      id: p.id,
+      name: placeName(p),
+      kind: 'sight',
+      lat: p.lat,
+      lon: p.lon,
+      rank: p.priority,
+      image: PLACE_MEDIA[p.id]?.image,
+      line: o.until ? t('story.openUntil', { time: o.until }) : firstSentence(placeText(p).text),
+      place: p,
+      cat: CATEGORY_LABEL[p.cat],
+      ...o,
+    });
   }
-  for (const l of lensPoints) out.push({ id: `lens:${l.id}`, name: l.name, kind: 'lens', lat: l.lat, lon: l.lon, rank: 3, open: null, closesIn: null, until: null });
+  for (const l of lensPoints) {
+    const old = l.layers.find((x) => x.kind === 'photo') ?? l.layers[0];
+    if (!old) continue;
+    out.push({ id: `lens:${l.id}`, name: lensName(l), kind: 'lens', lat: l.lat, lon: l.lon, rank: 3, open: null, closesIn: null, image: old.image, year: old.year, line: t('story.lensLine', { year: old.year }) });
+  }
   for (const r of PICKS) {
     const o = openInfo(restaurantHoursOn(r, new Date()), minutes);
-    out.push({ id: r.id, name: r.name, kind: 'eat', lat: r.lat, lon: r.lon, rank: 2, ...o });
+    out.push({ id: r.id, name: r.name, kind: 'eat', lat: r.lat, lon: r.lon, rank: 2, line: o.until ? t('story.openUntil', { time: o.until }) : t('story.eatLine'), ...o });
   }
   return out;
 }
 
-export default function NowScreen() {
+export default function TodayScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
   const live = useLiveLocation();
-  // the first start opens the welcome pages once
+  const origin = live.here ?? RYNEK;
+  const [height, setHeight] = useState(0);
+  const list = useRef<FlatList<Story>>(null);
+
   useEffect(() => {
     // once per launch: effects can run twice (development, a remount), the welcome must not stack
     if (welcomeChecked) return;
@@ -72,148 +101,181 @@ export default function NowScreen() {
       })
       .catch(() => {});
   }, [router]);
-  const origin = live.here ?? RYNEK;
 
-  // opening hours change with the clock, not only with a step: a new minute refreshes the cards too
+  // opening hours move with the clock: a new minute refreshes the stories too
   const [minute, setMinute] = useState(() => Math.floor(Date.now() / 60000));
   useEffect(() => {
     const id = setInterval(() => setMinute(Math.floor(Date.now() / 60000)), 30000);
     return () => clearInterval(id);
   }, []);
-  // recomputed when the traveller moves ~20 m or a minute passes, not on every render
-  const sources = useMemo(() => momentSources(), [live.here, minute]); // eslint-disable-line react-hooks/exhaustive-deps
-  const moments = useMemo(() => pickMoments(sources, origin, 8), [sources, origin]);
-  const until = useMemo(() => new Map(sources.map((s) => [s.id, s.until])), [sources]);
-  // one sentence about the place, in the app language when we have it
-  const line = useCallback((id: string) => {
-    const a = aboutOf(id);
-    const text = a && a.lang === LANG ? a.text : places.find((p) => p.id === id)?.blurb;
-    return text ? text.split(/(?<=\.)\s/)[0] : null;
-  }, []);
+  const sources = useMemo(() => storySources(), [live.here, minute]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [active, setActive] = useState(0);
-  const [focus, setFocus] = useState<{ lat: number; lon: number; key: number } | null>(null);
-  const current = moments[active] as Moment | undefined;
-
-  // "You are standing at…": the nearest sight within 60 m, once per place per session
-  const [seen, setSeen] = useState<Set<string>>(() => new Set());
-  const [dismissed, setDismissed] = useState<string | null>(null);
+  // the place the traveller stands at goes first, as its own story
+  const [seen] = useState<Set<string>>(() => new Set());
   const standing = useMemo(() => (live.here ? standingAt(SIGHTS, live.here, seen) : null), [live.here, seen]);
-  // one nudge when a new place is reached, the same moment its card slides in (an effect, not a render)
-  const standingId = standing && standing.id !== dismissed ? standing.id : null;
+
+  const stories = useMemo<Story[]>(() => {
+    const picked = pickMoments(sources, origin, 12, 2000);
+    const byId = new Map(sources.map((s) => [s.id, s]));
+    const out: Story[] = picked.map((m) => {
+      const src = byId.get(m.id)!;
+      const kind = t(`story.kind.${m.kind}` as StringKey);
+      return { ...m, image: src.image, line: src.line, place: src.place, year: src.year, eyebrow: `${src.cat ?? kind} · ${t('story.walk', { n: m.walkMinutes })}` };
+    });
+    if (standing) {
+      const rest = out.filter((s) => s.id !== standing.id);
+      const src = byId.get(standing.id);
+      rest.unshift({
+        ...(src as MomentSource),
+        metres: 0,
+        walkMinutes: 0,
+        image: PLACE_MEDIA[standing.id]?.image,
+        line: firstSentence(placeText(standing).text),
+        place: standing,
+        here: true,
+        eyebrow: t('story.standingAt'),
+      });
+      return rest;
+    }
+    return out;
+  }, [sources, origin, standing]);
+
+  // arriving somewhere: back to the top, where that place now is, with one nudge
+  const standingId = standing?.id ?? null;
   useEffect(() => {
-    if (standingId) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    if (!standingId) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    list.current?.scrollToOffset({ offset: 0, animated: true });
   }, [standingId]);
-  const about = standing ? aboutOf(standing.id) : null;
 
-  const closeStanding = () => {
-    if (!standing) return;
-    Speech.stop();
-    setDismissed(standing.id);
-    setSeen((s) => new Set(s).add(standing.id));
-  };
-  const listen = () => {
-    if (!standing) return;
-    const text = `${placeName(standing)}. ${about?.lang === LANG ? about.text : standing.blurb}`;
-    Speech.stop();
-    Speech.speak(text, { language: about?.lang === LANG ? (LANG === 'pl' ? 'pl-PL' : LANG === 'de' ? 'de-DE' : 'en-GB') : 'en-GB', rate: 0.95 });
-  };
-
-  const points = useMemo<MapPoint[]>(() => {
-    const pts: MapPoint[] = moments.map((m) => ({
-      id: m.id,
-      lat: m.lat,
-      lon: m.lon,
-      color: KIND_COLOR[m.kind],
-      label: m.name,
-      glyph: m.kind === 'lens' ? 'lens' : m.kind === 'eat' ? 'food' : 'history',
-      rank: 3,
-    }));
-    if (live.here) pts.push({ id: '__me', lat: live.here.lat, lon: live.here.lon, color: colors.vistula, kind: 'me' });
-    return pts;
-  }, [moments, live.here]);
-
-  const cardW = width - 56;
-  // made once: FlatList refuses a new onViewableItemsChanged function on a later render
+  const [page, setPage] = useState(0);
   const [onViewable] = useState(() => ({ viewableItems }: { viewableItems: ViewToken[] }) => {
-    const first = viewableItems.find((v) => v.isViewable);
-    if (first?.index == null) return;
-    setActive((prev) => {
-      if (prev !== first.index) {
-        // one tick per card that settles, the same moment the map starts to fly
+    const i = viewableItems[0]?.index;
+    if (i == null) return;
+    setPage((prev) => {
+      if (prev !== i) {
         Haptics.selectionAsync().catch(() => {});
-        const m = first.item as Moment;
-        setFocus((f) => ({ lat: m.lat, lon: m.lon, key: (f?.key ?? 0) + 1 }));
+        Speech.stop();
       }
-      return first.index as number;
+      return i;
     });
   });
 
+  const listen = useCallback((s: Story) => {
+    const text = s.place ? `${placeName(s.place)}. ${placeText(s.place).text}` : s.name;
+    const lang = s.place ? placeText(s.place).lang : LANG;
+    Speech.stop();
+    Speech.speak(text, { language: lang === 'pl' ? 'pl-PL' : lang === 'de' ? 'de-DE' : 'en-GB', rate: 0.95 });
+  }, []);
+
   const open = useCallback(
-    (m: Moment) => {
-      if (m.kind === 'lens') router.push(`/lens/${m.id.slice(5)}`);
-      else if (m.kind === 'eat') router.push({ pathname: '/map', params: { mode: 'eat' } });
-      else router.push(`/place/${m.id}`);
+    (s: Story) => {
+      if (s.kind === 'lens') router.push(`/lens/${s.id.slice(5)}`);
+      else if (s.kind === 'eat') router.push({ pathname: '/map', params: { mode: 'eat' } });
+      else router.push(`/place/${s.id}`);
     },
     [router],
   );
 
   const now = krakowWallClock(new Date());
-  const clock = `${now.toLocaleDateString(LANG === 'pl' ? 'pl-PL' : LANG === 'de' ? 'de-DE' : 'en-GB', { weekday: 'short' })} ${formatTime(now.getHours() * 60 + now.getMinutes())}`;
+  const clock = formatTime(now.getHours() * 60 + now.getMinutes());
 
   return (
-    <View style={s.root}>
-      <LoopMap style={StyleSheet.absoluteFill} points={points} selectedId={current?.id ?? null} focus={focus} threeD />
+    <View style={s.root} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
+      {height > 0 ? (
+        <FlatList
+          ref={list}
+          data={stories}
+          keyExtractor={(x) => x.id}
+          pagingEnabled
+          showsVerticalScrollIndicator={false}
+          decelerationRate="fast"
+          onViewableItemsChanged={onViewable}
+          viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+          getItemLayout={(_d, i) => ({ length: height, offset: height * i, index: i })}
+          renderItem={({ item: st }) => (
+            <View style={{ height }}>
+              {st.image ? (
+                <Image source={st.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors />
+              ) : (
+                <View style={[StyleSheet.absoluteFill, s.eatBg]}>
+                  <MaterialCommunityIcons name="silverware-fork-knife" size={220} color="rgba(255,255,255,0.08)" style={s.eatIcon} />
+                </View>
+              )}
+              {/* darker at the top for the clock and at the bottom for the words: the photo stays in the middle */}
+              <LinearGradient colors={['rgba(8,11,30,0.6)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
+              <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.55)', 'rgba(8,11,30,0.92)']} locations={[0, 0.35, 1]} style={s.shadeBottom} pointerEvents="none" />
+              {st.kind === 'lens' && st.year ? <Text style={[s.year, { top: insets.top + 70 }]}>{st.year}</Text> : null}
 
-      {/* the moment and the place: a small glass label, not a page header */}
-      <View style={[s.top, { top: insets.top + space.s }]} pointerEvents="box-none">
-        <BlurView intensity={40} tint="light" style={s.pill}>
-          <Text style={s.pillBrand}>KRAKÓW · {clock.toUpperCase()}</Text>
-          <Text style={s.pillLine}>{live.here ? t('moment.nearYou') : t('moment.nearRynek')}</Text>
-        </BlurView>
-        {!live.on ? (
-          <Pressable
-            accessibilityRole="button"
-            onPress={async () => {
-              if (await live.turnOn()) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            }}
-            style={({ pressed }) => [s.liveChip, pressed && s.pressed]}
-          >
-            <MaterialCommunityIcons name="walk" size={18} color={colors.white} />
-            <Text style={s.liveChipText}>{live.problem === 'services' ? t('moment.servicesOff') : t('moment.turnOn')}</Text>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {standing && standing.id !== dismissed ? (
-        <Animated.View
-          key={standing.id}
-          entering={FadeInDown.duration(280).reduceMotion(ReduceMotion.System)}
-          exiting={FadeOutUp.duration(200).reduceMotion(ReduceMotion.System)}
-          style={[s.standing, { top: insets.top + 92 }]}
-          accessibilityLiveRegion="polite"
-        >
-          <Text style={s.standingEyebrow}>{t('moment.standingAt')}</Text>
-          <Text style={s.standingTitle}>{placeName(standing)}</Text>
-          <Text style={s.standingText} numberOfLines={3}>
-            {about?.lang === LANG ? about.text : standing.blurb}
-          </Text>
-          <View style={s.row}>
-            <Pressable accessibilityRole="button" onPress={listen} style={({ pressed }) => [s.btnDark, pressed && s.pressed]}>
-              <MaterialCommunityIcons name="volume-high" size={18} color={colors.white} />
-              <Text style={s.btnDarkText}>{t('moment.listen')}</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" onPress={() => router.push(`/place/${standing.id}`)} style={({ pressed }) => [s.btnLight, pressed && s.pressed]}>
-              <Text style={s.btnLightText}>{t('moment.more')}</Text>
-            </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel={t('moment.close')} onPress={closeStanding} hitSlop={10} style={s.close}>
-              <MaterialCommunityIcons name="close" size={20} color={colors.ink} />
-            </Pressable>
-          </View>
-        </Animated.View>
+              <View style={[s.words, { paddingBottom: 110 }]}>
+                <Text style={[s.eyebrow, st.here && s.eyebrowHere]}>{st.eyebrow}</Text>
+                <Text style={s.title} accessibilityRole="header" numberOfLines={3}>
+                  {st.name}
+                </Text>
+                <Text style={s.line} numberOfLines={3}>
+                  {st.line}
+                </Text>
+                <View style={s.actions}>
+                  {st.kind !== 'lens' ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={t('moment.go', { name: st.name })}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                        openWalkingDirections(st);
+                      }}
+                      style={({ pressed }) => [s.primary, pressed && s.pressed]}
+                    >
+                      <MaterialCommunityIcons name="navigation-variant" size={20} color={colors.ink} />
+                      <Text style={s.primaryText}>{t('story.go')}</Text>
+                    </Pressable>
+                  ) : null}
+                  {st.place ? (
+                    <Pressable accessibilityRole="button" accessibilityLabel={t('moment.listen')} onPress={() => listen(st)} style={({ pressed }) => [s.round, pressed && s.pressed]}>
+                      <MaterialCommunityIcons name="volume-high" size={22} color={colors.white} />
+                    </Pressable>
+                  ) : null}
+                  <Pressable accessibilityRole="button" onPress={() => open(st)} style={({ pressed }) => [s.ghost, pressed && s.pressed]}>
+                    <Text style={s.ghostText}>{st.kind === 'lens' ? t('story.seeThen') : t('moment.more')}</Text>
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+          )}
+        />
       ) : null}
 
-      {/* the wish: a round button, the one thing to press on this screen */}
+      {/* over every story: the time, how far down the stories are, and the way to the map */}
+      <View style={[s.head, { top: insets.top + space.s }]} pointerEvents="box-none">
+        <View>
+          <Text style={s.brand}>KRAKÓW · {clock}</Text>
+          <Text style={s.where}>{live.here ? t('moment.nearYou') : t('moment.nearRynek')}</Text>
+        </View>
+        <View style={s.headRight}>
+          {!live.on ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={live.problem === 'services' ? t('moment.servicesOff') : t('moment.turnOn')}
+              onPress={async () => {
+                if (await live.turnOn()) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+              }}
+              style={({ pressed }) => [s.headBtn, pressed && s.pressed]}
+            >
+              <MaterialCommunityIcons name="crosshairs-gps" size={22} color={colors.white} />
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" accessibilityLabel={t('story.openMap')} onPress={() => router.navigate('/map')} style={({ pressed }) => [s.headBtn, pressed && s.pressed]}>
+            <MaterialCommunityIcons name="map-outline" size={22} color={colors.white} />
+          </Pressable>
+        </View>
+      </View>
+      <View style={[s.progress, { top: insets.top + space.s + 58 }]} pointerEvents="none">
+        <Text style={s.count}>
+          {stories.length ? `${Math.min(page + 1, stories.length)} / ${stories.length}` : ''}
+        </Text>
+      </View>
+
+      {/* the wish, always one tap away */}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('moment.ask')}
@@ -221,136 +283,54 @@ export default function NowScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
           router.push('/wish');
         }}
-        style={({ pressed }) => [s.orb, { bottom: 226 }, pressed && s.orbPressed]}
+        style={({ pressed }) => [s.ask, pressed && s.pressed]}
       >
-        <MaterialCommunityIcons name="microphone" size={30} color={colors.white} />
+        <MaterialCommunityIcons name="microphone" size={22} color={colors.white} />
+        <Text style={s.askText}>{t('moment.ask')}</Text>
       </Pressable>
-
-      {/* above the map's logo and attribution, which must stay visible (Mapbox terms) */}
-      <View style={[s.cards, { bottom: 40 }]}>
-        <View style={s.cardsLabelPill}>
-          <Text style={s.cardsLabel}>{moments.length ? t('moment.title', { n: moments.length }) : t('moment.none')}</Text>
-        </View>
-        <FlatList
-          data={moments}
-          keyExtractor={(m) => m.id}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          snapToInterval={cardW + 12}
-          decelerationRate="fast"
-          contentContainerStyle={{ paddingHorizontal: 22, gap: 12 }}
-          onViewableItemsChanged={onViewable}
-          viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-          renderItem={({ item: m }) => {
-            const u = until.get(m.id);
-            return (
-              <Pressable accessibilityRole="button" onPress={() => open(m)} style={({ pressed }) => [s.card, { width: cardW }, pressed && s.pressed]}>
-                <View style={s.cardHead}>
-                  <View style={[s.kindDot, { backgroundColor: KIND_COLOR[m.kind] }]} />
-                  <Text style={s.kind}>{t(`moment.kind.${m.kind}`)}</Text>
-                  <Text style={s.walk}>{t('moment.walk', { n: m.walkMinutes })}</Text>
-                </View>
-                <Text style={s.cardTitle} numberOfLines={2}>
-                  {m.name}
-                </Text>
-                <View style={s.cardFoot}>
-                  <Text style={[s.cardMeta, u && s.openText]} numberOfLines={2}>
-                    {u ? t('moment.openUntil', { time: u }) : m.kind === 'lens' ? t('moment.lensLine') : m.kind === 'sight' ? line(m.id) ?? t('moment.hoursUnknown') : t('moment.hoursUnknown')}
-                  </Text>
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={t('moment.go', { name: m.name })}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                      openWalkingDirections(m);
-                    }}
-                    hitSlop={8}
-                    style={({ pressed }) => [s.go, pressed && s.pressed]}
-                  >
-                    <MaterialCommunityIcons name="navigation-variant" size={20} color={colors.white} />
-                  </Pressable>
-                </View>
-              </Pressable>
-            );
-          }}
-        />
-      </View>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.ink },
+  root: { flex: 1, backgroundColor: '#0E1330' },
   pressed: { transform: [{ scale: 0.97 }] },
-  top: { position: 'absolute', left: space.m, right: space.m, flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: space.s },
-  pill: { borderRadius: 18, overflow: 'hidden', paddingVertical: 10, paddingHorizontal: 14, backgroundColor: 'rgba(246,248,252,0.55)' },
-  pillBrand: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.ink },
-  pillLine: { fontFamily: fonts.display, fontSize: 24, lineHeight: 26, color: colors.ink, marginTop: 2 },
-  liveChip: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 14, borderRadius: 22, backgroundColor: colors.vistula },
-  liveChipText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
-  standing: {
+  photo: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
+  eatBg: { backgroundColor: colors.brick, alignItems: 'center', justifyContent: 'center' },
+  eatIcon: { transform: [{ rotate: '-12deg' }] },
+  shadeTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 200 },
+  shadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '65%' },
+  year: { position: 'absolute', right: space.l, fontFamily: fonts.display, fontSize: 64, color: 'rgba(255,255,255,0.9)' },
+  words: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: space.l, gap: 10 },
+  eyebrow: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 1, color: 'rgba(255,255,255,0.85)', textTransform: 'uppercase' },
+  eyebrowHere: { color: '#F2C66D' },
+  title: { fontFamily: fonts.display, fontSize: 50, lineHeight: 52, color: colors.white },
+  line: { fontFamily: fonts.body, fontSize: 18, lineHeight: 26, color: 'rgba(255,255,255,0.92)' },
+  actions: { flexDirection: 'row', alignItems: 'center', gap: space.s, marginTop: space.s },
+  primary: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 52, paddingHorizontal: 22, borderRadius: 26, backgroundColor: colors.white },
+  primaryText: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  round: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
+  ghost: { minHeight: 52, paddingHorizontal: 18, borderRadius: 26, justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.7)' },
+  ghostText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.white },
+  head: { position: 'absolute', left: space.l, right: space.m, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  brand: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 1, color: colors.white },
+  where: { fontFamily: fonts.display, fontSize: 26, color: colors.white, marginTop: 2 },
+  headRight: { flexDirection: 'row', gap: space.s },
+  headBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
+  progress: { position: 'absolute', left: space.l },
+  count: { fontFamily: fonts.monoBold, fontSize: 12, color: 'rgba(255,255,255,0.7)' },
+  ask: {
     position: 'absolute',
-    left: space.m,
-    right: space.m,
-    padding: space.m,
-    gap: 6,
-    borderRadius: 22,
-    backgroundColor: colors.paper,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-  },
-  standingEyebrow: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.gilt, textTransform: 'uppercase' },
-  standingTitle: { fontFamily: fonts.display, fontSize: 28, lineHeight: 30, color: colors.ink },
-  standingText: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.ink },
-  row: { flexDirection: 'row', alignItems: 'center', gap: space.s, marginTop: 4 },
-  btnDark: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: colors.ink },
-  btnDarkText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.white },
-  btnLight: { minHeight: 44, paddingHorizontal: 16, borderRadius: 22, borderWidth: 1.5, borderColor: colors.ink, justifyContent: 'center' },
-  btnLightText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
-  close: { marginLeft: 'auto', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  orb: {
-    position: 'absolute',
-    right: space.m + 6,
-    width: 68,
-    height: 68,
-    borderRadius: 34,
-    backgroundColor: colors.brick,
+    left: space.l,
+    right: space.l,
+    bottom: 24,
+    minHeight: 58,
+    borderRadius: 29,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
-    borderColor: colors.white,
-    shadowColor: '#000',
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 10,
+    gap: 10,
+    backgroundColor: colors.brick,
   },
-  orbPressed: { transform: [{ scale: 0.94 }] },
-  cards: { position: 'absolute', left: 0, right: 0 },
-  cardsLabelPill: { alignSelf: 'flex-start', marginLeft: 22, marginBottom: 8, paddingVertical: 5, paddingHorizontal: 10, borderRadius: 10, backgroundColor: 'rgba(28,37,80,0.82)' },
-  cardsLabel: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.white, textTransform: 'uppercase' },
-  card: {
-    height: 150,
-    borderRadius: 24,
-    padding: space.m,
-    backgroundColor: colors.paper,
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
-  cardHead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  kindDot: { width: 10, height: 10, borderRadius: 5 },
-  kind: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.6, color: colors.mute, textTransform: 'uppercase' },
-  walk: { marginLeft: 'auto', fontFamily: fonts.monoBold, fontSize: 12, color: colors.ink },
-  cardTitle: { fontFamily: fonts.display, fontSize: 28, lineHeight: 30, color: colors.ink },
-  cardFoot: { flexDirection: 'row', alignItems: 'center', gap: space.s },
-  cardMeta: { flex: 1, fontFamily: fonts.body, fontSize: 14, color: colors.mute },
-  openText: { fontFamily: fonts.bodyBold, color: colors.patina },
-  go: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
+  askText: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.white },
 });
