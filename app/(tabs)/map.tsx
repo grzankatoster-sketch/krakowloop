@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
   FlatList,
   Image,
   LayoutChangeEvent,
   Linking,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,6 +14,10 @@ import {
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import * as Haptics from 'expo-haptics';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { scheduleOnRN } from 'react-native-worklets';
 import LoopMap from '../../src/components/LoopMap';
 import type { MapPoint } from '../../src/components/mapHtml';
 import { Button, Chip, Eyebrow } from '../../src/components/ui';
@@ -175,47 +177,55 @@ export default function DiscoverScreen() {
     const full = Math.max(260, areaH - topH - space.s);
     return [Math.min(176, full), Math.min(Math.round(areaH * 0.52), full), full] as const;
   }, [areaH, topH]);
-  const [drawerH] = useState(() => new Animated.Value(176));
-  // where a drag began: a plain box, read only inside the gesture callbacks
-  const [drag] = useState(() => ({ start: 0 }));
+  // The drawer is a full-height sheet moved by translateY on the UI thread (no height animation, no
+  // re-layout per frame): `shown` is how much of it is visible. A drag hands its speed to the spring.
+  const shown = useSharedValue(176);
+  const dragFrom = useSharedValue(0);
+  const SPRING = { duration: 300, dampingRatio: 0.8 } as const;
   useEffect(() => {
     if (!areaH) return;
-    if (calm) drawerH.setValue(heights[snap]);
-    else Animated.spring(drawerH, { toValue: heights[snap], useNativeDriver: false, bounciness: 3, speed: 16 }).start();
-  }, [snap, heights, calm, areaH, drawerH]);
-  const pan = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_e, g) => Math.abs(g.dy) > 6,
-        onPanResponderGrant: () => {
-          drawerH.stopAnimation((v) => (drag.start = v));
-        },
-        onPanResponderMove: (_e, g) => drawerH.setValue(Math.max(heights[0], Math.min(heights[2], drag.start - g.dy))),
-        onPanResponderRelease: (_e, g) => {
-          const h = drag.start - g.dy;
-          // the nearest height, nudged in the direction of a quick flick
-          const target = h - g.vy * 120;
-          let best: 0 | 1 | 2 = 0;
-          heights.forEach((v, i) => {
-            if (Math.abs(v - target) < Math.abs(heights[best] - target)) best = i as 0 | 1 | 2;
-          });
-          // settle there even when the height is the one the drawer started from
-          if (calm) drawerH.setValue(heights[best]);
-          else Animated.spring(drawerH, { toValue: heights[best], useNativeDriver: false, bounciness: 3, speed: 16 }).start();
-          setSnap(best);
-        },
-      }),
-    [heights, drawerH, calm, drag],
-  );
+    shown.set(calm ? heights[snap] : withSpring(heights[snap], SPRING));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snap, heights, calm, areaH]);
+  // the height caught at the end of a drag: React learns it once, and the phone ticks once
+  const settle = useCallback((best: 0 | 1 | 2) => {
+    setSnap(best);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, []);
+  const pan = useMemo(() => {
+    const [h0, h1, h2] = heights;
+    return Gesture.Pan()
+      .activeOffsetY([-6, 6])
+      .onBegin(() => {
+        dragFrom.set(shown.get());
+      })
+      .onUpdate((e) => {
+        const h = dragFrom.get() - e.translationY;
+        // past the ends it gives way slowly, instead of stopping dead
+        shown.set(h > h2 ? h2 + (h - h2) * 0.2 : h < h0 ? h0 - (h0 - h) * 0.2 : h);
+      })
+      .onEnd((e) => {
+        // the nearest height, nudged in the direction of a flick
+        const target = shown.get() - e.velocityY * 0.12;
+        const all = [h0, h1, h2];
+        let best = 0;
+        for (let i = 1; i < 3; i++) if (Math.abs(all[i] - target) < Math.abs(all[best] - target)) best = i;
+        shown.set(calm ? all[best] : withSpring(all[best], { ...SPRING, velocity: -e.velocityY }));
+        scheduleOnRN(settle, best as 0 | 1 | 2);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [heights, calm, settle]);
+  const sheetStyle = useAnimatedStyle(() => ({ transform: [{ translateY: heights[2] - shown.get() }] }));
 
   // ---- what each door lists ------------------------------------------------------------------------
   const seeRows = useMemo(() => {
     const q = fold(nameQuery.trim());
     return byDistance(
       places.filter((p) => seeCats.has(p.cat) && (!q || fold(`${p.name} ${p.local ?? ''}`).includes(q))),
-      here,
+      // nearest to the traveller, or to the Main Square: never alphabetical, which put a day trip third
+      origin,
     );
-  }, [seeCats, nameQuery, here]);
+  }, [seeCats, nameQuery, origin]);
 
   const eatRows = useMemo(() => byDistance(filterEat(RESTAURANTS, eat, nameQuery, restaurantOpen), origin), [eat, nameQuery, origin]);
 
@@ -812,16 +822,18 @@ export default function DiscoverScreen() {
         ) : null}
 
         {/* the drawer: a handle to drag or tap, then the list or the chosen place */}
-        <Animated.View style={[s.drawer, { height: drawerH }]}>
-          <Animated.View style={[s.nearMe, { bottom: Animated.add(drawerH, space.s) }]} pointerEvents="box-none">
+        <Animated.View style={[s.drawer, { height: heights[2] }, sheetStyle]}>
+          {/* rides on the sheet's top edge, so it moves with it for free */}
+          <View style={s.nearMe} pointerEvents="box-none">
             {snap < 2 ? (
               <Pressable accessibilityRole="button" accessibilityHint={t('map.nearMeHint')} onPress={nearMe} style={({ pressed }) => [s.nearMeBtn, pressed && s.pressed]}>
                 <MaterialCommunityIcons name="crosshairs-gps" size={22} color={colors.ink} aria-hidden />
                 <Text style={s.nearMeText}>{t('map.nearMe')}</Text>
               </Pressable>
             ) : null}
-          </Animated.View>
-          <View {...pan.panHandlers} style={s.handleZone}>
+          </View>
+          <GestureDetector gesture={pan}>
+          <View style={s.handleZone}>
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={snap === 2 ? t('discover.collapse') : t('discover.expand')}
@@ -832,6 +844,7 @@ export default function DiscoverScreen() {
               <View style={s.handle} />
             </Pressable>
           </View>
+          </GestureDetector>
           <View style={s.drawerBody}>{picked ? detail() : list()}</View>
         </Animated.View>
       </View>
@@ -909,7 +922,7 @@ const s = StyleSheet.create({
   handleBtn: { width: 88, height: 28, alignItems: 'center', justifyContent: 'center' },
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: colors.line },
   drawerBody: { flex: 1 },
-  nearMe: { position: 'absolute', right: space.m },
+  nearMe: { position: 'absolute', right: space.m, bottom: '100%', marginBottom: space.s },
   nearMeBtn: {
     flexDirection: 'row',
     alignItems: 'center',
