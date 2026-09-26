@@ -52,6 +52,7 @@ import { openWalkingDirections } from '../../src/lib/navigate';
 import { openLink, safeWebUrl } from '../../src/lib/openLink';
 import { openState, statusLabel } from '../../src/lib/openNow';
 import { BUS_STOP_LIST, TRAM_STOPS } from '../../src/lib/transit';
+import { placeName } from '../../src/components/placeName';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { useReducedMotion } from '../../src/lib/useReducedMotion';
 import { readWishAnywhere, warmWishProxy } from '../../src/lib/wishProxy';
@@ -109,6 +110,13 @@ function restaurantOpen(r: Restaurant): boolean | null {
   // restaurantHoursOn reads the weekday in Kraków time itself: it takes the real instant
   const h = restaurantHoursOn(r, new Date());
   return h ? openState(h, now.minutes).state === 'open' : null;
+}
+
+/** An activity's name or note in the app language (i18n exp.<id>.*), the English original otherwise. */
+function expText(id: string, field: 'name' | 'note', fallback: string): string {
+  const key = `exp.${id}.${field}` as StringKey;
+  const v = t(key);
+  return v && v !== key ? v : fallback;
 }
 
 /** words for vegetarian food in the three languages: the wish reader does not carry diets */
@@ -229,7 +237,7 @@ export default function DiscoverScreen() {
       (x) =>
         !refused.includes(x.id) &&
         (!expKind || (x as Experience & { kind?: string }).kind === expKind) &&
-        (!q || fold(`${x.name} ${x.note}`).includes(q)),
+        (!q || fold(`${x.name} ${x.note} ${expText(x.id, 'name', x.name)}`).includes(q)),
     );
   }, [expKind, nameQuery, refused]);
 
@@ -238,7 +246,7 @@ export default function DiscoverScreen() {
     const pts: MapPoint[] = showStops ? [...STOP_MARKERS] : [];
     if (mode === 'see') {
       for (const { item: p } of seeRows)
-        pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat], label: p.name, glyph: p.cat, rank: p.priority });
+        pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat], label: placeName(p), glyph: p.cat, rank: p.priority });
       pts.push(...LENS_MARKERS);
     } else if (mode === 'eat') {
       const shown = nearest(eatRows.map((x) => x.item), origin, MAX_PINS);
@@ -261,7 +269,7 @@ export default function DiscoverScreen() {
         pts.push({ id: s.id, lat: s.lat, lon: s.lon, color: colors.vistula, label: s.name, glyph: 'stay', rank: s.stars && s.stars >= 4 ? 3 : 2 });
     } else {
       for (const p of nightPlaces)
-        pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR.night, label: p.name, glyph: 'night', rank: p.priority });
+        pts.push({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR.night, label: placeName(p), glyph: 'night', rank: p.priority });
     }
     if (here) pts.push({ id: ME, lat: here.lat, lon: here.lon, color: colors.vistula, kind: 'me' });
     return pts;
@@ -486,7 +494,7 @@ export default function DiscoverScreen() {
                   <View style={[s.rowPhoto, { backgroundColor: CATEGORY_COLOR[p.cat] }]} />
                 )}
                 <View style={s.rowBody}>
-                  <Text style={s.rowName}>{p.name}</Text>
+                  <Text style={s.rowName}>{placeName(p)}</Text>
                   <Eyebrow>
                     {CATEGORY_LABEL[p.cat]} · {metres !== null ? formatDistance(metres) : ZONE_LABEL[p.zone]}
                   </Eyebrow>
@@ -579,7 +587,7 @@ export default function DiscoverScreen() {
             {nightPlaces.map((p) => (
               <Pressable key={p.id} accessibilityRole="button" onPress={() => router.push(`/place/${p.id}`)} style={({ pressed }) => [s.rowSlim, pressed && s.pressed]}>
                 <View style={[s.dot, { backgroundColor: CATEGORY_COLOR.night }]} />
-                <Text style={s.rowNameSlim}>{p.name}</Text>
+                <Text style={s.rowNameSlim}>{placeName(p)}</Text>
                 <MaterialCommunityIcons name="chevron-right" size={22} color={colors.mute} aria-hidden />
               </Pressable>
             ))}
@@ -595,9 +603,9 @@ export default function DiscoverScreen() {
           ].filter(Boolean);
           return (
             <View style={s.expCard}>
-              <Text style={s.rowName}>{e.name}</Text>
+              <Text style={s.rowName}>{expText(e.id, 'name', e.name)}</Text>
               {meta.length ? <Eyebrow>{meta.join(' · ')}</Eyebrow> : null}
-              <Text style={s.expNote}>{e.note}</Text>
+              <Text style={s.expNote}>{expText(e.id, 'note', e.note)}</Text>
               <Button label={t('discover.do.book')} kind="quiet" onPress={() => openLink(e.booking.url)} />
             </View>
           );
@@ -778,7 +786,8 @@ export default function DiscoverScreen() {
           <View style={[s.error, { top: topH + space.s }]} accessibilityRole="alert">
             <Text style={s.errorTitle}>{t('map.errorTitle')}</Text>
             <Text style={s.errorText}>
-              {mapError} {t('map.errorHelp')}
+              {/* the map engine reports in English: the traveller gets the translated help only */}
+              {t('map.errorHelp')}
             </Text>
             <Button label={t('map.tryAgain')} onPress={retry} />
           </View>
