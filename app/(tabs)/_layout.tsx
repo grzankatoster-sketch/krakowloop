@@ -1,41 +1,31 @@
-import { Tabs } from 'expo-router';
-import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { NativeTabs } from 'expo-router/unstable-native-tabs';
 import { t } from '../../src/i18n';
-import { colors, fonts } from '../../src/theme';
-
-type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
-
-function TabIcon({ name, color }: { name: IconName; color: string }) {
-  return <MaterialCommunityIcons name={name} size={28} color={color} aria-hidden />;
-}
-
-const icon = (name: IconName) => {
-  const TabBarIcon = ({ color }: { color: unknown }) => <TabIcon name={name} color={String(color)} />;
-  TabBarIcon.displayName = `TabIcon(${name})`;
-  return TabBarIcon;
-};
+import { colors } from '../../src/theme';
 
 /**
- * Three tabs, always on screen: the start, Discover (the map with sights, food, things to do and
- * places to sleep) and the plan, so nobody has to remember the way back.
- * Big icons and labels: many visitors are older and not app-savvy.
+ * The platform's own tab bar: Liquid Glass on iOS, Material on Android. Four places, each a thing a
+ * traveller does: what is around now, find something, look into the past, the days ahead.
  */
 export default function TabLayout() {
-  const insets = useSafeAreaInsets();
   return (
-    <Tabs
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: colors.ink,
-        tabBarInactiveTintColor: colors.mute,
-        tabBarStyle: { backgroundColor: colors.paper, borderTopColor: colors.line, height: 66 + insets.bottom, paddingTop: 6 },
-        tabBarLabelStyle: { fontFamily: fonts.bodyBold, fontSize: 15 },
-      }}
-    >
-      <Tabs.Screen name="index" options={{ title: t('tab.home'), tabBarAccessibilityLabel: t('tab.home'), tabBarIcon: icon('home-variant') }} />
-      <Tabs.Screen name="map" options={{ title: t('tab.discover'), tabBarAccessibilityLabel: t('tab.discover'), tabBarIcon: icon('compass-outline') }} />
-      <Tabs.Screen name="plan" options={{ title: t('tab.plan'), tabBarAccessibilityLabel: t('tab.plan'), tabBarIcon: icon('calendar-check') }} />
-    </Tabs>
+    // labels always on: many visitors are older, an icon alone is a guess
+    <NativeTabs tintColor={colors.brick} minimizeBehavior="onScrollDown" labelVisibilityMode="labeled">
+      <NativeTabs.Trigger name="index">
+        <NativeTabs.Trigger.Label>{t('tab.now')}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="location.north.circle.fill" md="near_me" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="map">
+        <NativeTabs.Trigger.Label>{t('tab.discover')}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="map.fill" md="explore" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="obiektyw">
+        <NativeTabs.Trigger.Label>{t('tab.lens')}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="hourglass" md="history" />
+      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="plan">
+        <NativeTabs.Trigger.Label>{t('tab.plan')}</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="calendar" md="event" />
+      </NativeTabs.Trigger>
+    </NativeTabs>
   );
 }

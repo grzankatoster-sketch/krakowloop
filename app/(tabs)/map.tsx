@@ -127,7 +127,7 @@ const chipLabel = (key: 'cuisine' | 'openNow' | 'picks' | 'veg', cuisine?: Cuisi
 
 export default function DiscoverScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mode?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; wish?: string; at?: string }>();
   const calm = useReducedMotion();
   const me = useMyLocation();
   const here = me.status === 'ok' && !me.outsideCity ? me.coords ?? null : null;
@@ -326,8 +326,9 @@ export default function DiscoverScreen() {
   };
 
   // ---- the wish box ------------------------------------------------------------------------------
-  const submit = async () => {
-    const said = text.trim();
+  const submit = () => submitText(text);
+  const submitText = async (value: string) => {
+    const said = value.trim();
     if (!said) return;
     const run = ++readRun.current;
     const since = epochRef.current;
@@ -360,6 +361,18 @@ export default function DiscoverScreen() {
       setReading('notUnderstood');
     }
   };
+  // a wish sent from the sheet on the Now tab (/map?wish=…&at=…): read it once per send
+  useEffect(() => {
+    const w = params.wish;
+    if (!w || !params.at) return;
+    // after this render: the reading sets state of its own
+    Promise.resolve().then(() => {
+      setText(w);
+      submitText(w);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.at]);
+
   const clearText = () => {
     readRun.current++;
     setText('');
