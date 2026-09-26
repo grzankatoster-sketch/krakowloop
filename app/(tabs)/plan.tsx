@@ -5,6 +5,7 @@ import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { LinearGradient } from 'expo-linear-gradient';
 import LoopMap from '../../src/components/LoopMap';
 import { placeName, placeText } from '../../src/components/placeName';
 import type { MapPoint } from '../../src/components/mapHtml';
@@ -635,19 +636,24 @@ function Timeline({ day, real, onSkip }: { day: PlanDay; real: WalkingRoute | nu
             ) : null}
             {/* a taxi leg can be booked where it is shown: the destination is this stop */}
             {st.leg?.mode === 'taxi' ? <RideButtons to={st.place} /> : null}
-            <View style={s.stop}>
-              <View style={s.num}>
-                <Text style={s.numText}>{i + 1}</Text>
-              </View>
-              {photo?.image ? (
-                <Image source={photo.image} style={s.thumb} resizeMode="cover" accessibilityLabel={t('place.photoAlt', { name: placeName(st.place) })} />
-              ) : null}
-              <View style={{ flex: 1 }}>
-                <Link href={`/place/${st.place.id}`} asChild>
-                  <Pressable accessibilityRole="link" accessibilityLabel={t('now.openLabel', { name: placeName(st.place) })} hitSlop={4}>
-                    <Text style={[s.stopName, s.stopNameLink]}>{placeName(st.place)}</Text>
-                  </Pressable>
-                </Link>
+            {/* a stop as a card: its photo, its number and its name on it, what to know below */}
+            <View style={s.card}>
+              <Pressable
+                accessibilityRole="link"
+                accessibilityLabel={t('now.openLabel', { name: placeName(st.place) })}
+                onPress={() => router.push(`/place/${st.place.id}`)}
+                style={({ pressed }) => [s.cardTop, !photo?.image && s.cardTopPlain, pressed && { opacity: 0.9 }]}
+              >
+                {photo?.image ? <Image source={photo.image} style={s.cardPhoto} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
+                {photo?.image ? <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.85)']} locations={[0.35, 1]} style={s.cardPhoto} /> : null}
+                <View style={s.num}>
+                  <Text style={s.numText}>{i + 1}</Text>
+                </View>
+                <Text style={s.cardName} numberOfLines={2}>
+                  {placeName(st.place)}
+                </Text>
+              </Pressable>
+              <View style={s.cardBody}>
                 <Text style={s.stopBlurb} numberOfLines={3}>
                   {placeText(st.place).text}
                 </Text>
@@ -779,6 +785,12 @@ const s = StyleSheet.create({
   },
   wishRow: { flexDirection: 'row', gap: space.s, marginTop: space.s },
   wishNote: { fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 21, color: colors.ink, marginTop: space.s },
+  card: { marginTop: space.s, borderRadius: 24, overflow: 'hidden', backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
+  cardTop: { height: 200, justifyContent: 'flex-end', padding: space.m, backgroundColor: colors.ink },
+  cardTopPlain: { height: 120 },
+  cardPhoto: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
+  cardName: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.white },
+  cardBody: { padding: space.m, gap: 6 },
   mapBox: { height: 300, marginTop: space.m, borderRadius: 24, overflow: 'hidden' },
   map: { flex: 1 },
   mapError: { position: 'absolute', left: space.s, right: space.s, top: space.s, backgroundColor: colors.paper, borderRadius: 12, padding: space.m, gap: space.s },
@@ -790,9 +802,9 @@ const s = StyleSheet.create({
   leg: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 6, marginLeft: 14, borderLeftWidth: 3, borderColor: colors.line },
   legText: { flex: 1, fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute },
   stop: { flexDirection: 'row', gap: space.m, alignItems: 'flex-start', paddingVertical: space.s },
-  num: { width: 32, height: 32, borderRadius: 16, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center', marginTop: 2 },
+  num: { position: 'absolute', top: 12, left: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   // white is the text-on-ink token in every palette; gilt on ink fails contrast in several
-  numText: { fontFamily: fonts.monoBold, fontSize: 14, color: colors.white },
+  numText: { fontFamily: fonts.monoBold, fontSize: 15, color: colors.ink },
   thumb: { width: 76, height: 76, borderRadius: 12, backgroundColor: colors.line },
   stopName: { fontFamily: fonts.bodyBold, fontSize: 18, lineHeight: 23, color: colors.ink },
   stopNameLink: { textDecorationLine: 'underline', textDecorationColor: colors.line },
