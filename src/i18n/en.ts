@@ -680,6 +680,7 @@ export const en = {
   'discover.native.past': "Kraków in the past",
   'discover.native.stay': "Where to sleep",
   'discover.native.stayLine': "{n} hotels, hostels and flats on the map",
+  'lensGallery.compare': "Compare with today",
 };
 
 export type StringKey = keyof typeof en;

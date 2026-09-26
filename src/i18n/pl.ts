@@ -667,4 +667,5 @@ export const pl: Strings = {
   'discover.native.past': "Dawny Kraków",
   'discover.native.stay': "Gdzie spać",
   'discover.native.stayLine': "{n} hoteli, hosteli i apartamentów na mapie",
+  'lensGallery.compare': "Porównaj z dziś",
 };
