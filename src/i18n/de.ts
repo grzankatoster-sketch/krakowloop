@@ -624,4 +624,9 @@ export const de: Strings = {
   'wish.sheet.ex3': "Etwas mit Adrenalin",
   'wish.sheet.ex4': "Ein Hotel am Markt",
   'moment.servicesOff': "Standort einschalten",
+  'plan.native.title': "Deine Tage in Krakau",
+  'plan.native.yours': "Dein Plan",
+  'plan.native.howMany': "Wie viele Tage hast du?",
+  'plan.native.quickNote': "Ein Tippen und die Spaziergänge stehen: Sehenswertes, Essen, normales Tempo. Ändern kannst du alles danach.",
+  'plan.native.tune': "Zuerst Details einstellen",
 };

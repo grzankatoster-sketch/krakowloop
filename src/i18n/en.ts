@@ -637,6 +637,11 @@ export const en = {
   'wish.sheet.ex3': "Something with adrenaline",
   'wish.sheet.ex4': "A hotel near the Main Square",
   'moment.servicesOff': "Turn on location",
+  'plan.native.title': "Your days in Kraków",
+  'plan.native.yours': "Your plan",
+  'plan.native.howMany': "How many days do you have?",
+  'plan.native.quickNote': "One tap and the walks are ready: sights, food and the usual pace. You can change everything afterwards.",
+  'plan.native.tune': "Set the details first",
 };
 
 export type StringKey = keyof typeof en;
