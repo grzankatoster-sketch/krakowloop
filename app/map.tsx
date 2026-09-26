@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -180,6 +180,10 @@ export default function DiscoverScreen() {
     const full = Math.max(260, areaH - topH - space.s);
     return [Math.min(176, full), Math.min(Math.round(areaH * 0.52), full), full] as const;
   }, [areaH, topH]);
+  // The sheet is always full height, pushed down: at peek or half, its bottom part is off the screen.
+  // Lists end that much higher (plus the home indicator), so their last rows can still be scrolled to.
+  const insets = useSafeAreaInsets();
+  const listPad = { paddingBottom: heights[2] - heights[snap] + insets.bottom + space.m };
   // The drawer is a full-height sheet moved by translateY on the UI thread (no height animation, no
   // re-layout per frame): `shown` is how much of it is visible. A drag hands its speed to the spring.
   const shown = useSharedValue(176);
@@ -507,6 +511,7 @@ export default function DiscoverScreen() {
           ListHeaderComponent={header}
           ListEmptyComponent={empty}
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={listPad}
           renderItem={({ item: { item: p, metres } }) => {
             const now = nowInKrakow();
             const h = hoursOn(p.id, now.date);
@@ -546,6 +551,7 @@ export default function DiscoverScreen() {
           ListEmptyComponent={empty}
           initialNumToRender={12}
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={listPad}
           renderItem={({ item: { item: r, metres } }) => {
             const open = restaurantOpen(r);
             return (
@@ -581,6 +587,7 @@ export default function DiscoverScreen() {
           ListEmptyComponent={empty}
           initialNumToRender={12}
           keyboardShouldPersistTaps="handled"
+          contentContainerStyle={listPad}
           renderItem={({ item: { item: st, metres } }) => (
             <Pressable accessibilityRole="button" onPress={() => pickFromList({ type: 'stay', item: st })} style={({ pressed }) => [s.row, pressed && s.pressed]}>
               <View style={[s.rowIcon, { backgroundColor: colors.vistula }]} aria-hidden>
@@ -605,6 +612,7 @@ export default function DiscoverScreen() {
         ListHeaderComponent={header}
         ListEmptyComponent={empty}
         keyboardShouldPersistTaps="handled"
+        contentContainerStyle={listPad}
         ListFooterComponent={
           <View style={s.nightBlock}>
             <Text style={s.sectionTitle} accessibilityRole="header">
@@ -650,7 +658,7 @@ export default function DiscoverScreen() {
       const st = h ? openState(h, now.minutes) : null;
       const placeId = PLACE_BY_OSM.get(r.osm);
       return (
-        <ScrollView contentContainerStyle={s.detail} keyboardShouldPersistTaps="handled">
+        <ScrollView contentContainerStyle={[s.detail, listPad]} keyboardShouldPersistTaps="handled">
           <DetailHead title={r.name} onClose={close} />
           <Eyebrow>
             {[r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey), formatDistance(distance(origin, r))].join(' · ')}
@@ -674,7 +682,7 @@ export default function DiscoverScreen() {
     }
     const st = picked.item;
     return (
-      <ScrollView contentContainerStyle={s.detail}>
+      <ScrollView contentContainerStyle={[s.detail, listPad]}>
         <DetailHead title={st.name} onClose={close} />
         <Eyebrow>
           {[t(`stay.${st.kind}` as StringKey), st.stars ? t('discover.stars', { n: st.stars }) : null, formatDistance(distance(origin, st))].filter(Boolean).join(' · ')}

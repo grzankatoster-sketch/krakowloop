@@ -164,6 +164,7 @@ export default function PlanScreen() {
   const [daySel, setDaySel] = useState({ key: '', index: 0 });
   const [walk, setWalk] = useState<{ key: string; route: WalkingRoute } | null>(null);
   const [mapOpen, setMapOpen] = useState(true);
+  const [mapLive, setMapLive] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapKey, setMapKey] = useState(0);
@@ -220,11 +221,11 @@ export default function PlanScreen() {
 
   const toggle = (k: Interest) =>
     setForm((f) => ({ ...f, interests: f.interests.includes(k) ? f.interests.filter((x) => x !== k) : [...f.interests, k] }));
-  const show = (o: PlanOptions, announcement: string) => {
+  const show = (o: PlanOptions, announcement: string, stay = false) => {
     setShareNote(null);
     setEditing(false);
     router.setParams({ ...planToParams(o) });
-    scrollRef.current?.scrollTo({ y: 0, animated: false });
+    if (!stay) scrollRef.current?.scrollTo({ y: 0, animated: false });
     AccessibilityInfo.announceForAccessibility(announcement);
   };
   // every build is shuffled anew: the same choices should not give the same days every time
@@ -239,7 +240,9 @@ export default function PlanScreen() {
     if (options) show({ ...options, exclude: [], seed: newSeed() }, t('plan.anotherReady'));
   };
   const skipStop = (id: string, name: string) => {
-    if (options) show({ ...options, exclude: [...(options.exclude ?? []), id] }, t('plan.skipped', { name }));
+    if (!options) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    show({ ...options, exclude: [...(options.exclude ?? []), id] }, t('plan.skipped', { name }), true);
   };
   const restoreSkipped = () => {
     if (options) show({ ...options, exclude: [] }, t('plan.restored'));
@@ -314,7 +317,12 @@ export default function PlanScreen() {
       <Text style={s.bigTitle} accessibilityRole="header">
         {hasPlan && !editing ? t('plan.native.yours') : t('plan.native.title')}
       </Text>
-      <ScrollView ref={scrollRef} contentContainerStyle={StyleSheet.flatten([s.scroll, result && s.scrollWithBar, { paddingBottom: (result ? 150 : space.xl) + tabSpace }])}>
+      <ScrollView
+        ref={scrollRef}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={StyleSheet.flatten([s.scroll, result && s.scrollWithBar, { paddingBottom: (result ? 150 : space.xl) + tabSpace }])}>
         {hasPlan && !editing && options ? (
           <View style={[s.col, s.summaryBar]}>
             <View style={{ flex: 1 }}>
@@ -497,7 +505,22 @@ export default function PlanScreen() {
 
             {mapOpen ? (
               <View style={s.mapBox}>
-                <LoopMap key={mapKey} style={s.map} points={points} route={route} fit onError={setMapError} onReady={() => setMapError(null)} />
+                <View style={s.map} pointerEvents={mapLive ? 'auto' : 'none'}>
+                  <LoopMap key={mapKey} style={s.map} points={points} route={route} fit onError={setMapError} onReady={() => setMapError(null)} />
+                </View>
+                {/* a finger on the map scrolls the page; one tap hands the map to the finger, one more gives it back */}
+                {!mapLive ? <Pressable accessibilityRole="button" accessibilityLabel={t('plan.native.mapTouch')} onPress={() => setMapLive(true)} style={StyleSheet.absoluteFill} /> : null}
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setMapLive((v) => !v);
+                  }}
+                  style={({ pressed }) => [s.mapChip, pressed && { opacity: 0.85 }]}
+                >
+                  <MaterialCommunityIcons name={mapLive ? 'lock-outline' : 'gesture-tap'} size={18} color={colors.white} />
+                  <Text style={s.mapChipText}>{mapLive ? t('plan.native.mapDone') : t('plan.native.mapTouch')}</Text>
+                </Pressable>
                 {mapError ? (
                   <View style={s.mapError}>
                     <Text style={s.stopName}>{t('map.errorTitle')}</Text>
@@ -795,6 +818,8 @@ const s = StyleSheet.create({
   cardBody: { padding: space.m, gap: 6 },
   mapBox: { height: 300, marginTop: space.m, borderRadius: 24, overflow: 'hidden' },
   map: { flex: 1 },
+  mapChip: { position: 'absolute', left: space.s, bottom: space.s, flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(14,19,48,0.82)' },
+  mapChipText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
   mapError: { position: 'absolute', left: space.s, right: space.s, top: space.s, backgroundColor: colors.paper, borderRadius: 12, padding: space.m, gap: space.s },
   picker: { marginTop: space.m, backgroundColor: colors.paper, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: space.m },
   arranged: { marginTop: space.m, backgroundColor: colors.paper, borderRadius: 16, borderWidth: 2, borderColor: colors.gilt, padding: space.m },
