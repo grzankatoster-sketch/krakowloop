@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Image, ImageSourcePropType, Pressable, StyleSheet, Text, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
 import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
@@ -15,6 +16,7 @@ import { PLACE_MEDIA } from '../../src/data/placeMedia';
 import { CATEGORY_LABEL, places, Place } from '../../src/data/places';
 import { RESTAURANTS, restaurantHoursOn } from '../../src/data/restaurants';
 import { krakowWallClock } from '../../src/lib/cityTime';
+import { distance, LatLon } from '../../src/lib/geo';
 import { formatTime, hoursOn, Interval } from '../../src/lib/hours';
 import { Moment, MomentSource, pickMoments, standingAt } from '../../src/lib/moments';
 import { openWalkingDirections } from '../../src/lib/navigate';
@@ -87,9 +89,14 @@ function storySources(): (MomentSource & { image?: ImageSourcePropType; line: st
 export default function TodayScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  useStatusBarOnFocus('light');
   const tabSpace = useTabBarSpace();
   const live = useLiveLocation();
-  const origin = live.here ?? RYNEK;
+  // The order of the stories must not change under the finger: GPS ticks every ~20 m, so the stories
+  // are sorted from an anchor that only moves after a real walk (the walking times stay close enough).
+  const [anchor, setAnchor] = useState<LatLon>(RYNEK);
+  const target = live.here ?? RYNEK;
+  if (target !== anchor && distance(anchor, target) > 150) setAnchor(target);
   const [height, setHeight] = useState(0);
   const list = useRef<FlatList<Story>>(null);
 
@@ -110,14 +117,16 @@ export default function TodayScreen() {
     const id = setInterval(() => setMinute(Math.floor(Date.now() / 60000)), 30000);
     return () => clearInterval(id);
   }, []);
-  const sources = useMemo(() => storySources(), [live.here, minute]); // eslint-disable-line react-hooks/exhaustive-deps
+  // the clock on top follows every minute; the stories themselves are rebuilt every 10 minutes
+  const tenMinutes = Math.floor(minute / 10);
+  const sources = useMemo(() => storySources(), [tenMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // the place the traveller stands at goes first, as its own story
   const [seen] = useState<Set<string>>(() => new Set());
   const standing = useMemo(() => (live.here ? standingAt(SIGHTS, live.here, seen) : null), [live.here, seen]);
 
   const stories = useMemo<Story[]>(() => {
-    const picked = pickMoments(sources, origin, 12, 2000);
+    const picked = pickMoments(sources, anchor, 12, 2000);
     const byId = new Map(sources.map((s) => [s.id, s]));
     const out: Story[] = picked.map((m) => {
       const src = byId.get(m.id)!;
@@ -140,7 +149,7 @@ export default function TodayScreen() {
       return rest;
     }
     return out;
-  }, [sources, origin, standing]);
+  }, [sources, anchor, standing]);
 
   // arriving somewhere: back to the top, where that place now is, with one nudge
   const standingId = standing?.id ?? null;
@@ -195,55 +204,11 @@ export default function TodayScreen() {
           onViewableItemsChanged={onViewable}
           viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
           getItemLayout={(_d, i) => ({ length: height, offset: height * i, index: i })}
-          renderItem={({ item: st }) => (
-            <View style={{ height }}>
-              {st.image ? (
-                <Image source={st.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors />
-              ) : (
-                <View style={[StyleSheet.absoluteFill, s.eatBg]}>
-                  <MaterialCommunityIcons name="silverware-fork-knife" size={220} color="rgba(255,255,255,0.08)" style={s.eatIcon} />
-                </View>
-              )}
-              {/* darker at the top for the clock and at the bottom for the words: the photo stays in the middle */}
-              <LinearGradient colors={['rgba(8,11,30,0.6)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
-              <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.55)', 'rgba(8,11,30,0.92)']} locations={[0, 0.35, 1]} style={s.shadeBottom} pointerEvents="none" />
-              {st.kind === 'lens' && st.year ? <Text style={[s.year, { top: insets.top + 70 }]}>{st.year}</Text> : null}
+          windowSize={3}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
 
-              <View style={[s.words, { paddingBottom: 110 + tabSpace }]}>
-                <Text style={[s.eyebrow, st.here && s.eyebrowHere]}>{st.eyebrow}</Text>
-                <Text style={s.title} accessibilityRole="header" numberOfLines={3}>
-                  {st.name}
-                </Text>
-                <Text style={s.line} numberOfLines={3}>
-                  {st.line}
-                </Text>
-                <View style={s.actions}>
-                  {st.kind !== 'lens' ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={t('moment.go', { name: st.name })}
-                      onPress={() => {
-                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-                        openWalkingDirections(st);
-                      }}
-                      style={({ pressed }) => [s.primary, pressed && s.pressed]}
-                    >
-                      <MaterialCommunityIcons name="navigation-variant" size={20} color={colors.ink} />
-                      <Text style={s.primaryText}>{t('story.go')}</Text>
-                    </Pressable>
-                  ) : null}
-                  {st.place ? (
-                    <Pressable accessibilityRole="button" accessibilityLabel={t('moment.listen')} onPress={() => listen(st)} style={({ pressed }) => [s.round, pressed && s.pressed]}>
-                      <MaterialCommunityIcons name="volume-high" size={22} color={colors.white} />
-                    </Pressable>
-                  ) : null}
-                  <Pressable accessibilityRole="button" onPress={() => open(st)} style={({ pressed }) => [s.ghost, pressed && s.pressed]}>
-                    <Text style={s.ghostText}>{st.kind === 'lens' ? t('story.seeThen') : t('moment.more')}</Text>
-                  </Pressable>
-                </View>
-              </View>
-            </View>
-          )}
+          renderItem={({ item }) => <StoryPage st={item} height={height} top={insets.top} bottom={110 + tabSpace} onListen={listen} onOpen={open} />}
         />
       ) : null}
 
@@ -293,6 +258,77 @@ export default function TodayScreen() {
     </View>
   );
 }
+
+/** One story, full screen. Memoised: a new minute on the clock must not redraw every photo. */
+const StoryPage = memo(function StoryPage({
+  st,
+  height,
+  top,
+  bottom,
+  onListen,
+  onOpen,
+}: {
+  st: Story;
+  height: number;
+  top: number;
+  bottom: number;
+  onListen: (s: Story) => void;
+  onOpen: (s: Story) => void;
+}) {
+  return (
+    <View style={{ height }}>
+      {st.image ? (
+        <Image source={st.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors />
+      ) : (
+        <View style={[StyleSheet.absoluteFill, s.eatBg]}>
+          <MaterialCommunityIcons name="silverware-fork-knife" size={220} color="rgba(255,255,255,0.08)" style={s.eatIcon} />
+        </View>
+      )}
+      {/* darker at the top for the clock and at the bottom for the words: the photo stays in the middle */}
+      <LinearGradient colors={['rgba(8,11,30,0.6)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
+      <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.55)', 'rgba(8,11,30,0.92)']} locations={[0, 0.35, 1]} style={s.shadeBottom} pointerEvents="none" />
+      {st.kind === 'lens' && st.year ? <Text style={[s.year, { top: top + 70 }]}>{st.year}</Text> : null}
+
+      <View style={[s.words, { paddingBottom: bottom }]}>
+        <Text style={[s.eyebrow, st.here && s.eyebrowHere]} numberOfLines={1}>
+          {st.eyebrow}
+        </Text>
+        <Text style={s.title} accessibilityRole="header" numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.7}>
+          {st.name}
+        </Text>
+        <Text style={s.line} numberOfLines={3}>
+          {st.line}
+        </Text>
+        <View style={s.actions}>
+          {st.kind !== 'lens' ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('moment.go', { name: st.name })}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                openWalkingDirections(st);
+              }}
+              style={({ pressed }) => [s.primary, pressed && s.pressed]}
+            >
+              <MaterialCommunityIcons name="navigation-variant" size={20} color={colors.ink} />
+              <Text style={s.primaryText}>{t('story.go')}</Text>
+            </Pressable>
+          ) : null}
+          {st.place ? (
+            <Pressable accessibilityRole="button" accessibilityLabel={t('moment.listen')} onPress={() => onListen(st)} style={({ pressed }) => [s.round, pressed && s.pressed]}>
+              <MaterialCommunityIcons name="volume-high" size={22} color={colors.white} />
+            </Pressable>
+          ) : null}
+          <Pressable accessibilityRole="button" onPress={() => onOpen(st)} style={({ pressed }) => [s.ghost, pressed && s.pressed]}>
+            <Text style={s.ghostText} numberOfLines={1}>
+              {st.kind === 'lens' ? t('story.seeThen') : t('moment.more')}
+            </Text>
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
+});
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0E1330' },

@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 import { FlatList, Image, Pressable, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
 import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -12,7 +13,8 @@ import { t } from '../../src/i18n';
 import { colors, fonts, space } from '../../src/theme';
 
 /** Every old picture of every viewpoint, one per page: the city in the past, swiped sideways. */
-const PAGES = lensPoints.flatMap((l) => l.layers.filter((x) => x.image).map((layer) => ({ key: `${l.id}:${layer.key}`, point: l, layer })));
+type Page = { key: string; point: (typeof lensPoints)[number]; layer: (typeof lensPoints)[number]['layers'][number] };
+const PAGES: Page[] = lensPoints.flatMap((l) => l.layers.filter((x) => x.image).map((layer) => ({ key: `${l.id}:${layer.key}`, point: l, layer })));
 
 /**
  * Time Lens as a gallery: an old photograph or engraving fills the screen with its year, and one tap
@@ -21,6 +23,7 @@ const PAGES = lensPoints.flatMap((l) => l.layers.filter((x) => x.image).map((lay
 export default function LensGallery() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  useStatusBarOnFocus('light');
   const tabSpace = useTabBarSpace();
   const { width } = useWindowDimensions();
   const [height, setHeight] = useState(0);
@@ -34,6 +37,14 @@ export default function LensGallery() {
     });
   });
 
+  const compare = useCallback(
+    (id: string) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+      router.push(`/lens/${id}`);
+    },
+    [router],
+  );
+
   return (
     <View style={s.root} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
       {height > 0 ? (
@@ -45,36 +56,11 @@ export default function LensGallery() {
           showsHorizontalScrollIndicator={false}
           onViewableItemsChanged={onViewable}
           viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
-          renderItem={({ item }) => (
-            <View style={{ width, height }}>
-              <Image source={item.layer.image} style={s.photo} resizeMode={item.layer.kind === 'artwork' ? 'contain' : 'cover'} accessibilityLabel={item.layer.title} />
-              <LinearGradient colors={['rgba(8,11,30,0.55)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
-              <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.92)']} locations={[0, 0.6]} style={s.shadeBottom} pointerEvents="none" />
-              <View style={[s.words, { paddingBottom: space.l + tabSpace }]}>
-                <Text style={s.year}>{item.layer.year}</Text>
-                <Text style={s.name} numberOfLines={2}>
-                  {lensName(item.point)}
-                </Text>
-                <Text style={s.where} numberOfLines={2}>
-                  {lensWhere(item.point)}
-                </Text>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                    router.push(`/lens/${item.point.id}`);
-                  }}
-                  style={({ pressed }) => [s.cta, pressed && s.pressed]}
-                >
-                  <MaterialCommunityIcons name="camera-iris" size={22} color={colors.ink} />
-                  <Text style={s.ctaText}>{t('lensGallery.compare')}</Text>
-                </Pressable>
-                <Text style={s.credit} numberOfLines={1}>
-                  {item.layer.credit} · {item.layer.license}
-                </Text>
-              </View>
-            </View>
-          )}
+          getItemLayout={(_d, i) => ({ length: width, offset: width * i, index: i })}
+          windowSize={3}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
+          renderItem={({ item }) => <LensPage item={item} width={width} height={height} bottom={space.l + tabSpace} onCompare={compare} />}
         />
       ) : null}
       <View style={[s.head, { top: insets.top + space.s }]} pointerEvents="none">
@@ -86,6 +72,33 @@ export default function LensGallery() {
     </View>
   );
 }
+
+/** One old picture, full screen. Memoised: turning the page must not redraw the pictures beside it. */
+const LensPage = memo(function LensPage({ item, width, height, bottom, onCompare }: { item: Page; width: number; height: number; bottom: number; onCompare: (id: string) => void }) {
+  return (
+    <View style={{ width, height }}>
+      <Image source={item.layer.image} style={s.photo} resizeMode={item.layer.kind === 'artwork' ? 'contain' : 'cover'} accessibilityLabel={item.layer.title} />
+      <LinearGradient colors={['rgba(8,11,30,0.55)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
+      <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.92)']} locations={[0, 0.6]} style={s.shadeBottom} pointerEvents="none" />
+      <View style={[s.words, { paddingBottom: bottom }]}>
+        <Text style={s.year}>{item.layer.year}</Text>
+        <Text style={s.name} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
+          {lensName(item.point)}
+        </Text>
+        <Text style={s.where} numberOfLines={2}>
+          {lensWhere(item.point)}
+        </Text>
+        <Pressable accessibilityRole="button" onPress={() => onCompare(item.point.id)} style={({ pressed }) => [s.cta, pressed && s.pressed]}>
+          <MaterialCommunityIcons name="camera-iris" size={22} color={colors.ink} />
+          <Text style={s.ctaText}>{t('lensGallery.compare')}</Text>
+        </Pressable>
+        <Text style={s.credit} numberOfLines={1}>
+          {item.layer.credit} · {item.layer.license}
+        </Text>
+      </View>
+    </View>
+  );
+});
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0E1330' },

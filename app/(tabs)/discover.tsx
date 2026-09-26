@@ -58,7 +58,8 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <ScrollView style={s.root} contentContainerStyle={{ paddingTop: insets.top + space.m, paddingBottom: Math.max(insets.bottom, tabSpace) + space.xl }}>
+    <View style={s.root}>
+      <ScrollView style={s.root} contentContainerStyle={{ paddingTop: insets.top + space.m, paddingBottom: Math.max(insets.bottom, tabSpace) + space.xl }}>
       <View style={s.head}>
         <Text style={s.title} accessibilityRole="header">
           {t('discover.native.title')}
@@ -165,12 +166,16 @@ export default function DiscoverScreen() {
         </View>
         <MaterialCommunityIcons name="arrow-right" size={26} color={colors.white} />
       </Pressable>
-    </ScrollView>
+      </ScrollView>
+      {/* the page scrolls under the phone's clock: a strip of paper keeps the two apart */}
+      <View style={[s.statusStrip, { height: insets.top }]} pointerEvents="none" />
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  statusStrip: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.paper, opacity: 0.96 },
   pressed: { transform: [{ scale: 0.97 }] },
   fill: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.l },
