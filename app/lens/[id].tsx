@@ -1,9 +1,12 @@
 import { useCallback, useRef, useState } from 'react';
-import { Image, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useFocusEffect, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { FlatList, Image, Platform, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
+import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { Button, ScreenHeader } from '../../src/components/ui';
+import { ScreenHeader } from '../../src/components/ui';
 import { lensName, lensWhere } from '../../src/components/placeName';
 import { LensLayer, LensPoint, cameraProblem, firstShown, lensById } from '../../src/data/lens';
 import { openLink } from '../../src/lib/openLink';
@@ -69,9 +72,31 @@ function LensViewer({ point }: { point: LensPoint }) {
   const focusedRef = useRef(true);
 
   useReleaseCamera(focusedRef, setCameraWanted);
+  useStatusBarOnFocus('light');
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const { width, height: screenH } = useWindowDimensions();
+  // room for the back button, then the picture at about its own shape: an old photo is never cropped
+  const frameH = Math.round(Math.min(screenH * 0.62, insets.top + 56 + width * 0.8));
+  const pager = useRef<FlatList<{ key: string; label: string }>>(null);
 
   const current: LensLayer | undefined = photos.find((p) => p.key === shown);
   const choices = [...photos.map((p) => ({ key: p.key, label: p.year })), ...(today ? [{ key: 'today', label: t('lens.today') }] : [])];
+  const layerOf = (key: string): Pick<LensLayer, 'image' | 'title' | 'credit' | 'license' | 'sourceUrl'> | undefined => (key === 'today' ? today : photos.find((p) => p.key === key));
+  // the pictures are swiped like pages; the years under them follow, and a tap on a year turns the page
+  const [onViewable] = useState(() => ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+    const key = (viewableItems[0]?.item as { key: string } | undefined)?.key;
+    if (!key) return;
+    setShown((prev) => {
+      if (prev !== key) Haptics.selectionAsync().catch(() => {});
+      return key;
+    });
+  });
+  const pick = (key: string) => {
+    const i = choices.findIndex((c) => c.key === key);
+    if (i >= 0) pager.current?.scrollToIndex({ index: i, animated: true });
+    setShown(key);
+  };
   const cameraOn = cameraWanted && !!permission?.granted;
   const overlay = current ?? photos[0];
 
@@ -96,72 +121,69 @@ function LensViewer({ point }: { point: LensPoint }) {
     }
   };
 
+  const shownLayer = layerOf(shown) ?? current ?? today;
+  const startIndex = Math.max(0, choices.findIndex((c) => c.key === shown));
+
   return (
-    <SafeAreaView style={s.safe} edges={['top', 'bottom']}>
-      <ScrollView contentContainerStyle={s.scroll}>
-        <ScreenHeader title={lensName(point)} />
-        <View style={s.col}>
-          <Text style={s.where}>{t('lens.standAt', { where: lensWhere(point) })}</Text>
-
-          {choices.length ? (
-            <>
-              <View style={s.frame}>
-                {current ? (
-                  <Image source={current.image} style={s.picture} resizeMode="contain" accessibilityLabel={current.title} />
-                ) : today ? (
-                  <Image source={today.image} style={s.picture} resizeMode="contain" accessibilityLabel={today.title} />
-                ) : null}
-                <Text style={s.badge}>{current ? current.year : t('lens.today')}</Text>
-              </View>
-
-              {choices.length > 1 ? (
-                <>
-                  <Text style={s.hint}>{t('lens.tapYear')}</Text>
-                  <View style={s.years}>
-                    {choices.map((c) => {
-                      const on = c.key === shown;
-                      return (
-                        <Pressable
-                          key={c.key}
-                          accessibilityRole="button"
-                          accessibilityLabel={c.key === 'today' ? t('lens.today') : t('lens.photoFrom', { year: c.label })}
-                          aria-pressed={on}
-                          onPress={() => setShown(c.key)}
-                          style={StyleSheet.flatten([s.year, on && s.yearOn])}
-                        >
-                          <Text style={StyleSheet.flatten([s.yearText, on && s.yearTextOn])}>{c.label}</Text>
-                        </Pressable>
-                      );
-                    })}
+    <View style={s.root}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + space.xl }}>
+        {/* the pictures, the whole width of the phone: swipe through the years */}
+        {choices.length ? (
+          <View style={{ height: frameH, backgroundColor: '#000' }}>
+            <FlatList
+              ref={pager}
+              data={choices}
+              keyExtractor={(c) => c.key}
+              horizontal
+              pagingEnabled
+              showsHorizontalScrollIndicator={false}
+              initialScrollIndex={startIndex}
+              getItemLayout={(_d, i) => ({ length: width, offset: width * i, index: i })}
+              onViewableItemsChanged={onViewable}
+              viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
+              renderItem={({ item }) => {
+                const layer = layerOf(item.key);
+                return (
+                  <View style={{ width, height: frameH, paddingTop: insets.top + 56 }}>
+                    {layer ? <Image source={layer.image} style={s.fill} resizeMode="contain" accessibilityLabel={layer.title} /> : null}
                   </View>
-                </>
-              ) : null}
+                );
+              }}
+            />
+            <Text style={s.bigYear} pointerEvents="none">
+              {current ? current.year : t('lens.today')}
+            </Text>
+          </View>
+        ) : (
+          <View style={{ height: insets.top + 64 }} />
+        )}
 
-              {current ? (
-                <Credit title={current.title} credit={current.credit} license={current.license} url={current.sourceUrl} />
-              ) : today ? (
-                <Credit title={today.title} credit={today.credit} license={today.license} url={today.sourceUrl} />
-              ) : null}
-            </>
+        <View style={s.col}>
+          {choices.length > 1 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.years}>
+              {choices.map((c) => {
+                const on = c.key === shown;
+                return (
+                  <Pressable
+                    key={c.key}
+                    accessibilityRole="button"
+                    accessibilityLabel={c.key === 'today' ? t('lens.today') : t('lens.photoFrom', { year: c.label })}
+                    aria-pressed={on}
+                    onPress={() => pick(c.key)}
+                    style={({ pressed }) => [s.year, on && s.yearOn, pressed && s.pressed]}
+                  >
+                    <Text style={[s.yearText, on && s.yearTextOn]}>{c.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
           ) : null}
 
-          {artworks.length ? (
-            <View style={s.section}>
-              <Text style={s.h2} accessibilityRole="header">
-                {t('lens.artist')}
-              </Text>
-              <Text style={s.line}>{t('lens.artistLine')}</Text>
-              {artworks.map((a) => (
-                <View key={a.key} style={s.card}>
-                  <Image source={a.image} style={s.artwork} resizeMode="contain" accessibilityLabel={a.title} />
-                  <Text style={s.cardTitle}>
-                    {a.year} · {a.title}
-                  </Text>
-                  <Credit title={t('lens.source')} credit={a.credit} license={a.license} url={a.sourceUrl} />
-                </View>
-              ))}
-            </View>
-          ) : null}
+          <Text style={s.title} accessibilityRole="header">
+            {lensName(point)}
+          </Text>
+          <Text style={s.where}>{t('lens.standAt', { where: lensWhere(point) })}</Text>
+          {shownLayer ? <Credit title={shownLayer.title} credit={shownLayer.credit} license={shownLayer.license} url={shownLayer.sourceUrl} /> : null}
 
           {overlay ? (
             <View style={s.section}>
@@ -185,83 +207,100 @@ function LensViewer({ point }: { point: LensPoint }) {
                     ) : null}
                   </View>
                   <View style={s.row}>
-                    <Button
-                      label={showOld ? t('lens.hideOld') : t('lens.showOld')}
-                      kind="quiet"
-                      onPress={() => setShowOld((v) => !v)}
-                      style={s.grow}
-                    />
-                    <Button label={t('lens.stopCamera')} kind="quiet" onPress={() => setCameraWanted(false)} style={s.grow} />
+                    <Pressable accessibilityRole="button" onPress={() => setShowOld((v) => !v)} style={({ pressed }) => [s.ghost, pressed && s.pressed]}>
+                      <Text style={s.ghostText}>{showOld ? t('lens.hideOld') : t('lens.showOld')}</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" onPress={() => setCameraWanted(false)} style={({ pressed }) => [s.ghost, pressed && s.pressed]}>
+                      <Text style={s.ghostText}>{t('lens.stopCamera')}</Text>
+                    </Pressable>
                   </View>
                   <Text style={s.credit}>{t('lens.live')}</Text>
                 </>
               ) : (
-                <Button label={t('lens.compare')} onPress={startCamera} />
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+                    startCamera();
+                  }}
+                  style={({ pressed }) => [s.cta, pressed && s.pressed]}
+                >
+                  <MaterialCommunityIcons name="camera-iris" size={22} color={colors.ink} />
+                  <Text style={s.ctaText}>{t('lens.compare')}</Text>
+                </Pressable>
               )}
               {cameraError ? (
                 <Text style={s.error} accessibilityLiveRegion="polite">
                   {cameraError}
                 </Text>
               ) : null}
-              {permission && !permission.granted && !permission.canAskAgain ? (
-                <Text style={s.credit}>{t('lens.off')}</Text>
-              ) : null}
+              {permission && !permission.granted && !permission.canAskAgain ? <Text style={s.credit}>{t('lens.off')}</Text> : null}
+            </View>
+          ) : null}
+
+          {artworks.length ? (
+            <View style={s.section}>
+              <Text style={s.h2} accessibilityRole="header">
+                {t('lens.artist')}
+              </Text>
+              <Text style={s.line}>{t('lens.artistLine')}</Text>
+              {artworks.map((a) => (
+                <View key={a.key} style={s.card}>
+                  <Image source={a.image} style={s.artwork} resizeMode="contain" accessibilityLabel={a.title} />
+                  <Text style={s.cardTitle}>
+                    {a.year} · {a.title}
+                  </Text>
+                  <Credit title={t('lens.source')} credit={a.credit} license={a.license} url={a.sourceUrl} />
+                </View>
+              ))}
             </View>
           ) : null}
         </View>
       </ScrollView>
-    </SafeAreaView>
+
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={t('ui.back')}
+        onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
+        hitSlop={8}
+        style={({ pressed }) => [s.back, { top: insets.top + 6 }, pressed && s.pressed]}
+      >
+        <MaterialCommunityIcons name="chevron-left" size={30} color={colors.white} />
+      </Pressable>
+    </View>
   );
 }
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
-  scroll: { paddingBottom: space.xl },
-  col: { width: '100%', maxWidth: 620, alignSelf: 'center', paddingHorizontal: space.m, gap: space.m },
-  where: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
-  frame: { width: '100%', aspectRatio: 4 / 3, backgroundColor: colors.ink, borderRadius: 14, overflow: 'hidden' },
-  picture: { width: '100%', height: '100%' },
-  badge: {
-    position: 'absolute',
-    top: space.s,
-    left: space.s,
-    fontFamily: fonts.bodyBold,
-    fontSize: 18,
-    color: colors.onScrim,
-    backgroundColor: colors.scrim,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  hint: { fontFamily: fonts.body, fontSize: 16, color: colors.mute },
-  years: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s },
-  year: {
-    minHeight: 56,
-    minWidth: 96,
-    paddingHorizontal: 18,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: colors.ink,
-    backgroundColor: colors.paper,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  yearOn: { backgroundColor: colors.ink },
-  yearText: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
-  yearTextOn: { color: colors.white },
-  credit: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute },
-  section: { gap: space.s, marginTop: space.m },
-  h2: { fontFamily: fonts.bodyBold, fontSize: 22, color: colors.ink },
-  line: { fontFamily: fonts.body, fontSize: 16, lineHeight: 23, color: colors.ink },
-  card: { backgroundColor: colors.paper, borderRadius: 14, borderWidth: 1, borderColor: colors.line, padding: space.s, gap: 6 },
+  root: { flex: 1, backgroundColor: '#0E1330' },
+  fill: { width: '100%', height: '100%' },
+  pressed: { transform: [{ scale: 0.97 }], opacity: 0.92 },
+  bigYear: { position: 'absolute', left: space.l, bottom: space.m, fontFamily: fonts.display, fontSize: 72, lineHeight: 76, color: colors.white, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 12 },
+  col: { width: '100%', maxWidth: 620, alignSelf: 'center', paddingHorizontal: space.l, gap: space.m, marginTop: space.m },
+  title: { fontFamily: fonts.display, fontSize: 36, lineHeight: 40, color: colors.white, marginTop: space.s },
+  where: { fontFamily: fonts.body, fontSize: 17, lineHeight: 24, color: 'rgba(255,255,255,0.85)' },
+  years: { gap: space.s },
+  year: { minHeight: 48, minWidth: 84, paddingHorizontal: 18, borderRadius: 24, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.5)', alignItems: 'center', justifyContent: 'center' },
+  yearOn: { backgroundColor: colors.white, borderColor: colors.white },
+  yearText: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.white },
+  yearTextOn: { color: colors.ink },
+  credit: { fontFamily: fonts.body, fontSize: 13, lineHeight: 19, color: 'rgba(255,255,255,0.6)' },
+  section: { gap: space.s, marginTop: space.l },
+  h2: { fontFamily: fonts.display, fontSize: 28, color: colors.white },
+  line: { fontFamily: fonts.body, fontSize: 16, lineHeight: 23, color: 'rgba(255,255,255,0.85)' },
+  card: { backgroundColor: colors.paper, borderRadius: 20, padding: space.s, gap: 6 },
   // the card's own colour behind the letterbox, so an engraving doesn't sit in a grey box
-  artwork: { width: '100%', aspectRatio: 4 / 3, backgroundColor: colors.paper, borderRadius: 10 },
+  artwork: { width: '100%', aspectRatio: 4 / 3, backgroundColor: colors.paper, borderRadius: 14 },
   cardTitle: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
-  cameraBox: { width: '100%', aspectRatio: 3 / 4, maxHeight: 520, backgroundColor: colors.ink, borderRadius: 14, overflow: 'hidden' },
+  cameraBox: { width: '100%', aspectRatio: 3 / 4, maxHeight: 520, backgroundColor: '#000', borderRadius: 20, overflow: 'hidden' },
   cameraOverlay: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0.55 },
-  error: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.brick },
+  cta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 56, borderRadius: 28, backgroundColor: colors.white },
+  ctaText: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
+  ghost: { flexGrow: 1, minHeight: 48, paddingHorizontal: 16, borderRadius: 24, borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' },
+  ghostText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.white },
+  error: { fontFamily: fonts.bodyBold, fontSize: 16, color: '#FF9A8A' },
   row: { flexDirection: 'row', gap: space.s, flexWrap: 'wrap' },
-  grow: { flexGrow: 1, paddingHorizontal: 8 },
+  back: { position: 'absolute', left: space.m, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(14,19,48,0.6)' },
   empty: { fontFamily: fonts.body, fontSize: 17, color: colors.ink, padding: space.m },
 });
