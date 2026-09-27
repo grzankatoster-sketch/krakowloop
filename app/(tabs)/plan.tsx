@@ -4,7 +4,7 @@ import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
+import { useTabBarSpace, WEB_TABS_TOP } from '../../src/lib/useTabBarSpace';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
 import LoopMap from '../../src/components/LoopMap';
@@ -313,7 +313,7 @@ export default function PlanScreen() {
   const result = hasPlan && !editing && day && options;
 
   return (
-    <SafeAreaView style={s.safe} edges={['top']}>
+    <SafeAreaView style={[s.safe, { paddingTop: WEB_TABS_TOP }]} edges={['top']}>
       <Text style={s.bigTitle} accessibilityRole="header">
         {hasPlan && !editing ? t('plan.native.yours') : t('plan.native.title')}
       </Text>

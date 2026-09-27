@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
+import { useTabBarSpace, useTopSpace } from '../../src/lib/useTabBarSpace';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -25,6 +25,10 @@ const RYNEK = { lat: CITY.mapCentre.lat, lon: CITY.mapCentre.lon };
 const COUNTS = cuisineCounts();
 const CUISINES = topCuisines(COUNTS, 8);
 const TILE_COLORS = [colors.brick, colors.gilt, colors.patina, colors.vistula, colors.night, colors.ink];
+const MORE = [
+  { href: '/trips', image: PLACE_MEDIA.wieliczka?.image, title: 'home.trips.title', line: 'home.tripsLine' },
+  { href: '/city', image: PLACE_MEDIA['wawel-cathedral']?.image, title: 'home.knownFor', line: 'home.knownForLine' },
+] as const;
 type Icon = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 const KIND_ICON: Record<string, Icon> = { extreme: 'lightning-bolt', sightseeing: 'binoculars', food: 'silverware-fork-knife', water: 'waves', night: 'glass-cocktail' };
 
@@ -43,6 +47,7 @@ export default function DiscoverScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const tabSpace = useTabBarSpace();
+  const topSpace = useTopSpace();
   const { width } = useWindowDimensions();
   const tileW = (width - space.l * 2 - space.s) / 2;
 
@@ -59,7 +64,7 @@ export default function DiscoverScreen() {
 
   return (
     <View style={s.root}>
-      <ScrollView style={s.root} contentContainerStyle={{ paddingTop: insets.top + space.m, paddingBottom: Math.max(insets.bottom, tabSpace) + space.xl }}>
+      <ScrollView style={s.root} contentContainerStyle={{ paddingTop: topSpace + space.m, paddingBottom: Math.max(insets.bottom, tabSpace) + space.xl }}>
       <View style={s.head}>
         <Text style={s.title} accessibilityRole="header">
           {t('discover.native.title')}
@@ -166,9 +171,32 @@ export default function DiscoverScreen() {
         </View>
         <MaterialCommunityIcons name="arrow-right" size={26} color={colors.white} />
       </Pressable>
+
+        {/* the rest of the city: day trips, what Kraków is known for, and where every fact comes from */}
+        <Text style={s.eyebrow}>{t('home.more')}</Text>
+        {MORE.map((m) => (
+          <Pressable
+            key={m.href}
+            accessibilityRole="link"
+            accessibilityLabel={`${t(m.title)}. ${t(m.line)}`}
+            onPress={() => go(m.href)}
+            style={({ pressed }) => [s.moreCard, pressed && s.pressed]}
+          >
+            {m.image ? <Image source={m.image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
+            <LinearGradient colors={['rgba(8,11,30,0.05)', 'rgba(8,11,30,0.85)']} style={s.fill} />
+            <Text style={s.moreTitle}>{t(m.title)}</Text>
+            <Text style={s.moreLine} numberOfLines={2}>
+              {t(m.line)}
+            </Text>
+          </Pressable>
+        ))}
+        <Pressable accessibilityRole="link" onPress={() => go('/about')} style={s.about}>
+          <MaterialCommunityIcons name="information-outline" size={20} color={colors.ink} />
+          <Text style={s.moreText}>{t('home.about')}</Text>
+        </Pressable>
       </ScrollView>
       {/* the page scrolls under the phone's clock: a strip of paper keeps the two apart */}
-      <View style={[s.statusStrip, { height: insets.top }]} pointerEvents="none" />
+      <View style={[s.statusStrip, { height: topSpace }]} pointerEvents="none" />
     </View>
   );
 }
@@ -228,6 +256,10 @@ const s = StyleSheet.create({
     backgroundColor: colors.vistula,
   },
   stayWords: { flex: 1, gap: 4 },
+  moreCard: { height: 200, marginHorizontal: space.l, marginTop: space.m, borderRadius: 24, overflow: 'hidden', justifyContent: 'flex-end', padding: space.l, backgroundColor: colors.ink },
+  moreTitle: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.white },
+  moreLine: { fontFamily: fonts.body, fontSize: 15, lineHeight: 20, color: 'rgba(255,255,255,0.88)', marginTop: 4 },
+  about: { flexDirection: 'row', alignItems: 'center', gap: 8, alignSelf: 'flex-start', marginHorizontal: space.l, marginTop: space.l, minHeight: 44 },
   stayTitle: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.white },
   stayLine: { fontFamily: fonts.body, fontSize: 15, color: 'rgba(255,255,255,0.9)' },
 });

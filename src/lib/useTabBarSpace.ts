@@ -10,3 +10,11 @@ export function useTabBarSpace(): number {
   const insets = useSafeAreaInsets();
   return Platform.OS === 'ios' ? insets.bottom + 58 : 0;
 }
+
+/** On the web the tabs float over the top of the page (y 24–64): what a tab screen keeps clear there. */
+export const WEB_TABS_TOP = Platform.OS === 'web' ? 72 : 0;
+
+/** The top of a tab screen that is free to use: under the phone's clock, and under the web's tabs. */
+export function useTopSpace(): number {
+  return useSafeAreaInsets().top + WEB_TABS_TOP;
+}

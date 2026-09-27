@@ -1,9 +1,8 @@
 import { memo, useCallback, useState } from 'react';
 import { FlatList, Image, Pressable, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
-import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
+import { useTabBarSpace, useTopSpace } from '../../src/lib/useTabBarSpace';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -22,9 +21,9 @@ const PAGES: Page[] = lensPoints.flatMap((l) => l.layers.filter((x) => x.image).
  */
 export default function LensGallery() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   useStatusBarOnFocus('light');
   const tabSpace = useTabBarSpace();
+  const topSpace = useTopSpace();
   const { width } = useWindowDimensions();
   const [height, setHeight] = useState(0);
   const [page, setPage] = useState(0);
@@ -63,7 +62,7 @@ export default function LensGallery() {
           renderItem={({ item }) => <LensPage item={item} width={width} height={height} bottom={space.l + tabSpace} onCompare={compare} />}
         />
       ) : null}
-      <View style={[s.head, { top: insets.top + space.s }]} pointerEvents="none">
+      <View style={[s.head, { top: topSpace + space.s }]} pointerEvents="none">
         <Text style={s.title}>{t('lens.title')}</Text>
         <Text style={s.count}>
           {Math.min(page + 1, PAGES.length)} / {PAGES.length}

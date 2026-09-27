@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { Page, expect, test } from '@playwright/test';
 
+// The welcome shows once, on the first launch: every test starts as a traveller who has seen it.
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('kl.welcome.v1', '1'));
+});
+
 /**
  * Exact Directions answers only reach the app when the build has a Mapbox token. Expo takes it from
  * the environment first and from .env otherwise: check both the same way, with or without quotes.
@@ -96,35 +101,36 @@ async function openDrawer(page: Page, path = '/map') {
   await page.getByRole('button', { name: 'Show more of the list' }).click();
 }
 
+/** Scrolls a control to the middle of the screen first: the place page keeps a bar over its bottom edge. */
+async function tapClear(target: ReturnType<Page['getByRole']>) {
+  await target.evaluate((el) => el.scrollIntoView({ block: 'center' }));
+  await target.click();
+}
+
 async function openPlaceFromList(page: Page, name: RegExp) {
   await openDrawer(page);
   await page.getByRole('button', { name }).first().click();
 }
 
 test.describe('home', () => {
-  test('says where you are, what the city is and what the app does, with one thing to tap', async ({ page }) => {
+  test('opens on stories of what is near now, with the wish and the map one tap away', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText('KrakowLoop · Kraków, Poland')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Kraków, at your pace', level: 1 })).toBeVisible();
-    await expect(page.getByRole('img', { name: 'The Main Square in Kraków with the Cloth Hall, seen from above' })).toBeVisible();
-    await expect(page.getByText('Poland’s royal capital for five centuries', { exact: false })).toBeVisible();
-    // four doors into Discover on the first screen, then the plan and the rest
-    for (const door of [/^See\. /, /^Eat\. /, /^Do\. /, /^Stay\. /]) await expect(page.getByRole('link', { name: door })).toBeVisible();
-    for (const name of [/^Plan my days\./, /^Kraków in the past\./, /^Day trips\./, /^What Kraków is known for\./]) {
-      await expect(page.getByRole('link', { name })).toBeAttached();
-    }
-    await page.getByRole('link', { name: /^Eat\. / }).click();
-    await expect(page).toHaveURL(/\/map\?mode=eat$/);
-    await expect(page.getByRole('tab', { name: 'Eat', exact: true })).toHaveAttribute('aria-selected', 'true');
-    await page.getByRole('tab', { name: 'Home', exact: true }).click();
-    await page.getByRole('link', { name: /^Plan my days\./ }).click();
-    await expect(page).toHaveURL(/\/plan$/);
-    await page.getByRole('tab', { name: 'Discover', exact: true }).click();
+    await expect(page.getByText(/^KRAKÓW · \d\d:\d\d$/)).toBeVisible();
+    await expect(page.getByText('Around the Main Square')).toBeVisible();
+    // a story: its name as a heading, and the walk to it as the first thing to tap
+    await expect(page.getByRole('heading').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Walk to / }).first()).toBeVisible();
+    // the Time Lens tab counts its pages the same way and stays mounted underneath on the web
+    await expect(page.getByText(/^1 \/ \d+$/).filter({ visible: true }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Open the map' }).click();
     await expect(page).toHaveURL(/\/map/);
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Say what you would like' }).click();
+    await expect(page).toHaveURL(/\/wish$/);
   });
 
   test('"What Kraków is known for" tells seven things, with sources', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/discover');
     await page.getByRole('link', { name: /^What Kraków is known for\./ }).click();
     await expect(page).toHaveURL(/\/city$/);
     for (const name of ['The royal city', 'World Heritage since 1978', 'The hejnał', 'The Wawel dragon', 'Jewish Kazimierz', 'Obwarzanek', 'Christmas cribs']) {
@@ -134,7 +140,7 @@ test.describe('home', () => {
   });
 
   test('links to sources and privacy', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/discover');
     await page.getByRole('link', { name: 'About, sources and privacy' }).click();
     await expect(page.getByText('KrakowLoop has no accounts and no analytics.', { exact: false })).toBeVisible();
   });
@@ -146,12 +152,12 @@ test.describe('language from the phone', () => {
     test.use({ locale: 'de-DE' });
     test('shows the app in German without any language buttons', async ({ page }) => {
       await page.goto('/');
-      await expect(page.getByRole('heading', { name: 'Krakau, in Ihrem Tempo' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Sag, worauf du Lust hast' })).toBeVisible();
       await expect(page.locator('html')).toHaveAttribute('lang', 'de');
       await page.getByRole('tab', { name: 'Mein Plan', exact: true }).click();
-      await expect(page.getByRole('button', { name: 'Plan erstellen' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Deine Tage in Krakau' })).toBeVisible();
       await page.getByRole('tab', { name: 'Entdecken', exact: true }).click();
-      await expect(page.getByLabel('Schreib, was du essen oder unternehmen möchtest')).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Entdecken' })).toBeVisible();
     });
   });
 
@@ -159,8 +165,9 @@ test.describe('language from the phone', () => {
     test.use({ locale: 'pl-PL' });
     test('shows the app in Polish', async ({ page }) => {
       await page.goto('/');
-      await expect(page.getByRole('heading', { name: 'Kraków w Twoim tempie' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Powiedz, na co masz ochotę' })).toBeVisible();
       await expect(page.getByRole('tab', { name: 'Mój plan', exact: true })).toBeVisible();
+      await expect(page.getByRole('tab', { name: 'Odkrywaj', exact: true })).toBeVisible();
     });
   });
 
@@ -168,7 +175,7 @@ test.describe('language from the phone', () => {
     test.use({ locale: 'ja-JP' });
     test('falls back to English', async ({ page }) => {
       await page.goto('/');
-      await expect(page.getByRole('heading', { name: 'Kraków, at your pace' })).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Say what you would like' })).toBeVisible();
     });
   });
 });
@@ -180,8 +187,9 @@ test.describe('map', () => {
     await expect.poll(async () => (await mapState(page)).ready, { timeout: 30_000 }).toBe(true);
     // the data reached the map…
     await expect.poll(async () => (await mapState(page)).points).toBeGreaterThan(40);
-    // …and pins were really drawn in view, the Main Square among them
-    await expect.poll(async () => renderedPins(page), { timeout: 20_000 }).toEqual(expect.arrayContaining(['cloth-hall']));
+    // …and pins were really drawn in view, the Main Square among them (the Cloth Hall stands on it
+    // and can give way to the square's own pin when the two would overlap)
+    await expect.poll(async () => (await renderedPins(page)).some((id) => id === 'cloth-hall' || id === 'main-square'), { timeout: 20_000 }).toBe(true);
     // the first view is close to the Main Square: only the pins around it are in view
     expect((await renderedPins(page)).length).toBeGreaterThan(3);
     await expect(page.getByText('The map didn’t load')).toHaveCount(0);
@@ -288,7 +296,8 @@ test.describe('map', () => {
 
   test('the do door lists activities and the stay door offers rooms', async ({ page }) => {
     await openDrawer(page, '/map?mode=do');
-    await expect(page.getByText('Shooting range')).toBeVisible();
+    // the Discover tab stays mounted underneath on the web: only the visible list counts
+    await expect(page.getByText('Shooting range').filter({ visible: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Dates and prices on GetYourGuide' }).first()).toBeVisible();
     await page.getByRole('tab', { name: 'Stay', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Check prices and free rooms' })).toBeVisible();
@@ -337,9 +346,10 @@ test.describe('map', () => {
 test.describe('planner', () => {
   test('a wish written in the traveller’s own words sets the plan up', async ({ page }) => {
     await page.goto('/plan');
+    await page.getByRole('button', { name: 'Set the details first' }).click();
     await page.getByLabel('Tell us what you would like').fill('two calm days, quads and a shooting range, good dinners, we do not want to walk much');
-    // with no proxy set up, the phone reads it; nothing leaves the app
-    await expect(page.getByText('Read on your phone, nothing is sent anywhere.')).toBeVisible();
+    // the note says who reads it: the phone, or (with a proxy in .env) the language model behind it
+    await expect(page.getByText(/^Read on your phone, nothing is sent anywhere\.$|^Your words go to our server/)).toBeVisible();
     await page.getByRole('button', { name: 'Read my wish' }).click();
     await expect(page.getByText('Read. The choices below were set from it', { exact: false })).toBeVisible();
     await expect(page.getByRole('button', { name: '2 days' })).toHaveAttribute('aria-pressed', 'true');
@@ -353,12 +363,14 @@ test.describe('planner', () => {
     await expect(page).toHaveURL(/acts=[^&]*1(%3A|:)shooting/);
     // the activities asked for wait in the day, and a place to eat is in the stops
     await expect(page.getByRole('heading', { name: 'To arrange for this day' })).toBeVisible();
-    await expect(page.getByText('Shooting range')).toBeVisible();
-    await expect(page.getByText('Quad biking off-road')).toBeVisible();
+    // the Discover tab lists the same activities and stays mounted underneath on the web
+    await expect(page.getByText('Shooting range').filter({ visible: true }).first()).toBeVisible();
+    await expect(page.getByText('Quad biking off-road').filter({ visible: true }).first()).toBeVisible();
   });
 
   test('a wish the app cannot read changes nothing and says so', async ({ page }) => {
     await page.goto('/plan');
+    await page.getByRole('button', { name: 'Set the details first' }).click();
     await page.getByLabel('Tell us what you would like').fill('surprise me completely');
     await page.getByRole('button', { name: 'Read my wish' }).click();
     await expect(page.getByText('Nothing in there matched what the app can do. Choose below instead.')).toBeVisible();
@@ -367,7 +379,7 @@ test.describe('planner', () => {
 
   test('"Show me another plan" gives different days, and the link keeps them', async ({ page }) => {
     await page.goto('/plan?days=2&pace=steady&likes=history&trips=0');
-    const stopNames = () => page.locator('a[href^="/place/"]').allTextContents();
+    const stopNames = async () => Promise.all((await page.getByRole('link', { name: /^Open / }).all()).map((l) => l.getAttribute('aria-label')));
     await expect(page.getByRole('button', { name: 'Show me another plan' })).toBeVisible();
     const before = (await stopNames()).join('|');
     let after = before;
@@ -471,6 +483,7 @@ test.describe('planner', () => {
 
   test('building a plan from the form puts it in the URL', async ({ page }) => {
     await page.goto('/plan');
+    await page.getByRole('button', { name: 'Set the details first' }).click();
     await page.getByRole('button', { name: '1 day' }).click();
     await page.getByRole('button', { name: 'Build my plan' }).click();
     await expect(page).toHaveURL(/days=1/);
@@ -479,6 +492,7 @@ test.describe('planner', () => {
 
   test('a copied share link opens the same plan', async ({ browser }) => {
     const context = await browser.newContext({ permissions: ['clipboard-read', 'clipboard-write'] });
+    await context.addInitScript(() => localStorage.setItem('kl.welcome.v1', '1'));
     const page = await context.newPage();
     await page.addInitScript(() => {
       Object.defineProperty(navigator, 'share', { value: undefined, configurable: true });
@@ -541,7 +555,7 @@ test.describe('place page', () => {
       }) as typeof window.open;
     });
     await page.goto('/place/barbican');
-    await page.getByRole('button', { name: 'Walk here', exact: true }).click();
+    await page.getByRole('button', { name: 'Walk to Barbican', exact: true }).click();
     await expect.poll(() => page.evaluate(() => (window as unknown as { __opened: string[] }).__opened)).toHaveLength(1);
     const url = new URL(await page.evaluate(() => (window as unknown as { __opened: string[] }).__opened[0]));
     // a desktop test browser is not an iPhone, so Google Maps
@@ -553,16 +567,17 @@ test.describe('place page', () => {
   test('the route on the place page map: shown, and gone again after a failed retry', async ({ browser }) => {
     test.skip(!HAS_MAPBOX_TOKEN, 'needs a Mapbox token in .env: without one the app never asks for a route');
     const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
+    await context.addInitScript(() => localStorage.setItem('kl.welcome.v1', '1'));
     const page = await context.newPage();
     const requests = await answerDirections(page);
     await page.goto('/place/barbican');
-    await page.getByRole('button', { name: 'Show the route on this map' }).click();
+    await tapClear(page.getByRole('button', { name: 'Show the route on this map' }));
     await expect(page.getByText('10 min walk · 850 m', { exact: true })).toBeVisible({ timeout: 30_000 });
     expect(requests[0]).toContain('/walking/19.93730,50.06170;19.94163,50.06546');
     await expectRouteLine(page, true);
     // location access is taken away and the traveller tries again: the old route must not stay
     await context.clearPermissions();
-    await page.getByRole('button', { name: 'Show the route on this map' }).click();
+    await tapClear(page.getByRole('button', { name: 'Show the route on this map' }));
     await expect(page.getByText(/Location access|Your location could not be found/).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('10 min walk · 850 m', { exact: true })).toHaveCount(0);
     await expectRouteLine(page, false);
@@ -571,6 +586,7 @@ test.describe('place page', () => {
 
   test('walk here on the place page falls back to an estimate when routing fails', async ({ browser }) => {
     const context = await browser.newContext({ geolocation: IN_KRAKOW, permissions: ['geolocation'] });
+    await context.addInitScript(() => localStorage.setItem('kl.welcome.v1', '1'));
     const page = await context.newPage();
     let aborted = 0;
     await page.route(DIRECTIONS, (route) => {
@@ -578,7 +594,7 @@ test.describe('place page', () => {
       return route.abort();
     });
     await page.goto('/place/barbican');
-    await page.getByRole('button', { name: 'Show the route on this map' }).click();
+    await tapClear(page.getByRole('button', { name: 'Show the route on this map' }));
     await expect(page.getByText(/\d+ min walk · .+ \(estimate\)/)).toBeVisible({ timeout: 30_000 });
     if (HAS_MAPBOX_TOKEN) expect(aborted).toBe(1);
     await context.close();
@@ -586,10 +602,11 @@ test.describe('place page', () => {
 
   test('the route from outside Kraków is not drawn, and says why', async ({ browser }) => {
     const context = await browser.newContext({ geolocation: IN_WARSAW, permissions: ['geolocation'] });
+    await context.addInitScript(() => localStorage.setItem('kl.welcome.v1', '1'));
     const page = await context.newPage();
     const requests = await answerDirections(page);
     await page.goto('/place/barbican');
-    await page.getByRole('button', { name: 'Show the route on this map' }).click();
+    await tapClear(page.getByRole('button', { name: 'Show the route on this map' }));
     await expect(page.getByText('You seem to be outside Kraków, so there is no walking route to show.')).toBeVisible();
     expect(requests).toHaveLength(0);
     await context.close();
@@ -620,7 +637,7 @@ test.describe('place page', () => {
 
 test.describe('day trips', () => {
   test('lists trips with road time and opens their place page', async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/discover');
     await page.getByRole('link', { name: /^Day trips\./ }).click();
     await expect(page).toHaveURL(/\/trips$/);
     await expect(page.getByText(/^About \d+( h)?( \d+)? min each way|^About \d+ h each way/).first()).toBeVisible();
@@ -688,6 +705,7 @@ test.describe('open now', () => {
 
   test('a phone still on New York time sees Kraków hours', async ({ browser }) => {
     const context = await browser.newContext({ timezoneId: 'America/New_York' });
+    await context.addInitScript(() => localStorage.setItem('kl.welcome.v1', '1'));
     const page = await context.newPage();
     // 18:20 in Kraków is 12:20 in New York: the museum closed 20 minutes ago
     await page.clock.setFixedTime(new Date('2026-10-13T18:20:00+02:00'));
@@ -762,6 +780,7 @@ test.describe('Time Lens', () => {
 
   test('engravings are shown as artist views, and a refused camera is explained', async ({ browser }) => {
     const context = await browser.newContext({ permissions: [] });
+    await context.addInitScript(() => localStorage.setItem('kl.welcome.v1', '1'));
     const page = await context.newPage();
     await page.goto('/lens/wawel');
     await expect(page.getByRole('heading', { name: 'Artist’s views' })).toBeVisible();

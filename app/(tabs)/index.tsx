@@ -2,9 +2,8 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Image, ImageSourcePropType, Pressable, StyleSheet, Text, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
-import { useTabBarSpace } from '../../src/lib/useTabBarSpace';
+import { useTabBarSpace, useTopSpace } from '../../src/lib/useTabBarSpace';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
@@ -88,9 +87,9 @@ function storySources(): (MomentSource & { image?: ImageSourcePropType; line: st
 
 export default function TodayScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   useStatusBarOnFocus('light');
   const tabSpace = useTabBarSpace();
+  const topSpace = useTopSpace();
   const live = useLiveLocation();
   // The order of the stories must not change under the finger: GPS ticks every ~20 m, so the stories
   // are sorted from an anchor that only moves after a real walk (the walking times stay close enough).
@@ -208,12 +207,12 @@ export default function TodayScreen() {
           initialNumToRender={1}
           maxToRenderPerBatch={2}
 
-          renderItem={({ item }) => <StoryPage st={item} height={height} top={insets.top} bottom={110 + tabSpace} onListen={listen} onOpen={open} />}
+          renderItem={({ item }) => <StoryPage st={item} height={height} top={topSpace} bottom={110 + tabSpace} onListen={listen} onOpen={open} />}
         />
       ) : null}
 
       {/* over every story: the time, how far down the stories are, and the way to the map */}
-      <View style={[s.head, { top: insets.top + space.s }]} pointerEvents="box-none">
+      <View style={[s.head, { top: topSpace + space.s }]} pointerEvents="box-none">
         <View>
           <Text style={s.brand}>KRAKÓW · {clock}</Text>
           <Text style={s.where}>{live.here ? t('moment.nearYou') : t('moment.nearRynek')}</Text>
@@ -236,7 +235,7 @@ export default function TodayScreen() {
           </Pressable>
         </View>
       </View>
-      <View style={[s.progress, { top: insets.top + space.s + 58 }]} pointerEvents="none">
+      <View style={[s.progress, { top: topSpace + space.s + 58 }]} pointerEvents="none">
         <Text style={s.count}>
           {stories.length ? `${Math.min(page + 1, stories.length)} / ${stories.length}` : ''}
         </Text>
