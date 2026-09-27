@@ -6,16 +6,17 @@ Town Hall ("then") and without it ("today"), for the Time Lens comparison.
 Run (no window):
   "C:/Program Files/Blender Foundation/Blender 5.2/blender.exe" -b -P scripts/3d/render-rynek-1800.py -- <out dir> [samples]
 
-What is known and used (sources in the app's credits):
-  - Town Hall: stone and brick, rectangle 30 x 10 m, perpendicular to the Cloth Hall, in the
-    south-western part of the square; the tower adjoined it on the south-east; three storeys;
-    stepped, blind-arched gables with pinnacles; octagonal turrets on the western corners; an arcaded
-    loggia on the eastern corner. Demolished 1820 (the tower stayed). pl.wikipedia.org/wiki/Ratusz_w_Krakowie,
-    medievalheritage.eu (after M. Kowalski and P. Opaliński, Historical Museum of Kraków);
-    position after the city plan by Dominik Pucek, 1787.
-  - Everything else: GUGiK LoD2 3D buildings, 2017 (CC BY 4.0) = today's massing.
-What is NOT known and is only suggested: exact heights, the gables' exact drawing, window rhythm,
-colours. The picture is labelled in the app as a reconstruction, not a view.
+What is known and used (Wikimedia Commons, public domain; copies and licences in
+02_dane/media_pd/ratusz/sources.json):
+  - the ground plan "Rzuty poziome" (Tab. I, before 1900): the parts of the complex and where they stand;
+  - Karol Balicki's elevations (1851): the north block's Renaissance attic with round blind arches and a
+    crest of pinnacles, oval windows under it, three rows of windows; the Gothic wing's stepped gable;
+  - F. C. Dietrich, view of the square and the Town Hall (1820): the hipped roof, the arcaded porch;
+  - M. Stachowicz, Kościuszko's Oath (1797): colours (grey block, red brick wing, red roofs);
+  - pl.wikipedia.org/wiki/Ratusz_w_Krakowie: demolished 1820, the tower kept.
+  Today's buildings: GUGiK LoD2 3D buildings, 2017 (CC BY 4.0).
+NOT known, only suggested: the plan has no scale bar (its tower is taken as 10 m wide), exact heights,
+window counts, colours of each part. Labelled in the app as a reconstruction, not a view.
 """
 import math
 import sys
@@ -165,7 +166,7 @@ STONE = material("stone", (0.70, 0.66, 0.58))
 CLOTH = material("cloth hall", (0.84, 0.76, 0.60))
 COBBLE = node_material("square", cobble_graph, 0.95)
 COPPER = material("copper", (0.25, 0.42, 0.36), 0.6)
-WINDOW = material("window", (0.03, 0.03, 0.04), 0.3)
+WINDOW = material("window", (0.03, 0.03, 0.04), 0.9)
 
 # today's buildings
 bpy.ops.import_scene.gltf(filepath=GLB)
@@ -183,16 +184,21 @@ bpy.ops.mesh.primitive_plane_add(size=900, location=(0, 0, 0))
 bpy.context.object.data.materials.append(COBBLE)
 
 # ---------------------------------------------------------------- the Town Hall, around 1800
-# axes measured on the GUGiK outlines: the Cloth Hall runs 62.8° from east, so the Town Hall
-# (perpendicular to it) runs -27.2°; the tower's centre is at (-45.6, -19.1)
+# After the ground plan in "Rzuty poziome" (Tab. I, lithograph before 1900, public domain: west at the
+# top, east at the bottom, south left, north right), the elevations by Karol Balicki (1851), the view
+# by F. C. Dietrich (1820) and M. Stachowicz's "Kościuszko's Oath" (1797). The plan has no scale bar:
+# its tower is taken as 10 m wide, which gives a complex of about 47 x 38 m and a north-east front of
+# about 37 m, as in Balicki's elevation. Heights follow the elevations' proportions. Approximate.
+#
+# Axes of the square: E = along the square's east (perpendicular to the Cloth Hall), N = along the
+# Cloth Hall. The complex is laid out in (e, n) metres from its south-west corner.
 A = math.radians(-27.2)
-U = Vector((math.cos(A), math.sin(A), 0))  # along the hall, towards the east end
-V = Vector((-math.sin(A), math.cos(A), 0))  # across the hall, towards the north
+E_AX = Vector((math.cos(A), math.sin(A), 0))
+N_AX = Vector((-math.sin(A), math.cos(A), 0))
 TOWER = Vector((-45.6, -19.1, 0))
-# the hall stands north-west of the tower, a small courtyard between them
-CENTRE = TOWER - U * 22 + V * 12
-LENGTH, WIDTH, WALL = 30.0, 10.0, 14.0  # three storeys
-RIDGE = WALL + 9.0
+# the tower's centre in plan coordinates: e 32.2, n 5
+ORIGIN = TOWER - E_AX * 32.2 - N_AX * 5.0
+DEPTH, LONG = 38.4, 46.8  # e and n extent of the complex
 
 hall = bpy.data.collections.new("Town Hall 1800")
 scene.collection.children.link(hall)
@@ -205,8 +211,8 @@ def put(ob):
     return ob
 
 
-def local(u, v, z):
-    return CENTRE + U * u + V * v + Vector((0, 0, z))
+def at(e, n, z=0.0):
+    return ORIGIN + E_AX * e + N_AX * n + Vector((0, 0, z))
 
 
 def mesh(name, verts, faces, mat):
@@ -219,78 +225,120 @@ def mesh(name, verts, faces, mat):
     return put(ob)
 
 
-# walls: a box
-L2, W2 = LENGTH / 2, WIDTH / 2
-box = [local(u, v, z) for z in (0, WALL) for (u, v) in ((-L2, -W2), (L2, -W2), (L2, W2), (-L2, W2))]
-mesh("hall walls", box, [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)], BRICK)
+BOX_FACES = [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)]
 
-# windows: three storeys of eight on each long wall
-for side in (-W2 - 0.04, W2 + 0.04):
-    for storey in range(3):
-        for bay in range(8):
-            u = -L2 + 2.4 + bay * (LENGTH - 4.8) / 7
-            z = 1.8 + storey * 4.3
-            q = [local(u - 0.6, side, z), local(u + 0.6, side, z), local(u + 0.6, side, z + 2.3), local(u - 0.6, side, z + 2.3)]
-            mesh(f"window {side:+.0f} {storey} {bay}", q, [(0, 1, 2, 3)], WINDOW)
-# the gables' blind arcades: tall dark niches on the upper storey of each end
-for end in (-L2 - 0.66, L2 + 0.66):
-    for i in range(3):
-        v = -W2 + 2.5 + i * 2.5
-        q = [local(end, v - 0.45, WALL + 0.6), local(end, v + 0.45, WALL + 0.6), local(end, v + 0.45, WALL + 5.5 - abs(i - 1) * 1.5), local(end, v - 0.45, WALL + 5.5 - abs(i - 1) * 1.5)]
-        mesh(f"blind arch {end:+.0f} {i}", q, [(0, 1, 2, 3)], WINDOW)
 
-# roof: a steep gable roof along the hall
-roof = [local(-L2, -W2, WALL), local(L2, -W2, WALL), local(L2, 0, RIDGE), local(-L2, 0, RIDGE), local(L2, W2, WALL), local(-L2, W2, WALL)]
-mesh("hall roof", roof, [(0, 1, 2, 3), (3, 2, 4, 5)], ROOF)
+def box(name, e0, e1, n0, n1, z0, z1, mat):
+    v = [at(e, n, z) for z in (z0, z1) for (e, n) in ((e0, n0), (e1, n0), (e1, n1), (e0, n1))]
+    return mesh(name, v, BOX_FACES, mat)
 
-# stepped gables at both ends, a little proud of the roof: five steps each side
-for end in (-L2 - 0.05, L2 + 0.05):
+
+def openings(name, face, a0, a1, fixed, rows, per_row, z0, storey, w, h, mat=None, oval=False, round_top=False):
+    """Dark openings on a wall: face 'e' (wall at e = fixed, runs along n) or 'n' (wall at n = fixed)."""
+    for r in range(rows):
+        for k in range(per_row):
+            c = a0 + (k + 0.5) * (a1 - a0) / per_row
+            z = z0 + r * storey
+            if oval:
+                pts = [(c + math.cos(t) * w / 2, z + h / 2 + math.sin(t) * h / 2) for t in (i * math.pi / 6 for i in range(12))]
+            elif round_top:
+                # a round-headed blind arch: straight sides, a half circle on top
+                pts = [(c - w / 2, z), (c + w / 2, z)] + [(c + math.cos(t) * w / 2, z + h - w / 2 + math.sin(t) * w / 2) for t in (i * math.pi / 8 for i in range(9))] + [(c - w / 2, z)]
+                pts = pts[:-1]
+            else:
+                pts = [(c - w / 2, z), (c + w / 2, z), (c + w / 2, z + h), (c - w / 2, z + h)]
+            verts = [at(fixed, x, zz) if face == 'e' else at(x, fixed, zz) for (x, zz) in pts]
+            mesh(f"{name} {r} {k}", verts, [tuple(range(len(verts)))], mat or WINDOW)
+
+
+GREY = material("grey render", (0.46, 0.44, 0.41))
+
+# 1) the north block: granaries and offices, rendered grey, three storeys under a Renaissance attic
+N0, N1, WALL_N = 20.3, LONG, 17.0
+box("north block", 0, DEPTH, N0, N1, 0, WALL_N, GREY)
+# the attic: a parapet on top, blind round arches on its faces, a crest of pinnacles
+box("attic", -0.3, DEPTH + 0.3, N0 - 0.3, N1 + 0.3, WALL_N, WALL_N + 0.6, STONE)  # cornice
+box("attic wall", 0, DEPTH, N0, N1, WALL_N + 0.6, WALL_N + 4.2, GREY)
+for face, a0, a1, fixed, n in (("n", 0, DEPTH, N1 + 0.03, 10), ("n", 0, DEPTH, N0 - 0.03, 10), ("e", N0, N1, DEPTH + 0.03, 7), ("e", N0, N1, -0.03, 7)):
+    openings(f"attic arch {face}{fixed:.0f}", face, a0, a1, fixed, 1, n, WALL_N + 1.0, 0, 1.6, 2.8, WINDOW, round_top=True)
+    # crest: a pinnacle between every second arch
+    for k in range(0, n + 1, 2):
+        c = a0 + k * (a1 - a0) / n
+        loc = at(fixed, c, WALL_N + 5.4) if face == 'e' else at(c, fixed, WALL_N + 5.4)
+        bpy.ops.mesh.primitive_cone_add(vertices=6, radius1=0.45, depth=2.4, location=loc)
+        put(bpy.context.object).data.materials.append(STONE)
+# windows: three rows on the east (market) and north fronts, a row of oval windows under the attic
+openings("north block windows E", "e", N0, N1, DEPTH + 0.03, 3, 7, 2.2, 4.4, 1.1, 1.9)
+openings("north block ovals E", "e", N0, N1, DEPTH + 0.03, 1, 7, 15.2, 0, 0.9, 0.6, oval=True)
+openings("north block windows N", "n", 0, DEPTH, N1 + 0.03, 3, 9, 2.2, 4.4, 1.1, 1.9)
+openings("north block ovals N", "n", 0, DEPTH, N1 + 0.03, 1, 9, 15.2, 0, 0.9, 0.6, oval=True)
+# a large hipped roof behind the attic, as Dietrich drew it in 1820
+rz, rt = WALL_N + 3.4, WALL_N + 12.0
+roof_v = [at(1.5, N0 + 1.5, rz), at(DEPTH - 1.5, N0 + 1.5, rz), at(DEPTH - 1.5, N1 - 1.5, rz), at(1.5, N1 - 1.5, rz),
+          at(DEPTH / 2, N0 + 8, rt), at(DEPTH / 2, N1 - 8, rt)]
+mesh("north block roof", roof_v, [(0, 1, 4), (1, 2, 5, 4), (2, 3, 5), (3, 0, 4, 5)], ROOF)
+
+# 2) the Gothic hall in the middle (Town Hall chamber and Lords' Room): red brick, perpendicular to the
+# Cloth Hall, a steep roof along it and stepped, blind-arched gables at both ends
+M0, M1, WALL_M = 9.5, 20.3, 14.0
+RIDGE = WALL_M + 9.0
+box("gothic hall", 0, DEPTH, M0, M1, 0, WALL_M, BRICK)
+mid = (M0 + M1) / 2
+mesh("gothic roof", [at(0, M0, WALL_M), at(DEPTH, M0, WALL_M), at(DEPTH, mid, RIDGE), at(0, mid, RIDGE), at(DEPTH, M1, WALL_M), at(0, M1, WALL_M)],
+     [(0, 1, 2, 3), (3, 2, 4, 5)], ROOF)
+for end in (-0.05, DEPTH + 0.05):
     steps = 5
+    out = 0.6 if end > 0 else -0.6
     for i in range(steps):
-        v0 = -W2 + i * (W2 / steps)
-        v1 = W2 - i * (W2 / steps)
-        z0 = WALL + (RIDGE + 2.5 - WALL) * i / steps
-        z1 = WALL + (RIDGE + 2.5 - WALL) * (i + 1) / steps
-        g = [local(end, v0, z0), local(end, v1, z0), local(end, v1, z1), local(end, v0, z1)]
-        g2 = [p + U * (0.6 if end > 0 else -0.6) for p in g]
-        mesh(f"gable step {i}", g + g2, [(0, 1, 2, 3), (4, 5, 6, 7), (0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)], BRICK)
-        # a pinnacle on each step's corners
-        for v in (v0, v1):
-            bpy.ops.mesh.primitive_cone_add(vertices=6, radius1=0.35, depth=2.2, location=local(end, v, z1 + 1.1))
+        n0 = M0 + i * (mid - M0) / steps
+        n1 = M1 - i * (M1 - mid) / steps
+        z0 = WALL_M + (RIDGE + 2.5 - WALL_M) * i / steps
+        z1 = WALL_M + (RIDGE + 2.5 - WALL_M) * (i + 1) / steps
+        g = [at(end, n0, z0), at(end, n1, z0), at(end, n1, z1), at(end, n0, z1)]
+        g2 = [p + E_AX * out for p in g]
+        mesh(f"gable step {end:.0f} {i}", g + g2, BOX_FACES, BRICK)
+        for nn in (n0, n1):
+            bpy.ops.mesh.primitive_cone_add(vertices=6, radius1=0.3, depth=2.0, location=at(end + out / 2, nn, z1 + 1.0))
             put(bpy.context.object).data.materials.append(STONE)
+    # tall pointed blind arches and windows in the gable, as in Balicki's north-west view
+    for k in range(4):
+        c = M0 + 2.2 + k * (M1 - M0 - 4.4) / 3
+        top = WALL_M + 7.5 - abs(k - 1.5) * 2.2
+        pts = [(c - 0.55, WALL_M - 5.0), (c + 0.55, WALL_M - 5.0), (c + 0.55, top), (c, top + 1.0), (c - 0.55, top)]
+        verts = [at(end + out * 1.02, x, z) for (x, z) in pts]
+        mesh(f"gothic window {end:.0f} {k}", verts, [tuple(range(5))], WINDOW)
+openings("gothic hall windows E", "e", M0, M1, DEPTH + 0.03, 2, 3, 2.5, 5.0, 1.1, 2.6)
 
-# octagonal turrets on the western corners
-for v in (-W2, W2):
-    base = local(-L2, v, 0)
-    bpy.ops.mesh.primitive_cylinder_add(vertices=8, radius=1.9, depth=WALL + 5, location=base + Vector((0, 0, (WALL + 5) / 2)))
-    put(bpy.context.object).data.materials.append(STONE)
-    bpy.ops.mesh.primitive_cone_add(vertices=8, radius1=2.3, depth=6, location=base + Vector((0, 0, WALL + 5 + 3)))
-    put(bpy.context.object).data.materials.append(COPPER)
+# 3) the south-west wing: prisons and the courtyard, lower, with an arcaded, crenellated gallery
+box("prison wing", 0, 14.8, 0, M0, 0, 9.0, GREY)
+mesh("prison roof", [at(0, 0, 9.0), at(14.8, 0, 9.0), at(14.8, M0 / 2, 13.0), at(0, M0 / 2, 13.0), at(14.8, M0, 9.0), at(0, M0, 9.0)],
+     [(0, 1, 2, 3), (3, 2, 4, 5)], ROOF)
+box("courtyard wall", 14.8, 26.8, 0, 0.8, 0, 6.5, STONE)
+openings("courtyard gallery", "n", 15.2, 26.4, -0.03, 1, 5, 3.4, 0, 1.4, 2.2)
+for k in range(9):
+    e = 15.0 + k * 1.45
+    box(f"merlon {k}", e, e + 0.8, 0, 0.8, 6.5, 7.4, STONE)
 
-# the arcaded loggia on the eastern corner, facing the Cloth Hall: three arches on four piers under
-# a small tiled lean-to roof
-LOG_U = L2 + 2.4
-for i in range(4):
-    bpy.ops.mesh.primitive_cube_add(size=1, location=local(LOG_U, -W2 + 1.0 + i * 2.7, 1.9), scale=(0.55, 0.55, 3.8))
-    put(bpy.context.object).data.materials.append(STONE)
-for i in range(3):
-    # a round arch over each opening: a band of stone along a half circle, spring points on the piers
-    mid_v, spring, r_in, r_out, depth, n = -W2 + 2.35 + i * 2.7, 3.8, 1.1, 1.45, 0.28, 16
-    verts, faces = [], []
-    for k in range(n + 1):
-        t = math.pi * k / n
+# 4) the arcaded porch (ganek) along the whole market front, as on the plan and in Dietrich's view
+G0, G1 = DEPTH, DEPTH + 3.8
+arches = 12
+for k in range(arches + 1):
+    n = 4.0 + k * (LONG - 4.0 + 2.7) / arches
+    box(f"porch pier {k}", G1 - 0.6, G1, n - 0.3, n + 0.3, 0, 3.6, STONE)
+for k in range(arches):
+    n = 4.0 + (k + 0.5) * (LONG - 4.0 + 2.7) / arches
+    r_in, r_out, verts, faces, nn = 1.25, 1.55, [], [], 12
+    for i in range(nn + 1):
+        t = math.pi * i / nn
         for r in (r_in, r_out):
-            for du in (-depth, depth):
-                verts.append(local(LOG_U + du, mid_v - r * math.cos(t), spring + r * math.sin(t)))
-    for k in range(n):
-        q = k * 4
-        # inner, outer, front, back faces of this segment
+            for de in (-0.6, 0.0):
+                verts.append(at(G1 + de, n - r * math.cos(t), 3.6 + r * math.sin(t) * 0.8))
+    for i in range(nn):
+        q = i * 4
         faces += [(q, q + 1, q + 5, q + 4), (q + 2, q + 3, q + 7, q + 6), (q, q + 2, q + 6, q + 4), (q + 1, q + 3, q + 7, q + 5)]
-    mesh(f"loggia arch {i}", verts, faces, STONE)
-bpy.ops.mesh.primitive_cube_add(size=1, location=local(LOG_U, -W2 + 5.05, 5.4), scale=(0.7, 9.0, 0.9))
-put(bpy.context.object).data.materials.append(STONE)
-lean = [local(L2, -W2, 8.2), local(L2, -W2 + 10.1, 8.2), local(LOG_U + 0.8, -W2 + 10.1, 5.8), local(LOG_U + 0.8, -W2, 5.8)]
-mesh("loggia roof", lean, [(0, 1, 2, 3)], ROOF)
+    mesh(f"porch arch {k}", verts, faces, STONE)
+box("porch beam", G1 - 0.6, G1, 4.0 - 0.3, LONG + 2.7 + 0.3, 5.0, 5.7, STONE)
+mesh("porch roof", [at(G0, 4.0 - 0.3, 8.0), at(G0, LONG + 3.0, 8.0), at(G1 + 0.4, LONG + 3.0, 5.7), at(G1 + 0.4, 4.0 - 0.3, 5.7)], [(0, 1, 2, 3)], ROOF)
 
 # ---------------------------------------------------------------- light and camera
 world = bpy.data.worlds.new("sky")
@@ -321,6 +369,7 @@ VIEW = argv[2] if len(argv) > 2 else "tower"
 cam = bpy.data.objects.new("camera", bpy.data.cameras.new("camera"))
 scene.collection.objects.link(cam)
 scene.camera = cam
+CENTRE = at(DEPTH / 2, LONG / 2)
 target = CENTRE + Vector((0, 0, 8))
 if VIEW == "plan":
     cam.data.type = "ORTHO"
@@ -328,8 +377,8 @@ if VIEW == "plan":
     cam.location = Vector((0, 0, 300))
     cam.rotation_euler = (0, 0, 0)
 elif VIEW == "street":
-    cam.location = CENTRE + U * 38 + V * 30 + Vector((0, 0, 1.7))
-    cam.rotation_euler = ((CENTRE + Vector((0, 0, 9))) - cam.location).to_track_quat("-Z", "Y").to_euler()
+    cam.location = at(DEPTH + 17, LONG + 22, 1.7)
+    cam.rotation_euler = ((at(DEPTH / 2, LONG / 2 - 6, 11)) - cam.location).to_track_quat("-Z", "Y").to_euler()
     cam.data.lens = 22
 else:
     cam.location = Vector((95, 70, 68))

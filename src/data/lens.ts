@@ -55,8 +55,8 @@ export const lensPoints: LensPoint[] = [
       {
         key: 'ratusz-1800',
         year: 'c.1800',
-        title: 'Reconstruction: the Town Hall before 1820, its outline and height only (not a view)',
-        credit: 'KrakowLoop reconstruction after the city plan by D. Pucek (1787) and M. Kowalski, P. Opaliński (Historical Museum of Kraków); buildings: GUGiK LoD2',
+        title: 'Reconstruction: the Town Hall before 1820, after the 1851 elevations and the ground plan (not a view)',
+        credit: 'KrakowLoop reconstruction after K. Balicki (1851), the ground plan (Tab. I), F. C. Dietrich (1820) and M. Stachowicz (1797); buildings: GUGiK LoD2',
         license: 'CC BY 4.0',
         sourceUrl: 'https://pl.wikipedia.org/wiki/Ratusz_w_Krakowie',
         image: require('../../assets/lens/ratusz_1800_rekonstrukcja.jpg'),
