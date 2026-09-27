@@ -5,6 +5,7 @@ import { LatLon, distance, roadMinutes } from './geo';
 import { opensLongEnough } from './hours';
 import { Leg, leg } from './legs';
 import { t } from '../i18n';
+import type { Meal } from './meals';
 
 export const MAX_PLAN_DAYS = 4;
 
@@ -39,6 +40,8 @@ export interface PlanOptions {
   walking?: 'low' | 'normal';
   /** a place to eat belongs in every city day */
   dinner?: boolean;
+  /** meals shown in every city day at their time, near the stop the day is at (src/lib/meals.ts) */
+  meals?: Meal[];
 }
 
 export interface Stop {

@@ -5,6 +5,7 @@ import { MAX_YEAR, parseISODate } from './dates';
 import { LatLon, distance } from './geo';
 import { experiences } from '../data/places';
 import { INTEREST_KEYS, MAX_PLAN_DAYS, PACE_KEYS, PlanOptions } from './planner';
+import { mealsToParam, parseMeals } from './meals';
 
 export interface PlanParams {
   days: string;
@@ -23,6 +24,8 @@ export interface PlanParams {
   walk: string;
   /** "1" when a place to eat belongs in every day */
   dine: string;
+  /** meals in every day, "b,l,c,d" (breakfast, lunch, coffee, dinner) */
+  meals: string;
 }
 
 type RawParams = Record<string, string | string[] | undefined>;
@@ -44,6 +47,7 @@ export function planToParams(o: PlanOptions): PlanParams {
     acts: (o.activities ?? []).map((a) => `${a.day}:${a.id}`).join(','),
     walk: o.walking === 'low' ? 'low' : '',
     dine: o.dinner ? '1' : '',
+    meals: mealsToParam(o.meals ?? []),
   };
 }
 
@@ -120,5 +124,6 @@ export function paramsToPlan(raw: RawParams, knownIds: ReadonlySet<string>): Pla
     ...activitiesOf(parseActivities(first(raw.acts), days)),
     ...(first(raw.walk) === 'low' ? { walking: 'low' as const } : {}),
     ...(first(raw.dine) === '1' ? { dinner: true } : {}),
+    ...(parseMeals(first(raw.meals)).length ? { meals: parseMeals(first(raw.meals)) } : {}),
   };
 }

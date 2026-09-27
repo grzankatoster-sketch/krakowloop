@@ -20,7 +20,10 @@ import { Experience, experiences, places } from '../../src/data/places';
 import { addDays, formatDay, parseISODate, toISODate } from '../../src/lib/dates';
 import { WALKING_ROUTES_ENABLED, WalkingRoute, walkingRoute } from '../../src/lib/directions';
 import { DETOUR } from '../../src/lib/geo';
-import { formatHours, hoursOn } from '../../src/lib/hours';
+import { formatHours, formatTime, hoursOn } from '../../src/lib/hours';
+import { MEAL_KEYS, Meal, MealStop, planMeals } from '../../src/lib/meals';
+import { walkMinutes } from '../../src/lib/moments';
+import { openWalkingDirections } from '../../src/lib/navigate';
 import type { Leg } from '../../src/lib/legs';
 import { openLink } from '../../src/lib/openLink';
 import { paramsToPlan, planToParams, shareUrl } from '../../src/lib/planParams';
@@ -33,6 +36,7 @@ import { WISH_MAX_CHARS, WISH_PROXY_URL } from '../../src/config/wish';
 import { TRANSIT_FEED_VERSION } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { t } from '../../src/i18n';
+import type { StringKey } from '../../src/i18n/en';
 import { colors, fonts, space } from '../../src/theme';
 
 const INTERESTS: { key: Interest; label: string }[] = [
@@ -127,7 +131,7 @@ function ChoiceRow({ label, line, chosen, onPress, kind }: { label: string; line
 
 export default function PlanScreen() {
   const tabSpace = useTabBarSpace();
-  const { days, pace, likes, trips, date, from, skip, seed, acts, walk: walkWish, dine } = useLocalSearchParams<{
+  const { days, pace, likes, trips, date, from, skip, seed, acts, walk: walkWish, dine, meals } = useLocalSearchParams<{
     days?: string;
     pace?: string;
     likes?: string;
@@ -139,10 +143,11 @@ export default function PlanScreen() {
     acts?: string;
     walk?: string;
     dine?: string;
+    meals?: string;
   }>();
   const options = useMemo(
-    () => paramsToPlan({ days, pace, likes, trips, date, from, skip, seed, acts, walk: walkWish, dine }, KNOWN_IDS),
-    [days, pace, likes, trips, date, from, skip, seed, acts, walkWish, dine],
+    () => paramsToPlan({ days, pace, likes, trips, date, from, skip, seed, acts, walk: walkWish, dine, meals }, KNOWN_IDS),
+    [days, pace, likes, trips, date, from, skip, seed, acts, walkWish, dine, meals],
   );
   const plan = useMemo(() => (options ? buildPlan(options) : null), [options]);
   const planKey = options ? JSON.stringify(options) : '';
@@ -169,6 +174,7 @@ export default function PlanScreen() {
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapKey, setMapKey] = useState(0);
   const [shareNote, setShareNote] = useState<string | null>(null);
+  const [mealPick, setMealPick] = useState<Record<string, number>>({});
   const scrollRef = useRef<ScrollView>(null);
   const me = useMyLocation();
 
@@ -311,6 +317,24 @@ export default function PlanScreen() {
         : me.message ?? null;
 
   const result = hasPlan && !editing && day && options;
+  const wantedMeals = useMemo(() => options?.meals ?? [], [options]);
+  const dayDate = useMemo(() => (day?.date ? parseISODate(day.date) : null), [day]);
+  const dayMeals = useMemo(() => (day && day.kind === 'city' ? planMeals(day, wantedMeals, dayDate) : []), [day, wantedMeals, dayDate]);
+  // after a trip only the afternoon's meals: a coffee and dinner back in town
+  const afterMeals = useMemo(
+    () => (day?.after ? planMeals(day.after, wantedMeals.filter((m) => m === 'coffee' || m === 'dinner'), dayDate) : []),
+    [day, wantedMeals, dayDate],
+  );
+  const toggleMeal = (m: Meal) => {
+    if (!options) return;
+    Haptics.selectionAsync().catch(() => {});
+    const next = wantedMeals.includes(m) ? wantedMeals.filter((x) => x !== m) : [...wantedMeals, m];
+    show({ ...options, meals: next }, t('plan.meals.changed'), true);
+  };
+  const anotherPlace = (key: string, count: number) => {
+    Haptics.selectionAsync().catch(() => {});
+    setMealPick((p) => ({ ...p, [key]: ((p[key] ?? 0) + 1) % count }));
+  };
 
   return (
     <SafeAreaView style={[s.safe, { paddingTop: WEB_TABS_TOP }]} edges={['top']}>
@@ -607,7 +631,19 @@ export default function PlanScreen() {
               </View>
             ) : null}
 
-            {day.kind === 'trip' ? <TripCard day={day} /> : <Timeline day={day} real={real} onSkip={skipStop} />}
+            {/* meals: tap to add them to every day, at their time and near the stop the day is at */}
+            <Text style={s.subQ}>{t('plan.meals.title')}</Text>
+            <View style={s.row}>
+              {MEAL_KEYS.map((m) => (
+                <Chip key={m} label={t(`meal.${m}`)} active={wantedMeals.includes(m)} onPress={() => toggleMeal(m)} />
+              ))}
+            </View>
+
+            {day.kind === 'trip' ? (
+              <TripCard day={day} />
+            ) : (
+              <Timeline day={day} real={real} onSkip={skipStop} meals={dayMeals} pick={(m) => mealPick[`${day.index}:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:${m}`, n)} />
+            )}
             {/* a short trip leaves the afternoon: a few places back in Kraków */}
             {day.after ? (
               <View style={{ marginTop: space.l }}>
@@ -615,7 +651,7 @@ export default function PlanScreen() {
                   {t('plan.afterTrip')}
                 </Text>
                 <Text style={s.totals}>{t('plan.afterTripLine', { total: fmt(day.after.totalMinutes) })}</Text>
-                <Timeline day={day.after} real={null} onSkip={skipStop} />
+                <Timeline day={day.after} real={null} onSkip={skipStop} meals={afterMeals} pick={(m) => mealPick[`${day.index}:after:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:after:${m}`, n)} />
               </View>
             ) : null}
 
@@ -651,11 +687,69 @@ export default function PlanScreen() {
   );
 }
 
+const MEAL_ICON: Record<Meal, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
+  breakfast: 'food-croissant',
+  lunch: 'silverware-fork-knife',
+  coffee: 'coffee',
+  dinner: 'glass-wine',
+};
+
+/** A meal in the day: when, where (a real place near the stop, open then), and another one on a tap. */
+function MealCard({ stop, index, onAnother }: { stop: MealStop; index: number; onAnother: () => void }) {
+  const o = stop.options[Math.min(index, stop.options.length - 1)];
+  const r = o.place;
+  const what = r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey);
+  return (
+    <View style={s.meal} accessibilityLabel={`${t(`meal.${stop.meal}`)}, ${formatTime(stop.at)}: ${r.name}`}>
+      <View style={s.mealIcon} aria-hidden importantForAccessibility="no-hide-descendants">
+        <MaterialCommunityIcons name={MEAL_ICON[stop.meal]} size={22} color={colors.white} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text style={s.mealWhen}>
+          {t(`meal.${stop.meal}`)} · {t('plan.meal.at', { time: formatTime(stop.at) })}
+        </Text>
+        <Text style={s.mealName} numberOfLines={2}>
+          {r.name}
+        </Text>
+        <Text style={s.mealMeta} numberOfLines={1}>
+          {what} · {t('plan.meal.walk', { n: walkMinutes(o.metres) })}
+        </Text>
+        <View style={s.mealActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: r.name })} onPress={() => openWalkingDirections(r)} hitSlop={6}>
+            <Text style={s.link}>{t('story.go')}</Text>
+          </Pressable>
+          {stop.options.length > 1 ? (
+            <Pressable accessibilityRole="button" accessibilityLabel={t('plan.meal.anotherLabel', { meal: t(`meal.${stop.meal}`) })} onPress={onAnother} hitSlop={6}>
+              <Text style={s.skip}>{t('plan.meal.another')}</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
+    </View>
+  );
+}
+
 /** A city day as a numbered line of stops, with how to get from one to the next between them. */
-function Timeline({ day, real, onSkip }: { day: PlanDay; real: WalkingRoute | null; onSkip: (id: string, name: string) => void }) {
+function Timeline({
+  day,
+  real,
+  onSkip,
+  meals = [],
+  pick = () => 0,
+  onAnother = () => {},
+}: {
+  day: PlanDay;
+  real: WalkingRoute | null;
+  onSkip: (id: string, name: string) => void;
+  meals?: MealStop[];
+  pick?: (m: Meal) => number;
+  onAnother?: (m: Meal, count: number) => void;
+}) {
+  const mealsAfter = (i: number) => meals.filter((m) => m.after === i).map((m) => <MealCard key={m.meal} stop={m} index={pick(m.meal)} onAnother={() => onAnother(m.meal, m.options.length)} />);
   return (
     <View style={s.timeline}>
       {day.start ? <Text style={s.legText}>{t('plan.startPoint')}</Text> : null}
+      {mealsAfter(-1)}
       {day.stops.map((st, i) => {
         const hours = hoursThatDay(st.place.id, day.date);
         const photo = PLACE_MEDIA[st.place.id];
@@ -711,6 +805,7 @@ function Timeline({ day, real, onSkip }: { day: PlanDay; real: WalkingRoute | nu
                 </View>
               </View>
             </View>
+            {mealsAfter(i)}
           </View>
         );
       })}
@@ -836,6 +931,12 @@ const s = StyleSheet.create({
   activity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.s, paddingVertical: space.s, borderBottomWidth: 1, borderColor: colors.line },
   activityButtons: { flexDirection: 'row', gap: space.s },
   timeline: { marginTop: space.m },
+  meal: { flexDirection: 'row', gap: space.m, marginTop: space.s, padding: space.m, borderRadius: 20, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line, borderLeftWidth: 4, borderLeftColor: colors.brick },
+  mealIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brick, alignItems: 'center', justifyContent: 'center' },
+  mealWhen: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.brick, textTransform: 'uppercase' },
+  mealName: { fontFamily: fonts.display, fontSize: 22, lineHeight: 25, color: colors.ink },
+  mealMeta: { fontFamily: fonts.body, fontSize: 14, color: colors.mute },
+  mealActions: { flexDirection: 'row', gap: space.l, marginTop: 6 },
   leg: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 6, marginLeft: 14, borderLeftWidth: 3, borderColor: colors.line },
   legText: { flex: 1, fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute },
   stop: { flexDirection: 'row', gap: space.m, alignItems: 'flex-start', paddingVertical: space.s },
