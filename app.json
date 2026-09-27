@@ -10,7 +10,10 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.krakowloop.app",
       "infoPlist": {
-        "LSApplicationQueriesSchemes": ["comgooglemaps"]
+        "LSApplicationQueriesSchemes": [
+          "comgooglemaps",
+          "comgooglemaps"
+        ]
       }
     },
     "android": {
@@ -21,7 +24,15 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.krakowloop.app"
+      "package": "com.krakowloop.app",
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png",
@@ -50,6 +61,17 @@
       ],
       "expo-localization"
     ],
-    "scheme": "krakowloop"
+    "scheme": "krakowloop",
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "07727aab-8a86-4b85-ab39-458d4b3c03f4"
+      }
+    },
+    "owner": "grzanka51",
+    "updates": {
+      "url": "https://u.expo.dev/07727aab-8a86-4b85-ab39-458d4b3c03f4"
+    },
+    "runtimeVersion": "exposdk:57.0.0"
   }
 }
