@@ -8,9 +8,16 @@ describe('Kraków in the past data', () => {
       for (const l of p.layers) {
         expect(l.credit).not.toBe('');
         expect(l.license).not.toBe('');
-        expect(l.sourceUrl).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
+        // a picture we found is a Commons file; one we made says it is a reconstruction and where its knowledge comes from
+        if (l.reconstruction) {
+          expect(l.title).toMatch(/reconstruction/i);
+          expect(l.sourceUrl).toMatch(/^https:\/\//);
+        } else expect(l.sourceUrl).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
       }
-      if (p.reference) expect(p.reference.sourceUrl).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
+      if (p.reference?.reconstruction) {
+        expect(p.reference.title).toMatch(/model/i);
+        expect(p.reference.sourceUrl).toMatch(/^https:\/\//);
+      } else if (p.reference) expect(p.reference.sourceUrl).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/);
     }
   });
 

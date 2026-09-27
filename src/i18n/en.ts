@@ -720,6 +720,8 @@ export const en = {
   'discover.native.stay': "Where to sleep",
   'discover.native.stayLine': "{n} hotels, hostels and flats on the map",
   'lensGallery.compare': "Compare with today",
+  'lens.name.town-hall': "The lost Town Hall",
+  'lens.where.town-hall': "Main Square, by the Town Hall Tower",
 };
 
 export type StringKey = keyof typeof en;

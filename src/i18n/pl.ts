@@ -707,4 +707,6 @@ export const pl: Strings = {
   'discover.native.stay': "Gdzie spać",
   'discover.native.stayLine': "{n} hoteli, hosteli i apartamentów na mapie",
   'lensGallery.compare': "Porównaj z dziś",
+  'lens.name.town-hall': "Ratusz, którego nie ma",
+  'lens.where.town-hall': "Rynek Główny, przy Wieży Ratuszowej",
 };

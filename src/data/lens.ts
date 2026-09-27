@@ -15,6 +15,11 @@ export interface LensLayer {
    * artwork: an engraving or drawing, often a bird's-eye view, shown on its own
    */
   kind: 'photo' | 'artwork';
+  /**
+   * made by us, not found: a 3D reconstruction from written and drawn sources (scripts/3d). Its
+   * title says so, and sourceUrl points to where the knowledge comes from, not to a file.
+   */
+  reconstruction?: true;
 }
 
 export interface LensPoint {
@@ -24,13 +29,42 @@ export interface LensPoint {
   lat: number;
   lon: number;
   /** the place today, shown next to the old pictures without needing a camera */
-  reference?: { image: ImageSourcePropType; title: string; credit: string; license: string; sourceUrl: string };
+  reference?: { image: ImageSourcePropType; title: string; credit: string; license: string; sourceUrl: string; reconstruction?: true };
   layers: LensLayer[];
 }
 
 // Every image: Wikimedia Commons. Old pictures checked 14.09.2026 (02_dane/media_pd/media_assets.json),
 // today's photos 17.09.2026 (02_dane/media_pd/lens_today.json).
 export const lensPoints: LensPoint[] = [
+  {
+    // the Town Hall pulled down in 1820: only its tower is left, so no photograph of it exists
+    id: 'town-hall',
+    name: 'The lost Town Hall',
+    where: 'Main Square, by the Town Hall Tower',
+    lat: 50.06147,
+    lon: 19.93641,
+    reference: {
+      image: require('../../assets/lens/ratusz_dzis_model.jpg'),
+      title: 'The same view today, from the 3D model of the city (a model, not a photograph)',
+      credit: 'GUGiK 3D buildings LoD2 2017, rendered by KrakowLoop',
+      license: 'CC BY 4.0',
+      sourceUrl: 'https://opendata.geoportal.gov.pl/InneDane/Budynki3D/LOD2/1261_gml.zip',
+      reconstruction: true,
+    },
+    layers: [
+      {
+        key: 'ratusz-1800',
+        year: 'c.1800',
+        title: 'Reconstruction: the Town Hall before 1820, its outline and height only (not a view)',
+        credit: 'KrakowLoop reconstruction after the city plan by D. Pucek (1787) and M. Kowalski, P. Opaliński (Historical Museum of Kraków); buildings: GUGiK LoD2',
+        license: 'CC BY 4.0',
+        sourceUrl: 'https://pl.wikipedia.org/wiki/Ratusz_w_Krakowie',
+        image: require('../../assets/lens/ratusz_1800_rekonstrukcja.jpg'),
+        kind: 'photo',
+        reconstruction: true,
+      },
+    ],
+  },
   {
     id: 'cloth-hall',
     name: 'Cloth Hall',

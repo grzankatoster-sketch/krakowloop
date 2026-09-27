@@ -98,7 +98,8 @@ function LensViewer({ point }: { point: LensPoint }) {
     setShown(key);
   };
   const cameraOn = cameraWanted && !!permission?.granted;
-  const overlay = current ?? photos[0];
+  // only a real photograph goes over the camera: a reconstruction seen from above would mislead
+  const overlay = [current, ...photos].find((p) => p && !p.reconstruction);
 
   const startCamera = async () => {
     const problem = cameraProblem(environment());

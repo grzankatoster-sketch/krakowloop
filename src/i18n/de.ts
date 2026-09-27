@@ -707,4 +707,6 @@ export const de: Strings = {
   'discover.native.stay': "Wo schlafen",
   'discover.native.stayLine': "{n} Hotels, Hostels und Wohnungen auf der Karte",
   'lensGallery.compare': "Mit heute vergleichen",
+  'lens.name.town-hall': "Das verschwundene Rathaus",
+  'lens.where.town-hall': "Hauptmarkt, beim Rathausturm",
 };
