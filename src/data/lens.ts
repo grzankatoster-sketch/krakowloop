@@ -30,6 +30,8 @@ export interface LensPoint {
   lon: number;
   /** the place today, shown next to the old pictures without needing a camera */
   reference?: { image: ImageSourcePropType; title: string; credit: string; license: string; sourceUrl: string; reconstruction?: true };
+  /** false: no pin of its own on the map, it is reached from a place's page (its pin would cover that place's) */
+  onMap?: false;
   layers: LensLayer[];
 }
 
@@ -41,8 +43,12 @@ export const lensPoints: LensPoint[] = [
     id: 'town-hall',
     name: 'The lost Town Hall',
     where: 'Main Square, by the Town Hall Tower',
-    lat: 50.06147,
-    lon: 19.93641,
+    // where the Town Hall itself stood: about 22 m north of the tower (the middle of the complex on
+    // the ground plan), so its pin never covers the tower's own pin
+    lat: 50.06167,
+    lon: 19.93637,
+    // opened from the Town Hall Tower's page ("This place in the past"): a pin 22 m away would cover the tower's
+    onMap: false,
     reference: {
       image: require('../../assets/lens/ratusz_dzis_model.jpg'),
       title: 'The same view today, from the 3D model of the city (a model, not a photograph)',

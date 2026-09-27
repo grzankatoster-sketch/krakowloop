@@ -81,7 +81,7 @@ const MODE_COLOR: Record<DiscoverMode, string> = { see: colors.brick, eat: color
 const STAY_KINDS: Stay['kind'][] = ['hotel', 'guest_house', 'hostel', 'apartment'];
 const EXP_KINDS = ['extreme', 'sightseeing', 'food', 'water', 'night'] as const;
 
-const LENS_MARKERS: MapPoint[] = lensPoints.map((l) => ({
+const LENS_MARKERS: MapPoint[] = lensPoints.filter((l) => l.onMap !== false).map((l) => ({
   id: `${LENS_PREFIX}${l.id}`,
   lat: l.lat,
   lon: l.lon,
