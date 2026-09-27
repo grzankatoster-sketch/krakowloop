@@ -8,6 +8,7 @@ import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ScreenHeader } from '../../src/components/ui';
 import { lensName, lensWhere } from '../../src/components/placeName';
+import { ReconBadge } from '../../src/components/ReconBadge';
 import { LensLayer, LensPoint, cameraProblem, firstShown, lensById } from '../../src/data/lens';
 import { openLink } from '../../src/lib/openLink';
 import { t } from '../../src/i18n';
@@ -28,11 +29,13 @@ export default function LensScreen() {
   return <LensViewer key={point.id} point={point} />;
 }
 
-function Credit({ title, credit, license, url }: { title: string; credit: string; license: string; url: string }) {
+function Credit({ title, credit, license, url, made }: { title: string; credit: string; license: string; url: string; made?: boolean }) {
   return (
     <Pressable accessibilityRole="link" onPress={() => openLink(url)} hitSlop={6}>
       <Text style={s.credit}>
-        {title}. {credit} · {license} · Wikimedia Commons
+        {/* a picture we made is not a Commons file: its link goes to where the knowledge comes from */}
+        {title}. {credit} · {license}
+        {made ? '' : ' · Wikimedia Commons'}
       </Text>
     </Pressable>
   );
@@ -82,7 +85,7 @@ function LensViewer({ point }: { point: LensPoint }) {
 
   const current: LensLayer | undefined = photos.find((p) => p.key === shown);
   const choices = [...photos.map((p) => ({ key: p.key, label: p.year })), ...(today ? [{ key: 'today', label: t('lens.today') }] : [])];
-  const layerOf = (key: string): Pick<LensLayer, 'image' | 'title' | 'credit' | 'license' | 'sourceUrl'> | undefined => (key === 'today' ? today : photos.find((p) => p.key === key));
+  const layerOf = (key: string): Pick<LensLayer, 'image' | 'title' | 'credit' | 'license' | 'sourceUrl' | 'reconstruction'> | undefined => (key === 'today' ? today : photos.find((p) => p.key === key));
   // the pictures are swiped like pages; the years under them follow, and a tap on a year turns the page
   const [onViewable] = useState(() => ({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const key = (viewableItems[0]?.item as { key: string } | undefined)?.key;
@@ -151,9 +154,10 @@ function LensViewer({ point }: { point: LensPoint }) {
                 );
               }}
             />
-            <Text style={s.bigYear} pointerEvents="none">
-              {current ? current.year : t('lens.today')}
-            </Text>
+            <View style={s.bigYearBox} pointerEvents="none">
+              <ReconBadge show={current?.reconstruction ?? (!current && today?.reconstruction)} />
+              <Text style={s.bigYearText}>{current ? current.year : t('lens.today')}</Text>
+            </View>
           </View>
         ) : (
           <View style={{ height: insets.top + 64 }} />
@@ -184,7 +188,7 @@ function LensViewer({ point }: { point: LensPoint }) {
             {lensName(point)}
           </Text>
           <Text style={s.where}>{t('lens.standAt', { where: lensWhere(point) })}</Text>
-          {shownLayer ? <Credit title={shownLayer.title} credit={shownLayer.credit} license={shownLayer.license} url={shownLayer.sourceUrl} /> : null}
+          {shownLayer ? <Credit title={shownLayer.title} credit={shownLayer.credit} license={shownLayer.license} url={shownLayer.sourceUrl} made={shownLayer.reconstruction} /> : null}
 
           {overlay ? (
             <View style={s.section}>
@@ -277,7 +281,8 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0E1330' },
   fill: { width: '100%', height: '100%' },
   pressed: { transform: [{ scale: 0.97 }], opacity: 0.92 },
-  bigYear: { position: 'absolute', left: space.l, bottom: space.m, fontFamily: fonts.display, fontSize: 72, lineHeight: 76, color: colors.white, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 12 },
+  bigYearBox: { position: 'absolute', left: space.l, bottom: space.m, gap: 4 },
+  bigYearText: { fontFamily: fonts.display, fontSize: 72, lineHeight: 76, color: colors.white, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 12 },
   col: { width: '100%', maxWidth: 620, alignSelf: 'center', paddingHorizontal: space.l, gap: space.m, marginTop: space.m },
   title: { fontFamily: fonts.display, fontSize: 36, lineHeight: 40, color: colors.white, marginTop: space.s },
   where: { fontFamily: fonts.body, fontSize: 17, lineHeight: 24, color: 'rgba(255,255,255,0.85)' },

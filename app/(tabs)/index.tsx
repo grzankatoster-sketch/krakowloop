@@ -84,7 +84,7 @@ function storySources(): (MomentSource & { image?: ImageSourcePropType; line: st
   for (const l of lensPoints) {
     const old = l.layers.find((x) => x.kind === 'photo') ?? l.layers[0];
     if (!old) continue;
-    out.push({ id: `lens:${l.id}`, name: lensName(l), kind: 'lens', lat: l.lat, lon: l.lon, rank: 3, open: null, closesIn: null, image: old.image, year: old.year, line: t('story.lensLine', { year: old.year }) });
+    out.push({ id: `lens:${l.id}`, name: lensName(l), kind: 'lens', lat: l.lat, lon: l.lon, rank: 3, open: null, closesIn: null, image: old.image, year: old.year, line: old.reconstruction ? t('story.lensReconLine', { year: old.year.replace(/^c\./, '') }) : t('story.lensLine', { year: old.year }) });
   }
   for (const r of PICKS) {
     const o = openInfo(restaurantHoursOn(r, new Date()), minutes);

@@ -26,6 +26,7 @@ import { nearbyTransit } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
 import { FoodDetails } from '../../src/components/FoodDetails';
+import { ReconBadge } from '../../src/components/ReconBadge';
 import { RideToggle } from '../../src/components/RideButtons';
 import { LANG, t } from '../../src/i18n';
 import { colors, fonts, space, typeScale } from '../../src/theme';
@@ -207,6 +208,7 @@ function PlaceDetails({ place }: { place: Place }) {
             >
               {lens.layers[0] ? <Image source={lens.layers[0].image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
               <LinearGradient colors={['rgba(8,11,30,0.05)', 'rgba(8,11,30,0.85)']} style={s.fill} pointerEvents="none" />
+              <ReconBadge show={lens.layers[0]?.reconstruction} />
               {lens.layers[0]?.year ? <Text style={s.pastYear}>{lens.layers[0].year}</Text> : null}
               <Text style={s.pastTitle}>{t('place.pastTitle')}</Text>
               <Text style={s.pastLine}>{t('place.pastLine')}</Text>

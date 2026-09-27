@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { lensName, placeName } from '../../src/components/placeName';
+import { ReconBadge } from '../../src/components/ReconBadge';
 import { EventsSection } from '../../src/components/EventsSection';
 import { CITY } from '../../src/config/city';
 import { CuisineKey } from '../../src/data/cuisines';
@@ -158,6 +159,7 @@ export default function DiscoverScreen() {
           <Pressable key={l.id} accessibilityRole="button" onPress={() => go(`/lens/${l.id}`)} style={({ pressed }) => [s.past, pressed && s.pressed]}>
             <Image source={old!.image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
             <LinearGradient colors={['rgba(8,11,30,0.1)', 'rgba(8,11,30,0.85)']} style={s.fill} />
+            <ReconBadge show={old!.reconstruction} />
             <Text style={s.pastYear}>{old!.year}</Text>
             <Text style={s.pastName} numberOfLines={2}>
               {lensName(l)}

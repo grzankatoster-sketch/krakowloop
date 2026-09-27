@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { lensName, lensWhere } from '../../src/components/placeName';
+import { ReconBadge } from '../../src/components/ReconBadge';
 import { lensPoints } from '../../src/data/lens';
 import { t } from '../../src/i18n';
 import { colors, fonts, space } from '../../src/theme';
@@ -81,6 +82,7 @@ const LensPage = memo(function LensPage({ item, width, height, bottom, onCompare
       <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.92)']} locations={[0, 0.6]} style={s.shadeBottom} pointerEvents="none" />
       <View style={[s.words, { paddingBottom: bottom }]}>
         <Text style={s.year}>{item.layer.year}</Text>
+        <ReconBadge show={item.layer.reconstruction} />
         <Text style={s.name} numberOfLines={2} adjustsFontSizeToFit minimumFontScale={0.75}>
           {lensName(item.point)}
         </Text>
