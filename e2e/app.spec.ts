@@ -198,7 +198,11 @@ test.describe('map', () => {
   test('tapping a pin on the map opens that place', async ({ page }) => {
     await page.goto('/map');
     await expect.poll(async () => (await mapState(page)).points, { timeout: 30_000 }).toBeGreaterThan(40);
-    await page.waitForTimeout(1500); // let the camera settle before asking where pins are
+    // the map is ready before its opening flight ends: wait until the camera has come down to the
+    // close start view, then a moment for the pins to be placed, before asking where they are
+    const map = page.frames().find((f) => f.url().startsWith('blob:'))!;
+    await expect.poll(() => map.evaluate(() => (window as unknown as { __krk: { zoom: () => number } }).__krk.zoom()), { timeout: 15_000 }).toBeGreaterThan(16);
+    await page.waitForTimeout(1500);
 
     // Candidates spread over the Old Town. The test taps the first one that is on screen, clear of
     // the edges and the floating buttons, and alone under its point, so it doesn't depend on the
@@ -217,7 +221,8 @@ test.describe('map', () => {
       { id: 'dragons-den', name: "Dragon's Den", lon: 19.93358, lat: 50.05342 },
     ];
     const frame = page.frames().find((f) => f.url().startsWith('blob:'))!;
-    const pick = await frame.evaluate((list) => {
+    // pins are placed a little after the map is ready (labels, collisions): ask again until one is found
+    const findPick = () => frame.evaluate((list) => {
       const k = (window as unknown as { __krk: MapDebug }).__krk;
       for (const c of list) {
         const p = k.project(c.lon, c.lat);
@@ -228,6 +233,8 @@ test.describe('map', () => {
       }
       return null;
     }, candidates);
+    await expect.poll(findPick, { timeout: 15_000 }).not.toBeNull();
+    const pick = await findPick();
     expect(pick, 'no candidate pin was alone and on screen at the start view').not.toBeNull();
 
     const box = (await page.locator('iframe[title="Map"]').boundingBox())!;

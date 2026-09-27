@@ -336,7 +336,12 @@ export const MAP_HTML = `<!doctype html>
       if(!warned){warned=true;post({type:'warning',message:msg})}
     });
 
-    map.on('load',function(){
+    // Set up as soon as the style is in: 'load' also waits for every first tile, and the 3D building
+    // tiles are megabytes each, so on a slow connection the pins never came (and the map said it had
+    // failed). Tiles keep loading in the background. Whichever comes first sets up, once.
+    var setUpDone=false;
+    function setUp(){
+      if(setUpDone)return;setUpDone=true;
       if(CFG.provider!=='mapbox'){
         map.getStyle().layers.forEach(function(l){try{
           if(l.type==='background')map.setPaintProperty(l.id,'background-color',C.stone);
@@ -463,7 +468,13 @@ export const MAP_HTML = `<!doctype html>
       ready=true;debug.ready=true;clearTimeout(timer);
       if(pending){apply(pending);pending=null}
       post({type:'ready'});
-    });
+    }
+    // Mapbox Standard is an import: its slots exist once 'style.import.load' comes (layers added on
+    // 'style.load' alone land in an empty slot and draw nothing). Other styles have no import, and
+    // for them 'style.load' is enough. 'load' stays as the last resort.
+    if(CFG.standard)map.on('style.import.load',function(){setUp()});
+    else map.on('style.load',function(){setUp()});
+    map.on('load',setUp);
   }
 
   var css=document.createElement('link');css.rel='stylesheet';css.crossOrigin='anonymous';css.integrity=CFG.cssIntegrity;
