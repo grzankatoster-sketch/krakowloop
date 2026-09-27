@@ -40,7 +40,10 @@ import {
   applyDiscoverIntent,
   byDistance,
   eatChips,
+  EAT_SORTS,
+  EatSort,
   filterEat,
+  sortEat,
   fold,
   nearest,
   parseMode,
@@ -107,6 +110,15 @@ function nowInKrakow() {
 }
 
 /** open (true), closed (false) or unknown (null) at this moment, from our own hours only */
+/** Minutes until the place closes, when it is open now; null when closed or its hours are unknown. */
+function restaurantMinutesLeft(r: Restaurant): number | null {
+  const now = nowInKrakow();
+  const h = restaurantHoursOn(r, new Date());
+  if (!h) return null;
+  const st = openState(h, now.minutes);
+  return st.state === 'open' ? st.closesAt - now.minutes : null;
+}
+
 function restaurantOpen(r: Restaurant): boolean | null {
   const now = nowInKrakow();
   // restaurantHoursOn reads the weekday in Kraków time itself: it takes the real instant
@@ -234,7 +246,8 @@ export default function DiscoverScreen() {
     );
   }, [seeCats, nameQuery, origin]);
 
-  const eatRows = useMemo(() => byDistance(filterEat(RESTAURANTS, eat, nameQuery, restaurantOpen), origin), [eat, nameQuery, origin]);
+  const [eatSort, setEatSort] = useState<EatSort>('near');
+  const eatRows = useMemo(() => sortEat(byDistance(filterEat(RESTAURANTS, eat, nameQuery, restaurantOpen), origin), eatSort, restaurantMinutesLeft), [eat, nameQuery, origin, eatSort]);
 
   const stayRows = useMemo(() => {
     const q = fold(nameQuery.trim());
@@ -439,6 +452,7 @@ export default function DiscoverScreen() {
           <Chip label={t('discover.chip.openNow')} active={eat.openNow} onPress={() => setEat({ ...eat, openNow: !eat.openNow })} />
           <Chip label={t('discover.chip.picks')} active={eat.picks} onPress={() => setEat({ ...eat, picks: !eat.picks })} />
           <Chip label={t('discover.chip.veg')} active={eat.veg} onPress={() => setEat({ ...eat, veg: !eat.veg })} />
+          <Chip label={t('discover.chip.glutenFree')} active={!!eat.glutenFree} onPress={() => setEat({ ...eat, glutenFree: !eat.glutenFree })} />
           {QUICK_CUISINES.map((c) => (
             <Chip
               key={c}
@@ -478,9 +492,21 @@ export default function DiscoverScreen() {
     </ScrollView>
   );
 
+  // how the places to eat are ordered: one choice at a time
+  const sortRow =
+    mode === 'eat' ? (
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filterRow} keyboardShouldPersistTaps="handled">
+        <Text style={s.sortLabel}>{t('discover.sort.label')}</Text>
+        {EAT_SORTS.map((k) => (
+          <Chip key={k} label={t(`discover.sort.${k}` as StringKey)} active={eatSort === k} onPress={() => setEatSort(k)} />
+        ))}
+      </ScrollView>
+    ) : null;
+
   const header = (
     <View>
       {filterRow}
+      {sortRow}
       <View style={s.countRow}>
         <Text style={s.count} accessibilityLiveRegion="polite">
           {t('discover.count', { n: count })}
@@ -950,6 +976,7 @@ const s = StyleSheet.create({
   },
   nearMeText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   filterRow: { gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
+  sortLabel: { alignSelf: 'center', fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.mute, textTransform: 'uppercase' },
   countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.s, paddingHorizontal: space.m, minHeight: 36 },
   count: { flex: 1, fontFamily: fonts.monoBold, fontSize: 12, color: colors.mute, letterSpacing: 0.3 },
   stayCta: { paddingHorizontal: space.m, paddingBottom: space.s, gap: 4 },

@@ -19,6 +19,8 @@ export interface EatFilters {
   picks: boolean;
   /** vegan or vegetarian food on the menu (OpenStreetMap diet tags) */
   veg: boolean;
+  /** gluten-free food on the menu (OpenStreetMap diet tags) */
+  glutenFree?: boolean;
 }
 
 export const NO_EAT_FILTERS: EatFilters = { cuisines: [], openNow: false, picks: false, veg: false };
@@ -53,6 +55,7 @@ export function filterEat<T extends EatVenue>(list: readonly T[], f: EatFilters,
       (!f.cuisines.length || f.cuisines.some((c) => v.cuisines.includes(c))) &&
       (!f.picks || v.pick === true) &&
       (!f.veg || !!v.diet?.some((d) => d === 'vegan' || d === 'vegetarian')) &&
+      (!f.glutenFree || !!v.diet?.includes('gluten_free')) &&
       (!q || fold(v.name).includes(q)) &&
       (!f.openNow || isOpen(v) === true),
   );
@@ -67,6 +70,30 @@ export function byDistance<T extends LatLon & { name: string; pick?: boolean }>(
         ? a.metres - b.metres
         : Number(b.item.pick === true) - Number(a.item.pick === true) || a.item.name.localeCompare(b.item.name),
     );
+}
+
+/** How the list of places to eat is ordered. */
+export type EatSort = 'near' | 'picks' | 'late' | 'name';
+export const EAT_SORTS: EatSort[] = ['near', 'picks', 'late', 'name'];
+
+/**
+ * Orders rows that byDistance already put nearest first (so "near" keeps them, and every other
+ * order falls back to the distance): our picks first, open the longest from now (places with no
+ * hours or closed go last), or by name.
+ */
+export function sortEat<T extends { name: string; pick?: boolean }>(
+  rows: readonly { item: T; metres: number | null }[],
+  sort: EatSort,
+  minutesLeft: (v: T) => number | null,
+): { item: T; metres: number | null }[] {
+  const out = [...rows];
+  const near = (a: { metres: number | null }, b: { metres: number | null }) => (a.metres ?? Infinity) - (b.metres ?? Infinity);
+  if (sort === 'picks') out.sort((a, b) => Number(b.item.pick === true) - Number(a.item.pick === true) || near(a, b));
+  else if (sort === 'late') {
+    const left = new Map(out.map((r) => [r, minutesLeft(r.item)]));
+    out.sort((a, b) => (left.get(b) ?? -1) - (left.get(a) ?? -1) || near(a, b));
+  } else if (sort === 'name') out.sort((a, b) => a.item.name.localeCompare(b.item.name, 'pl'));
+  return out;
 }
 
 /** The cuisines with the most places, for the row of quick choices; never an empty one. */

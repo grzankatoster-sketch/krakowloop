@@ -10,6 +10,7 @@ import {
   nearest,
   parseMode,
   removeEatChip,
+  sortEat,
   toggleCuisine,
   topCuisines,
 } from '../src/lib/discover';
@@ -20,7 +21,7 @@ const venues = [
   { id: 'b', name: 'Megami', lat: 50.0622, lon: 19.9352, cuisines: cuisineGroups('japanese;sushi') },
   { id: 'c', name: 'Yatai Sushi', lat: 50.0445, lon: 19.9491, cuisines: cuisineGroups('sushi') },
   { id: 'd', name: 'Pod Aniołami', lat: 50.0578, lon: 19.9375, cuisines: cuisineGroups('polish'), diet: ['vegetarian'] },
-  { id: 'e', name: 'Zielona Kuchnia', lat: 50.07, lon: 19.94, cuisines: [], diet: ['vegan'] },
+  { id: 'e', name: 'Zielona Kuchnia', lat: 50.07, lon: 19.94, cuisines: [], diet: ['vegan', 'gluten_free'] },
 ];
 const open: Record<string, boolean | null> = { a: true, b: true, c: false, d: null, e: true };
 const isOpen = (v: { id: string }) => open[v.id];
@@ -72,6 +73,39 @@ describe('ordering', () => {
   });
   it('lists the most common cuisines, never an empty one', () => {
     expect(topCuisines({ pizza: 145, sushi: 50, polish: 92, ramen: 0 }, 5)).toEqual(['pizza', 'polish', 'sushi']);
+  });
+});
+
+describe('gluten-free and sorting', () => {
+  it('gluten-free keeps only places that say so', () => {
+    expect(filterEat(venues, { ...NO_EAT_FILTERS, glutenFree: true }, '', isOpen).map((v) => v.id)).toEqual(['e']);
+  });
+
+  const rows = byDistance(venues, RYNEK);
+  const left: Record<string, number | null> = { a: 30, b: 240, c: null, d: 90, e: 240 };
+  const minutesLeft = (v: { id: string }) => left[v.id];
+
+  it('nearest keeps the distance order, and does not touch the rows it was given', () => {
+    const before = rows.map((r) => r.item.id);
+    expect(sortEat(rows, 'near', minutesLeft).map((r) => r.item.id)).toEqual(before);
+    expect(rows.map((r) => r.item.id)).toEqual(before);
+  });
+
+  it('our picks first, then the nearest', () => {
+    const ids = sortEat(rows, 'picks', minutesLeft).map((r) => r.item.id);
+    expect(ids[0]).toBe('a');
+    expect(ids.slice(1)).toEqual(rows.map((r) => r.item.id).filter((id) => id !== 'a'));
+  });
+
+  it('open longest: the most time left first, the nearer of two equal, closed or unknown last', () => {
+    const ids = sortEat(rows, 'late', minutesLeft).map((r) => r.item.id);
+    expect(ids.slice(0, 2).sort()).toEqual(['b', 'e']);
+    expect(ids[0]).toBe('b'); // Megami is nearer the Main Square than Zielona Kuchnia
+    expect(ids[ids.length - 1]).toBe('c');
+  });
+
+  it('A–Z by name', () => {
+    expect(sortEat(rows, 'name', minutesLeft).map((r) => r.item.name)).toEqual(['77 Sushi', 'Megami', 'Pod Aniołami', 'Yatai Sushi', 'Zielona Kuchnia']);
   });
 });
 
