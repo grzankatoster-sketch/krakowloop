@@ -3,7 +3,7 @@ import { places } from '../src/data/places';
 import { parseISODate } from '../src/lib/dates';
 import { distance } from '../src/lib/geo';
 import { hoursOn } from '../src/lib/hours';
-import { INTEREST_KEYS, Interest, LOW_WALK_MINUTES, MAX_DAY_SPREAD_METRES, MAX_PLAN_DAYS, PACE_KEYS, PlanDay, PlanOptions, buildPlan, suitsDinner, tripSlots } from '../src/lib/planner';
+import { AFTER_TRIP_MIN_MINUTES, INTEREST_KEYS, Interest, LOW_WALK_MINUTES, MAX_DAY_SPREAD_METRES, MAX_PLAN_DAYS, PACE_KEYS, PlanDay, PlanOptions, buildPlan, suitsDinner, tripSlots } from '../src/lib/planner';
 
 const subsets = <T>(xs: T[]): T[][] => xs.reduce<T[][]>((acc, x) => acc.concat(acc.map((s) => [...s, x])), [[]]);
 
@@ -38,7 +38,8 @@ describe('buildPlan over every form combination', () => {
 
   it('never repeats a place and respects trips and remembrance choices', () => {
     for (const { o, plan } of plans) {
-      const ids = plan.flatMap((d) => d.stops.map((s) => s.place.id));
+      // the afternoon after a trip counts too: nothing is visited twice in a stay
+      const ids = plan.flatMap((d) => [...d.stops, ...(d.after?.stops ?? [])].map((s) => s.place.id));
       expect(new Set(ids).size).toBe(ids.length);
       const tripDays = plan.filter((d) => d.kind === 'trip');
       if (!o.dayTrips || o.days < 2) expect(tripDays).toHaveLength(0);
@@ -141,6 +142,37 @@ describe('buildPlan options', () => {
     const trip = easy.find((d) => d.kind === 'trip')!;
     expect(trip.travelMinutes).toBeGreaterThan(0);
     expect(trip.totalMinutes).toBe(trip.visitMinutes + 2 * trip.travelMinutes);
+  });
+
+  it('fills the afternoon after a short trip with a few places in town, within what the day has left', () => {
+    const plans = combos.map((o) => buildPlan(o));
+    for (const plan of plans) {
+      for (const d of plan.filter((x) => x.kind === 'trip')) {
+        const free = d.budgetMinutes - d.totalMinutes;
+        if (!d.after) continue;
+        expect(free).toBeGreaterThanOrEqual(AFTER_TRIP_MIN_MINUTES);
+        expect(d.after.kind).toBe('city');
+        expect(d.after.stops.length).toBeGreaterThan(0);
+        expect(d.after.totalMinutes).toBeLessThanOrEqual(free);
+      }
+    }
+    // the salt mine on a steady pace: four hours and the road leave an afternoon, and it is used
+    const steady = buildPlan({ days: 3, pace: 'steady', interests: [], dayTrips: true });
+    const mine = steady.find((d) => d.kind === 'trip')!;
+    expect(mine.stops[0].place.id).toBe('wieliczka');
+    expect(mine.after?.stops.length).toBeGreaterThan(0);
+    // a long trip fills its day by itself
+    const auschwitz = buildPlan({ days: 3, pace: 'steady', interests: ['remembrance'], dayTrips: true }).find((d) => d.kind === 'trip')!;
+    expect(auschwitz.after).toBeUndefined();
+  });
+
+  it('never gives an afternoon a must-see the city days need', () => {
+    for (const pace of ['steady', 'full'] as const) {
+      const plan = buildPlan({ days: 3, pace, interests: [], dayTrips: true });
+      const cityIds = plan.filter((d) => d.kind === 'city').flatMap((d) => d.stops.map((s) => s.place.id));
+      expect(cityIds).toContain('st-marys');
+      expect(cityIds.some((id) => id === 'wawel-castle' || id === 'wawel-cathedral')).toBe(true);
+    }
   });
 
   it('keeps a remembrance trip the traveller asked for, and says when it is longer than the pace', () => {

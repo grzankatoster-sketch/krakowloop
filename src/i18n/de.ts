@@ -629,6 +629,8 @@ export const de: Strings = {
   'plan.native.howMany': "Wie viele Tage hast du?",
   'plan.native.quickNote': "Ein Tippen und die Spaziergänge stehen: Sehenswertes, Essen, normales Tempo. Ändern kannst du alles danach.",
   'plan.native.tune': "Zuerst Details einstellen",
+  'plan.afterTrip': "Zurück in Krakau: der Nachmittag",
+  'plan.afterTripLine': "Etwa {total} für die Orte unten, nach dem Ausflug.",
   'plan.native.mapTouch': "Tippen, um die Karte zu bewegen",
   'plan.native.mapDone': "Fertig",
   'welcome.skip': "Überspringen",

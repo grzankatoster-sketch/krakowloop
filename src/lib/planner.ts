@@ -72,6 +72,11 @@ export interface PlanDay {
   closed: Place[];
   /** the loop as [lon, lat], start point included */
   route: [number, number][];
+  /**
+   * A short day trip (the salt mine: four hours and the road) leaves the afternoon free: back in
+   * Kraków, a few places close together fill it. A city day of its own, measured on its own.
+   */
+  after?: PlanDay;
 }
 
 /** A day is limited by stops and by time: visiting plus every leg, return included. */
@@ -138,6 +143,13 @@ const SAME_SPOT_METRES = 150;
 
 /** Minutes kept free on steady and full days for lunch and a rest, so a day is not seven hours on the go. */
 const BREAK_MINUTES: Record<Pace, number> = { easy: 0, steady: 45, full: 45 };
+
+/** A day trip leaving at least this much of the day free gets an afternoon in the city after it. */
+export const AFTER_TRIP_MIN_MINUTES = 75;
+/** An afternoon after a trip is short: never more stops than this. */
+const AFTER_TRIP_MAX_STOPS = 3;
+/** Parts of town for the afternoon after a trip: close to the centre and alive in the evening. */
+const AFTER_TRIP_ZONES: Zone[] = ['kazimierz', 'old-town', 'podgorze'];
 
 /** Day trips longer than the pace allows by more than this factor are not suggested (a mountain trip on an easy pace). */
 const TRIP_STRETCH = 1.35;
@@ -226,8 +238,11 @@ function pickCityDay(
   jitter: (p: Place) => number = () => 0,
   /** wishes that change how a day is built, not which places exist */
   wish: { walking?: 'low' | 'normal'; dinner?: boolean } = {},
+  /** a part of a day instead of a whole one: its minutes (breaks already taken out) and stops */
+  limit?: { minutes: number; stops: number },
 ): Place[] {
-  const { maxStops, budgetMinutes } = PACE_LIMITS[pace];
+  const maxStops = limit ? Math.min(limit.stops, PACE_LIMITS[pace].maxStops) : PACE_LIMITS[pace].maxStops;
+  const budgetMinutes = PACE_LIMITS[pace].budgetMinutes;
   const byScore = (a: Place, b: Place) => score(b, wanted) + jitter(b) - (score(a, wanted) + jitter(a));
   const inGroup = pool.filter((p) => zones.includes(p.zone)).sort(byScore);
   // The best must-see of each part of town goes first, so a long visit (Wawel Castle) is not
@@ -241,7 +256,7 @@ function pickCityDay(
     .filter((p) => !zones.includes(p.zone) && distance(c, p) <= BORROW_WITHIN_METRES)
     .sort(byScore);
 
-  const available = budgetMinutes - BREAK_MINUTES[pace];
+  const available = limit ? limit.minutes : budgetMinutes - BREAK_MINUTES[pace];
   // with a meal wanted, the day is filled to less than its budget and the meal takes the rest
   const fill = wish.dinner ? available - DINNER_RESERVE_MINUTES : available;
   let chosen: Place[] = [];
@@ -414,6 +429,21 @@ export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanD
     const closed = date ? pool.filter((p) => zones.includes(p.zone) && p.priority >= 2 && !open.includes(p)) : [];
     // the day keeps its number in the stay, so activities put on "day 2" stay with it
     plan.push(cityDay(d + 1, stops, opts.pace, opts.start, date, closed));
+    pool = pool.filter((p) => !stops.includes(p));
+  }
+
+  // Afterwards, and only from what the city days left: a short trip gets its afternoon back in town.
+  // (Done last, so an afternoon never takes a must-see from the day built around it.)
+  for (const day of plan) {
+    if (day.kind !== 'trip' || !pool.length) continue;
+    // the break of a trip day is taken on the trip (lunch in Wieliczka), so the rest of the budget is free
+    const free = day.budgetMinutes - day.totalMinutes;
+    if (free < AFTER_TRIP_MIN_MINUTES) continue;
+    const date = day.date ? parseISODate(day.date) : null;
+    const open = date ? pool.filter((p) => opensLongEnough(p.id, date, p.minutes)) : pool;
+    const stops = pickCityDay(open, AFTER_TRIP_ZONES, wanted, opts.pace, opts.start, date, jitter, { walking: opts.walking }, { minutes: free, stops: AFTER_TRIP_MAX_STOPS });
+    if (!stops.length) continue;
+    day.after = cityDay(day.index, stops, opts.pace, opts.start, date, []);
     pool = pool.filter((p) => !stops.includes(p));
   }
   return plan;

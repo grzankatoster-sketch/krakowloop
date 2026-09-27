@@ -642,6 +642,8 @@ export const en = {
   'plan.native.howMany': "How many days do you have?",
   'plan.native.quickNote': "One tap and the walks are ready: sights, food and the usual pace. You can change everything afterwards.",
   'plan.native.tune': "Set the details first",
+  'plan.afterTrip': "Back in Kraków: the afternoon",
+  'plan.afterTripLine': "About {total} for the places below, after the trip.",
   'plan.native.mapTouch': "Touch to move the map",
   'plan.native.mapDone': "Done",
   'welcome.skip': "Skip",

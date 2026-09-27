@@ -608,6 +608,16 @@ export default function PlanScreen() {
             ) : null}
 
             {day.kind === 'trip' ? <TripCard day={day} /> : <Timeline day={day} real={real} onSkip={skipStop} />}
+            {/* a short trip leaves the afternoon: a few places back in Kraków */}
+            {day.after ? (
+              <View style={{ marginTop: space.l }}>
+                <Text style={s.dayTitle} accessibilityRole="header">
+                  {t('plan.afterTrip')}
+                </Text>
+                <Text style={s.totals}>{t('plan.afterTripLine', { total: fmt(day.after.totalMinutes) })}</Text>
+                <Timeline day={day.after} real={null} onSkip={skipStop} />
+              </View>
+            ) : null}
 
             {options.exclude?.length ? (
               <View style={{ marginTop: space.m }}>
