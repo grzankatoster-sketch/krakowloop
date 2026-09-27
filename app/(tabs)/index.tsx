@@ -17,10 +17,13 @@ import { RESTAURANTS, restaurantHoursOn } from '../../src/data/restaurants';
 import { krakowWallClock } from '../../src/lib/cityTime';
 import { distance, LatLon } from '../../src/lib/geo';
 import { formatTime, hoursOn, Interval } from '../../src/lib/hours';
-import { Moment, MomentSource, pickMoments, standingAt } from '../../src/lib/moments';
+import { Moment, MomentSource, pickMoments, standingAt, walkMinutes } from '../../src/lib/moments';
 import { openWalkingDirections } from '../../src/lib/navigate';
 import { openState } from '../../src/lib/openNow';
 import { useLiveLocation } from '../../src/lib/useLiveLocation';
+import { daysFor, eventTime, pickEvents, useCityEvents } from '../../src/lib/events';
+import { EVENT_COLOR, EVENT_ICON } from '../../src/components/EventsSection';
+import { openLink } from '../../src/lib/openLink';
 import { LANG, t } from '../../src/i18n';
 import type { StringKey } from '../../src/i18n/en';
 import { colors, fonts, space } from '../../src/theme';
@@ -37,6 +40,11 @@ interface Story extends Moment {
   image?: ImageSourcePropType;
   eyebrow: string;
   line: string;
+  /** an event's tickets */
+  url?: string;
+  /** without a photo: the colour and the sign of what it is (a fork for food, a ball for a match) */
+  tint?: string;
+  icon?: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   /** "standing at": the place the traveller is at right now */
   here?: boolean;
   place?: Place;
@@ -91,6 +99,7 @@ export default function TodayScreen() {
   const tabSpace = useTabBarSpace();
   const topSpace = useTopSpace();
   const live = useLiveLocation();
+  const { events: cityEvents } = useCityEvents();
   // The order of the stories must not change under the finger: GPS ticks every ~20 m, so the stories
   // are sorted from an anchor that only moves after a real walk (the walking times stay close enough).
   const [anchor, setAnchor] = useState<LatLon>(RYNEK);
@@ -132,6 +141,27 @@ export default function TodayScreen() {
       const kind = t(`story.kind.${m.kind}` as StringKey);
       return { ...m, image: src.image, line: src.line, place: src.place, year: src.year, eyebrow: `${src.cat ?? kind} · ${t('story.walk', { n: m.walkMinutes })}` };
     });
+    // tonight's concert or match: up to two of today's events still to come, after the first story
+    const tonight = pickEvents(cityEvents, daysFor('today'), [], 'time', anchor).slice(0, 2).map<Story>((e) => {
+      const metres = distance(anchor, e);
+      return {
+        id: `event:${e.id}`,
+        name: e.title,
+        kind: 'event',
+        lat: e.lat,
+        lon: e.lon,
+        open: null,
+        metres,
+        walkMinutes: walkMinutes(metres),
+        image: e.image ? { uri: e.image } : undefined,
+        line: [eventTime(e) ?? t('events.allDay'), e.venue].filter(Boolean).join(' · '),
+        eyebrow: `${t(`events.cat.${e.category}` as StringKey)} · ${t('events.when.today')}`,
+        url: e.url,
+        tint: EVENT_COLOR[e.category],
+        icon: EVENT_ICON[e.category],
+      };
+    });
+    out.splice(Math.min(1, out.length), 0, ...tonight);
     if (standing) {
       const rest = out.filter((s) => s.id !== standing.id);
       const src = byId.get(standing.id);
@@ -148,7 +178,7 @@ export default function TodayScreen() {
       return rest;
     }
     return out;
-  }, [sources, anchor, standing]);
+  }, [sources, anchor, standing, cityEvents]);
 
   // arriving somewhere: back to the top, where that place now is, with one nudge
   const standingId = standing?.id ?? null;
@@ -180,7 +210,8 @@ export default function TodayScreen() {
 
   const open = useCallback(
     (s: Story) => {
-      if (s.kind === 'lens') router.push(`/lens/${s.id.slice(5)}`);
+      if (s.kind === 'event' && s.url) openLink(s.url);
+      else if (s.kind === 'lens') router.push(`/lens/${s.id.slice(5)}`);
       else if (s.kind === 'eat') router.push({ pathname: '/map', params: { mode: 'eat' } });
       else router.push(`/place/${s.id}`);
     },
@@ -279,8 +310,8 @@ const StoryPage = memo(function StoryPage({
       {st.image ? (
         <Image source={st.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors />
       ) : (
-        <View style={[StyleSheet.absoluteFill, s.eatBg]}>
-          <MaterialCommunityIcons name="silverware-fork-knife" size={220} color="rgba(255,255,255,0.08)" style={s.eatIcon} />
+        <View style={[StyleSheet.absoluteFill, s.eatBg, st.tint ? { backgroundColor: st.tint } : null]}>
+          <MaterialCommunityIcons name={st.icon ?? 'silverware-fork-knife'} size={220} color="rgba(255,255,255,0.08)" style={s.eatIcon} />
         </View>
       )}
       {/* darker at the top for the clock and at the bottom for the words: the photo stays in the middle */}
@@ -320,7 +351,7 @@ const StoryPage = memo(function StoryPage({
           ) : null}
           <Pressable accessibilityRole="button" onPress={() => onOpen(st)} style={({ pressed }) => [s.ghost, pressed && s.pressed]}>
             <Text style={s.ghostText} numberOfLines={1}>
-              {st.kind === 'lens' ? t('story.seeThen') : t('moment.more')}
+              {st.kind === 'lens' ? t('story.seeThen') : st.kind === 'event' ? t('events.tickets') : t('moment.more')}
             </Text>
           </Pressable>
         </View>

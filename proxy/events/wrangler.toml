@@ -1,0 +1,5 @@
+# Cloudflare Worker for events in Kraków. Deploy from this folder: npx wrangler deploy
+# The Ticketmaster key is a secret, set once: npx wrangler secret put TICKETMASTER_KEY
+name = "krakowloop-events"
+main = "worker.mjs"
+compatibility_date = "2026-09-01"

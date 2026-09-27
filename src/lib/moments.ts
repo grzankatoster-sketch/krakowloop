@@ -3,7 +3,7 @@
 // and a recommended place to eat that is open, nearest first, never more than one of a kind in a row.
 import { distance, LatLon } from './geo';
 
-export type MomentKind = 'sight' | 'lens' | 'eat';
+export type MomentKind = 'sight' | 'lens' | 'eat' | 'event';
 
 export interface MomentSource extends LatLon {
   id: string;

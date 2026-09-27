@@ -7,6 +7,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { lensName, placeName } from '../../src/components/placeName';
+import { EventsSection } from '../../src/components/EventsSection';
 import { CITY } from '../../src/config/city';
 import { CuisineKey } from '../../src/data/cuisines';
 import { lensPoints } from '../../src/data/lens';
@@ -79,7 +80,10 @@ export default function DiscoverScreen() {
         <Text style={s.searchText}>{t('moment.ask')}</Text>
       </Pressable>
 
-      {/* sights to walk to, in photographs */}
+      {/* concerts, sport, theatre: today, tomorrow, the weekend */}
+        <EventsSection from={RYNEK} />
+
+        {/* sights to walk to, in photographs */}
       <Text style={s.eyebrow}>{t('discover.native.nearRynek')}</Text>
       <Text style={s.h2}>{t('discover.native.sights')}</Text>
       <View style={s.grid}>
