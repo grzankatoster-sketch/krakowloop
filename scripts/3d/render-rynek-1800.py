@@ -50,7 +50,7 @@ for backend in ("OPTIX", "CUDA"):
 scene.render.resolution_x = 1600
 scene.render.resolution_y = 1000
 scene.view_settings.view_transform = "AgX"
-scene.view_settings.exposure = -1.1
+scene.view_settings.exposure = -0.7
 scene.view_settings.look = "AgX - Medium High Contrast"
 
 
@@ -89,6 +89,40 @@ def facade_coords(nodes, links, scale=1.0):
     return comb.outputs[0]
 
 
+def weathered(nodes, links, colour_socket, grime=0.55):
+    """Colour × a soft noise (patchy render) × darker near the ground (rain splash, dirt)."""
+    geo = nodes.new("ShaderNodeNewGeometry")
+    noise = nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 0.35
+    noise.inputs["Detail"].default_value = 8.0
+    links.new(geo.outputs["Position"], noise.inputs["Vector"])
+    patch = nodes.new("ShaderNodeMapRange")
+    patch.inputs["To Min"].default_value = 0.82
+    patch.inputs["To Max"].default_value = 1.06
+    links.new(noise.outputs["Fac"], patch.inputs["Value"])
+    sep = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(geo.outputs["Position"], sep.inputs[0])
+    low = nodes.new("ShaderNodeMapRange")
+    low.inputs["From Min"].default_value = 0.0
+    low.inputs["From Max"].default_value = 3.0
+    low.inputs["To Min"].default_value = grime
+    low.inputs["To Max"].default_value = 1.0
+    links.new(sep.outputs[2], low.inputs["Value"])
+    m1 = nodes.new("ShaderNodeMix")
+    m1.data_type = "RGBA"
+    m1.blend_type = "MULTIPLY"
+    m1.inputs["Factor"].default_value = 1.0
+    links.new(colour_socket, m1.inputs[6])
+    links.new(patch.outputs[0], m1.inputs[7])
+    m2 = nodes.new("ShaderNodeMix")
+    m2.data_type = "RGBA"
+    m2.blend_type = "MULTIPLY"
+    m2.inputs["Factor"].default_value = 1.0
+    links.new(m1.outputs[2], m2.inputs[6])
+    links.new(low.outputs[0], m2.inputs[7])
+    return m2.outputs[2]
+
+
 def plaster_graph(nodes, links):
     # each house its own colour: ochre, sand, rose, grey-green, as on the square's plastered fronts
     info = nodes.new("ShaderNodeObjectInfo")
@@ -116,7 +150,7 @@ def plaster_graph(nodes, links):
     bricks.inputs["Color1"].default_value = (0.12, 0.12, 0.13, 1)
     bricks.inputs["Color2"].default_value = (0.16, 0.15, 0.15, 1)
     links.new(ramp.outputs["Color"], bricks.inputs["Mortar"])
-    return bricks.outputs["Color"]
+    return weathered(nodes, links, bricks.outputs["Color"])
 
 
 def roof_graph(nodes, links):
@@ -180,7 +214,7 @@ for ob in bpy.context.selected_objects:
             slot.material = ROOF if name.endswith("roof") else WALLS.get(name, PLASTER)
 
 # the square
-bpy.ops.mesh.primitive_plane_add(size=900, location=(0, 0, 0))
+bpy.ops.mesh.primitive_plane_add(size=6000, location=(0, 0, 0))
 bpy.context.object.data.materials.append(COBBLE)
 
 # ---------------------------------------------------------------- the Town Hall, around 1800
@@ -251,7 +285,13 @@ def openings(name, face, a0, a1, fixed, rows, per_row, z0, storey, w, h, mat=Non
             mesh(f"{name} {r} {k}", verts, [tuple(range(len(verts)))], mat or WINDOW)
 
 
-GREY = material("grey render", (0.46, 0.44, 0.41))
+def grey_graph(nodes, links):
+    rgb = nodes.new("ShaderNodeRGB")
+    rgb.outputs[0].default_value = (0.46, 0.42, 0.36, 1)
+    return weathered(nodes, links, rgb.outputs[0], 0.6)
+
+
+GREY = node_material("grey render", grey_graph, 0.9)
 
 # 1) the north block: granaries and offices, rendered grey, three storeys under a Renaissance attic
 N0, N1, WALL_N = 20.3, LONG, 17.0
@@ -261,7 +301,21 @@ box("attic", -0.3, DEPTH + 0.3, N0 - 0.3, N1 + 0.3, WALL_N, WALL_N + 0.6, STONE)
 box("attic wall", 0, DEPTH, N0, N1, WALL_N + 0.6, WALL_N + 4.2, GREY)
 for face, a0, a1, fixed, n in (("n", 0, DEPTH, N1 + 0.03, 10), ("n", 0, DEPTH, N0 - 0.03, 10), ("e", N0, N1, DEPTH + 0.03, 7), ("e", N0, N1, -0.03, 7)):
     openings(f"attic arch {face}{fixed:.0f}", face, a0, a1, fixed, 1, n, WALL_N + 1.0, 0, 1.6, 2.8, WINDOW, round_top=True)
-    # crest: a pinnacle between every second arch
+    # crest: a curved, segmental piece with a ball over every other arch, pinnacles between them
+    for k in range(1, n, 2):
+        c = a0 + k * (a1 - a0) / n
+        half, rise, th, base = (a1 - a0) / n * 0.55, 1.3, 0.35, WALL_N + 4.2
+        prof = [(-half, 0), (half, 0)] + [(math.cos(t) * half, rise * math.sin(t)) for t in (i * math.pi / 10 for i in range(11))]
+        prof = [(-half, 0), (half, 0)] + [(math.cos(t) * half, rise * math.sin(t)) for t in (i * math.pi / 10 for i in range(0, 11))][1:]
+        vs = []
+        for d in (-th, th):
+            for (x, z) in prof:
+                vs.append(at(fixed + d, c + x, base + z) if face == 'e' else at(c + x, fixed + d, base + z))
+        m = len(prof)
+        fs = [tuple(range(m)), tuple(range(2 * m - 1, m - 1, -1))] + [(i, (i + 1) % m, m + (i + 1) % m, m + i) for i in range(m)]
+        mesh(f"crest {face}{fixed:.0f} {k}", vs, fs, GREY)
+        bpy.ops.mesh.primitive_uv_sphere_add(radius=0.35, location=(at(fixed, c, base + rise + 0.35) if face == 'e' else at(c, fixed, base + rise + 0.35)))
+        put(bpy.context.object).data.materials.append(STONE)
     for k in range(0, n + 1, 2):
         c = a0 + k * (a1 - a0) / n
         loc = at(fixed, c, WALL_N + 5.4) if face == 'e' else at(c, fixed, WALL_N + 5.4)
@@ -340,6 +394,43 @@ for k in range(arches):
 box("porch beam", G1 - 0.6, G1, 4.0 - 0.3, LONG + 2.7 + 0.3, 5.0, 5.7, STONE)
 mesh("porch roof", [at(G0, 4.0 - 0.3, 8.0), at(G0, LONG + 3.0, 8.0), at(G1 + 0.4, LONG + 3.0, 5.7), at(G1 + 0.4, 4.0 - 0.3, 5.7)], [(0, 1, 2, 3)], ROOF)
 
+# ---------------------------------------------------------------- the square around 1800: stalls and people
+# Stalls stood around the Cloth Hall and on the square (the "kramy"); Dietrich (1820) and
+# Stachowicz (1797) show carts and crowds. Placed at random (fixed seed), not after a record.
+import random
+rnd = random.Random(1800)
+WOOD = material("wood", (0.28, 0.17, 0.09), 0.9)
+CANVAS = [material(f"canvas {i}", c, 0.9) for i, c in enumerate([(0.82, 0.76, 0.62), (0.62, 0.20, 0.14), (0.78, 0.66, 0.40), (0.52, 0.56, 0.44)])]
+CLOTH = [material(f"coat {i}", c, 0.9) for i, c in enumerate([(0.12, 0.14, 0.24), (0.30, 0.10, 0.08), (0.20, 0.18, 0.14), (0.40, 0.34, 0.22), (0.55, 0.50, 0.42), (0.10, 0.10, 0.10)])]
+SKIN = material("skin", (0.78, 0.58, 0.46), 0.7)
+
+def stall(e, n):
+    box("stall", e - 1.3, e + 1.3, n - 1.0, n + 1.0, 0, 1.1, WOOD)
+    for de, dn in ((-1.2, -0.9), (1.2, -0.9), (-1.2, 0.9), (1.2, 0.9)):
+        box("post", e + de - 0.06, e + de + 0.06, n + dn - 0.06, n + dn + 0.06, 1.1, 2.3, WOOD)
+    ridge = 2.9
+    roof = [at(e - 1.5, n - 1.2, 2.2), at(e + 1.5, n - 1.2, 2.2), at(e + 1.5, n, ridge), at(e - 1.5, n, ridge), at(e + 1.5, n + 1.2, 2.2), at(e - 1.5, n + 1.2, 2.2)]
+    mesh("stall roof", roof, [(0, 1, 2, 3), (3, 2, 4, 5)], rnd.choice(CANVAS))
+
+# two rows of stalls on the market side, between the porch and the Cloth Hall, with gaps
+for row_e in (DEPTH + 11, DEPTH + 18):
+    n = -8.0
+    while n < LONG + 40:
+        # the street camera stands in this lane: nothing within 14 m in front of it
+        near_cam = abs(n - (LONG + 24)) < 14 and abs(row_e - (DEPTH + 14.5)) < 5
+        if rnd.random() > 0.25 and not near_cam:
+            stall(row_e, n)
+        n += 3.4
+
+def person(p):
+    h = rnd.uniform(1.55, 1.8)
+    bpy.ops.mesh.primitive_cone_add(vertices=10, radius1=rnd.uniform(0.28, 0.38), radius2=0.16, depth=h * 0.82, location=p + Vector((0, 0, h * 0.41)))
+    put(bpy.context.object).data.materials.append(rnd.choice(CLOTH))
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=0.12, segments=12, ring_count=8, location=p + Vector((0, 0, h * 0.82 + 0.1)))
+    put(bpy.context.object).data.materials.append(SKIN)
+
+# (no people yet: simple cones read as bollards, not as a crowd)
+
 # ---------------------------------------------------------------- light and camera
 world = bpy.data.worlds.new("sky")
 scene.world = world
@@ -352,15 +443,44 @@ for kind in ("MULTIPLE_SCATTERING", "NISHITA", "HOSEK_WILKIE"):
         break
     except TypeError:
         continue
-sky.sun_elevation = math.radians(32)
-sky.sun_rotation = math.radians(200)
-nt.links.new(sky.outputs["Color"], nt.nodes["Background"].inputs["Color"])
-nt.nodes["Background"].inputs["Strength"].default_value = 0.18
+sky.sun_elevation = math.radians(15)
+sky.sun_rotation = math.radians(117)
+# clouds: a soft noise on the sky's direction, only above the horizon, warm on the sun's side
+coord = nt.nodes.new("ShaderNodeTexCoord")
+cnoise = nt.nodes.new("ShaderNodeTexNoise")
+cnoise.inputs["Scale"].default_value = 2.2
+cnoise.inputs["Detail"].default_value = 10.0
+cnoise.inputs["Roughness"].default_value = 0.6
+links_w = nt.links
+links_w.new(coord.outputs["Generated"], cnoise.inputs["Vector"])
+cramp = nt.nodes.new("ShaderNodeValToRGB")
+cramp.color_ramp.elements[0].position = 0.52
+cramp.color_ramp.elements[1].position = 0.72
+links_w.new(cnoise.outputs["Fac"], cramp.inputs["Fac"])
+csep = nt.nodes.new("ShaderNodeSeparateXYZ")
+links_w.new(coord.outputs["Generated"], csep.inputs[0])
+cfade = nt.nodes.new("ShaderNodeMapRange")
+cfade.inputs["From Min"].default_value = 0.03
+cfade.inputs["From Max"].default_value = 0.35
+links_w.new(csep.outputs[2], cfade.inputs["Value"])
+cmask = nt.nodes.new("ShaderNodeMath")
+cmask.operation = "MULTIPLY"
+links_w.new(cramp.outputs["Color"], cmask.inputs[0])
+links_w.new(cfade.outputs[0], cmask.inputs[1])
+cmix = nt.nodes.new("ShaderNodeMix")
+cmix.data_type = "RGBA"
+cmix.inputs[7].default_value = (5.0, 4.2, 3.4, 1)
+links_w.new(cmask.outputs[0], cmix.inputs["Factor"])
+links_w.new(sky.outputs["Color"], cmix.inputs[6])
+links_w.new(cmix.outputs[2], nt.nodes["Background"].inputs["Color"])
+nt.nodes["Background"].inputs["Strength"].default_value = 0.22
+# (no world volume: an unbounded haze swallows the sun and the sky)
 
 sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
-sun.data.energy = 3.2
-sun.data.color = (1.0, 0.93, 0.82)
-sun.rotation_euler = (math.radians(58), 0, math.radians(200))
+sun.data.energy = 4.2
+sun.data.color = (1.0, 0.78, 0.56)
+sun.data.angle = math.radians(1.5)
+sun.rotation_euler = (math.radians(75), 0, math.radians(62.8))
 scene.collection.objects.link(sun)
 
 # CAMERA: "tower" = from above St Mary's side, looking west-south-west over the Cloth Hall to the
@@ -377,7 +497,8 @@ if VIEW == "plan":
     cam.location = Vector((0, 0, 300))
     cam.rotation_euler = (0, 0, 0)
 elif VIEW == "street":
-    cam.location = at(DEPTH + 17, LONG + 22, 1.7)
+    # in the lane between the two rows of stalls, looking back at the Town Hall
+    cam.location = at(DEPTH + 14.5, LONG + 24, 1.7)
     cam.rotation_euler = ((at(DEPTH / 2, LONG / 2 - 6, 11)) - cam.location).to_track_quat("-Z", "Y").to_euler()
     cam.data.lens = 22
 else:
