@@ -366,6 +366,24 @@ export default function DiscoverScreen() {
     setModeParam(params.mode);
     if (params.mode) switchMode(parseMode(params.mode));
   }
+  // a shared food link (or a cuisine tile) arriving while the map is already open: its filters and
+  // order replace what was there, a wish still being read included (seen on the iOS simulator tour)
+  const linkKey = [params.cuisine, params.open, params.picks, params.veg, params.gf, params.sort].map((v) => v ?? '').join('|');
+  const [linkSeen, setLinkSeen] = useState(linkKey);
+  if (linkKey !== linkSeen) {
+    setLinkSeen(linkKey);
+    if (linkKey.replace(/\|/g, '')) {
+      const next = paramsToEat(params);
+      setEpoch((e) => e + 1);
+      setReading('idle');
+      setText('');
+      setNameQuery('');
+      setEat(next.eat);
+      setEatSort(next.sort);
+      setPicked(null);
+      refit();
+    }
+  }
 
   const select = useCallback(
     (id: string) => {
