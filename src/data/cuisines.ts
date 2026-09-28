@@ -98,7 +98,7 @@ export const CUISINE_WORDS: Record<CuisineKey, string[]> = {
   kebab: ['kebab', 'doner', 'falafel', 'hummus'],
   georgian: ['gruzin', 'georgian', 'georgisch', 'chaczapuri', 'khachapuri'],
   mexican: ['meksyk', 'mexican', 'mexikan', 'taco', 'burrito'],
-  seafood: ['owoce morza', 'seafood', 'ryb', 'fish', 'fisch', 'meeresfr'],
+  seafood: ['owoce morza', 'owocami morza', 'owocow morza', 'seafood', 'ryb', 'fish', 'fisch', 'meeresfr'],
   jewish: ['zydowsk', 'jewish', 'judisch', 'kosher', 'koszer'],
   french: ['francusk', 'french', 'franzos'],
   breakfast: ['sniadani', 'breakfast', 'brunch', 'fruhstuck'],

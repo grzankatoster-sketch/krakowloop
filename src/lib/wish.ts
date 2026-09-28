@@ -117,20 +117,28 @@ function find(text: string, phrase: string, prefix = false): Span[] {
   const out: Span[] = [];
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const start = m.index + m[1].length;
-    out.push({ start, end: start + m[2].length });
-    re.lastIndex = start + m[2].length;
+    let end = start + m[2].length;
+    // a prefix match ("tani" in "tanio") only covers the stem: stretch `end` to the rest of the
+    // word so callers (e.g. the negation chain, which reads the text between two spans) see the
+    // whole word, not the leftover letters after the stem.
+    if (prefix) while (end < text.length && /[a-z0-9]/.test(text[end])) end += 1;
+    out.push({ start, end });
+    re.lastIndex = end;
   }
   return out;
 }
 
-const has = (text: string, phrase: string, prefix = false) => find(text, plain(phrase), prefix).length > 0;
+/** 'spokojn*': a stem, matching the start of a word; any other keyword matches whole words only */
+const isStem = (w: string) => w.endsWith('*');
+const bare = (w: string) => plain(isStem(w) ? w.slice(0, -1) : w);
+const has = (text: string, phrase: string, prefix = false) => find(text, bare(phrase), prefix || isStem(phrase)).length > 0;
 const hasAny = (text: string, phrases: readonly string[], prefix = false) => phrases.some((w) => has(text, w, prefix));
 
 /** Blanks every occurrence of the phrases, so words already read are not read a second time. */
 function blank(text: string, phrases: readonly string[], prefix = false): string {
   let out = text;
   for (const w of phrases) {
-    for (const s of find(out, plain(w), prefix)) out = out.slice(0, s.start) + ' '.repeat(s.end - s.start) + out.slice(s.end);
+    for (const s of find(out, bare(w), prefix || isStem(w))) out = out.slice(0, s.start) + ' '.repeat(s.end - s.start) + out.slice(s.end);
   }
   return out;
 }
@@ -182,7 +190,7 @@ function clauses(text: string): string[] {
 function readClause(clause: string, foodContext: boolean): Found[] {
   const found: Found[] = [];
   const add = (target: Target, spans: Span[]) => spans.forEach((s) => found.push({ ...s, target, negated: false }));
-  const all = (words: readonly string[], prefix = false) => words.flatMap((w) => find(clause, plain(w), prefix));
+  const all = (words: readonly string[], prefix = false) => words.flatMap((w) => find(clause, bare(w), prefix || isStem(w)));
 
   for (const [id, words] of Object.entries(ACTIVITY_WORDS)) if (ACTIVITY_IDS.has(id)) add({ t: 'activity', id }, all(words));
   for (const key of INTEREST_KEYS) add({ t: 'interest', key }, all(INTEREST_WORDS[key]));

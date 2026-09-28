@@ -6,38 +6,53 @@ import type { Interest, Pace } from './planner';
  * that way (see wish.ts): "chodzic" also matches "chodzić", "schiessstand" matches "Schießstand".
  */
 export const ACTIVITY_WORDS: Record<string, string[]> = {
-  shooting: ['shooting', 'shooting range', 'gun range', 'guns', 'schiessstand', 'schiessen', 'strzelnica', 'strzelanie'],
+  shooting: ['shooting', 'shooting range', 'gun range', 'guns', 'schiessstand', 'schiessen', 'strzelnica', 'strzelanie', 'postrzelac'],
   quads: ['quad', 'quads', 'quad bike', 'atv', 'off-road', 'offroad', 'quadfahren', 'quady', 'quadem'],
-  paintball: ['paintball'],
-  karting: ['karting', 'go-kart', 'go kart', 'gokart', 'gokarty', 'kart'],
+  paintball: ['paintball*'],
+  karting: ['karting*', 'go-kart', 'go kart', 'gokart*'],
   'escape-room': ['escape room', 'escaperoom', 'escape'],
-  'pub-crawl': ['pub crawl', 'pubcrawl', 'bar crawl', 'kneipentour', 'pub crawl po barach', 'objazd po barach'],
+  'pub-crawl': ['pub crawl', 'pubcrawl', 'bar crawl', 'kneipentour', 'pub crawl po barach', 'objazd po barach', 'wycieczka po barach'],
   'vodka-tasting': ['vodka', 'vodka tasting', 'wodka', 'wodkaverkostung', 'wodka tasting', 'degustacja wodki', 'wodki'],
-  'food-tour': ['food tour', 'street food tour', 'essenstour', 'food tour po krakowie'],
+  'food-tour': ['food tour', 'street food tour', 'essenstour', 'food tour po krakowie', 'kulinarn*', 'degustacj*'],
   // "pierogi" alone is a dish to eat (a cuisine, see CUISINE_WORDS); only a class is this activity
-  pierogi: ['pierogi class', 'pierogi cooking', 'pierogi workshop', 'dumpling class', 'dumpling making', 'cooking class', 'kochkurs', 'pierogi kochkurs', 'warsztaty pierogow', 'warsztaty z pierogow', 'lepienie pierogow', 'kurs gotowania', 'warsztaty kulinarne'],
+  pierogi: [
+    'pierogi class', 'pierogi cooking', 'pierogi workshop', 'dumpling class', 'dumpling making', 'cooking class',
+    'kochkurs', 'pierogi kochkurs', 'warsztaty pierogow', 'warsztaty z pierogow', 'lepienie pierogow', 'lepieni*',
+    'kurs gotowania', 'warsztaty kulinarne',
+  ],
   chopin: ['chopin', 'concert', 'konzert', 'koncert'],
   balloon: ['balloon', 'hot air balloon', 'ballon', 'balon', 'lot balonem'],
   rafting: ['rafting', 'dunajec', 'splyw', 'splyw dunajcem', 'flossfahrt'],
   sleigh: ['sleigh', 'sleigh ride', 'kulig', 'schlittenfahrt'],
-  'jewish-tour': ['jewish tour', 'jewish krakow tour', 'guided jewish', 'judische fuhrung', 'wycieczka zydowska'],
-  'nowa-huta-tour': ['nowa huta tour', 'communism tour', 'trabant', 'kommunismus tour', 'wycieczka po nowej hucie'],
-  'river-cruise': ['cruise', 'river cruise', 'boat trip', 'boat', 'bootsfahrt', 'rejs', 'rejs po wisle', 'statek'],
+  'jewish-tour': ['jewish tour', 'jewish krakow tour', 'guided jewish', 'judische fuhrung', 'wycieczka zydowska', 'kazimierz tour', 'guided kazimierz', 'wycieczka po kazimierzu', 'przewodnikiem po kazimierzu', 'synagogi na kazimierzu z przewodnikiem'],
+  'nowa-huta-tour': ['nowa huta tour', 'communism tour', 'trabant', 'kommunismus tour', 'wycieczka po nowej hucie', 'nowa huta', 'nowa hute', 'nowej huty'],
+  'river-cruise': ['cruise', 'river cruise', 'boat trip', 'boat', 'bootsfahrt', 'rejs', 'rejs po wisle', 'statek', 'flussfahrt'],
+  'golf-cart': ['golf cart', 'golf-cart', 'wozek golfowy', 'wozkiem golfowym', 'golfowym wozkiem', 'golfmobil'],
+  'wieliczka-tour': ['wieliczk*', 'salt mine', 'kopalnia soli', 'kopalni soli', 'salzbergwerk'],
 };
 
 export const INTEREST_WORDS: Record<Interest, string[]> = {
-  history: ['history', 'historic', 'historical', 'monuments', 'old town', 'geschichte', 'historisch', 'sehenswurdigkeiten', 'historia', 'zabytki', 'stare miasto'],
-  museums: ['museum', 'museums', 'gallery', 'galleries', 'museen', 'galerie', 'muzeum', 'muzea', 'galerie sztuki'],
+  history: ['history', 'historic', 'historical', 'monuments', 'old town', 'geschichte', 'historisch', 'sehenswurdigkeiten', 'histori*', 'zabytki', 'stare miasto'],
+  museums: ['museum', 'museums', 'gallery', 'galleries', 'museen', 'galerie', 'muze*', 'galerie sztuki'],
   jewish: ['jewish', 'synagogue', 'synagogues', 'kazimierz', 'judisch', 'judische', 'synagoge', 'zydowski', 'zydowskie', 'synagogi'],
-  views: ['view', 'views', 'viewpoint', 'park', 'parks', 'green', 'nature', 'aussicht', 'aussichtspunkt', 'parks', 'natur', 'widok', 'widoki', 'parki', 'zielen', 'przyroda'],
-  food: ['food', 'eat', 'eating', 'restaurant', 'restaurants', 'essen', 'restaurants', 'jedzenie', 'restauracje', 'knajpy'],
+  views: ['view', 'views', 'viewpoint', 'panoram*', 'viewpoints', 'park', 'parks', 'green', 'nature', 'aussicht', 'aussichtspunkt*', 'parks', 'natur', 'widok*', 'parki', 'zielen', 'przyroda', 'kopca', 'kopiec'],
+  food: ['food', 'eat', 'eating', 'restaurant', 'restaurants', 'essen', 'restaurants', 'jedzenie', 'restauracje', 'knajpy', 'kuchni*', 'kuchnia'],
   remembrance: ['remembrance', 'memorial', 'auschwitz', 'holocaust', 'ghetto', 'gedenken', 'gedenkstatte', 'pamiec', 'miejsca pamieci', 'getto'],
 };
 
 export const PACE_WORDS: Record<Pace, string[]> = {
-  easy: ['calm', 'calmly', 'easy', 'slow', 'slowly', 'relaxed', 'take it easy', 'ruhig', 'gemutlich', 'langsam', 'entspannt', 'spokojnie', 'spokojny', 'na luzie', 'wolno', 'powoli'],
-  steady: ['normal', 'normally', 'steady', 'mittel', 'normal', 'w sam raz', 'normalnie', 'srednio'],
-  full: ['full', 'packed', 'intense', 'a lot', 'lots', 'as much as possible', 'see everything', 'viel', 'voll', 'intensiv', 'moglichst viel', 'alles sehen', 'intensywnie', 'duzo', 'jak najwiecej', 'wszystko zobaczyc'],
+  easy: [
+    'calm', 'calmly', 'easy', 'slow', 'slowly', 'relaxed', 'take it easy', 'ruhig', 'gemutlich', 'langsam', 'entspannt',
+    'spokojn*', 'na luzie', 'wolno', 'powoli',
+    'bez pospiechu', 'bez posp*', 'no rush', 'not rush', 'nic za szybko', 'kein zeitdruck', 'chill',
+    'odpoczy*', 'rest more', 'more rest', 'bez szalencz*',
+  ],
+  steady: ['normal', 'normally', 'steady', 'mittel', 'normal', 'w sam raz', 'normalnie', 'srednio', 'moderate', 'umiarkowan*', 'gemassigt*'],
+  full: [
+    'full', 'packed', 'intense', 'intensely', 'as much as possible', 'see everything', 'viel', 'voll',
+    'intensiv', 'moglichst viel', 'alles sehen', 'intensywnie', 'jak najwiecej', 'wszystko zobaczyc', 'zobaczyc wszystko',
+    'volles programm',
+  ],
 };
 
 /** "we don't want to walk much" and its cousins */
@@ -61,6 +76,25 @@ export const LOW_WALKING_WORDS = [
   'malo chodzenia',
   'malo chodzic',
   'bez chodzenia',
+  'jak najmniej chodzenia',
+  'minimalne chodzenie',
+  'mniej chodzic',
+  'mniej chodzenia',
+  'bez dlugiego chodzenia',
+  'bez wiekszego chodzenia',
+  'bez schodow',
+  'bez wzniesien',
+  'bez barier',
+  'chodzi wolno',
+  'ida wolno',
+  'wolno chodzi',
+  'without stairs',
+  'without long walks',
+  'walk less',
+  'less walking',
+  'minimal walking',
+  'not too much walking',
+  'ohne treppen',
 ];
 
 /**
@@ -70,9 +104,12 @@ export const LOW_WALKING_WORDS = [
 export const LOTS_OF_WALKING_WORDS = ['duzo chodzic', 'duzo chodzenia', 'duzo spacerowac', 'walk a lot', 'lots of walking', 'walk much', 'a lot of walking', 'viel laufen', 'viel zu fuss', 'viel spazieren'];
 
 /** an evening meal asked for on purpose, not just "food" as an interest */
-export const DINNER_WORDS = ['dinner', 'dinners', 'eat out', 'supper', 'abendessen', 'essen gehen', 'kolacja', 'kolacje', 'obiad', 'obiady', 'kolacyjki'];
+export const DINNER_WORDS = ['dinner', 'dinners', 'eat out', 'supper', 'abendessen', 'essen gehen', 'kolacja', 'kolacje', 'obiad', 'obiady', 'kolacyjki', 'jedzenie wieczorem', 'jedzenie wieczor'];
 
-export const DAY_TRIP_WORDS = ['day trip', 'day trips', 'out of the city', 'outside the city', 'wieliczka', 'zakopane', 'tagesausflug', 'tagesausfluge', 'ausserhalb', 'wycieczka', 'wycieczki', 'poza miasto', 'poza miastem'];
+export const DAY_TRIP_WORDS = [
+  'day trip', 'day trips', 'out of the city', 'outside the city', 'wieliczk*', 'zakopane*', 'tatr*', 'tagesausflug',
+  'tagesausfluge', 'ausserhalb', 'wycieczka', 'wycieczki', 'poza miasto', 'poza miastem', 'auschwitz',
+];
 
 /** words that turn the next thing named after them into a refusal ("quads and no pub crawl") */
 export const NEGATION_WORDS = [
@@ -116,7 +153,7 @@ export const NUMBER_WORDS: Record<string, number> = {
   cztery: 4,
 };
 
-export const DAY_WORDS = ['day', 'days', 'tag', 'tage', 'dzien', 'dni'];
+export const DAY_WORDS = ['day', 'days', 'tag', 'tage', 'dzien', 'dni', 'noc', 'noce', 'nocy', 'nacht', 'nachte'];
 
 /**
  * The words below are compared as the start of a word ("tani" matches "tanio" and "tanie"), after
@@ -137,7 +174,11 @@ export const WELL_RATED_WORDS = ['well rated', 'good reviews', 'good ratings', '
 export const STAR_WORDS = ['star', 'gwiazd', 'stern', 'ocen', 'rating', 'rated', 'bewert', 'opinie'];
 
 /** open right now, or this evening */
-export const NOW_WORDS = ['now', 'right now', 'open now', 'teraz', 'w tej chwili', 'otwarte teraz', 'jetzt', 'sofort', 'gerade offen', 'dzis wieczorem', 'dzisiaj wieczorem', 'tonight', 'this evening', 'heute abend'];
+export const NOW_WORDS = [
+  'now', 'right now', 'open now', 'teraz', 'w tej chwili', 'otwarte teraz', 'jetzt', 'sofort', 'gerade offen',
+  'dzis wieczorem', 'dzisiaj wieczorem', 'tonight', 'this evening', 'heute abend',
+  'jeszcze otwarte', 'otwarte jeszcze', 'still open', 'still be open', 'open rn',
+];
 
 export type ExperienceKind = 'extreme' | 'sightseeing' | 'food' | 'water' | 'night';
 export const EXPERIENCE_KIND_KEYS: ExperienceKind[] = ['extreme', 'sightseeing', 'food', 'water', 'night'];
@@ -146,11 +187,15 @@ export const EXPERIENCE_KIND_WORDS: Record<ExperienceKind, string[]> = {
   sightseeing: ['zwiedza', 'sightseeing', 'sights', 'zabytk', 'besichtig', 'sehenswurdig', 'sightsee'],
   food: ['kulinar', 'culinary', 'foodie', 'kulinarisch', 'jedzeni', 'food', 'essen'],
   water: ['woda', 'wodzie', 'wodn', 'water', 'wasser', 'kajak', 'kayak', 'splyw', 'rafting', 'rejs', 'basen', 'termy', 'thermal', 'aquapark', 'pool', 'baden'],
-  night: ['nightlife', 'night out', 'party', 'partie', 'clubbing', 'imprez', 'zycie nocne', 'klub', 'club', 'nachtleben', 'bary', 'bars', 'ausgehen', 'disco', 'dyskotek'],
+  night: ['nightlife', 'night out', 'party', 'partie', 'clubbing', 'imprez', 'zycie nocne', 'nocne zycie', 'klub', 'club', 'nachtleben', 'bary', 'barach', 'bars', 'ausgehen', 'disco', 'dyskotek'],
 };
 
 /** somewhere to sleep */
-export const STAY_WORDS = ['nocleg', 'hotel', 'airbnb', 'apartament', 'apartment', 'hostel', 'pensjonat', 'pension', 'zakwaterowan', 'gdzie spac', 'accommodation', 'place to stay', 'where to stay', 'somewhere to stay', 'bed and breakfast', 'unterkunft', 'ubernachtung', 'zimmer'];
+export const STAY_WORDS = [
+  'nocleg', 'hotel', 'airbnb', 'apartament', 'apartment', 'hostel', 'pensjonat', 'pension', 'zakwaterowan', 'gdzie spac',
+  'pokoj', 'accommodation', 'place to stay', 'where to stay', 'somewhere to stay', 'place to sleep', 'somewhere to sleep',
+  'bed and breakfast', 'unterkunft', 'ubernachtung', 'zimmer',
+];
 
 /** words that say a sentence is about eating, so "Polish" or "Jewish" there names a cuisine */
-export const FOOD_CONTEXT_WORDS = ['food', 'eat', 'restaurant', 'dinner', 'lunch', 'cuisine', 'dish', 'meal', 'jedzeni', 'jesc', 'zjesc', 'zjem', 'restaurac', 'knajp', 'kolacj', 'obiad', 'kuchni', 'dani', 'lokal', 'bistro', 'essen', 'kuche', 'gericht', 'speise', 'abendessen', 'mittag'];
+export const FOOD_CONTEXT_WORDS = ['food', 'eat', 'restaurant', 'dinner', 'lunch', 'cuisine', 'dish', 'meal', 'jedzeni', 'jesc', 'zjesc', 'zjem', 'restaurac', 'knajp', 'kolacj', 'obiad', 'kuchni*', 'dani', 'lokal', 'bistro', 'essen', 'kuche', 'gericht', 'speise', 'abendessen', 'mittag'];

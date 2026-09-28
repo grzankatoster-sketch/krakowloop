@@ -149,4 +149,24 @@ describe('WishIntent v2 fields', () => {
     expect(removeFromIntent(intent, 'days').days).toBeUndefined();
     expect(removeFromIntent(intent, 'nonsense')).toEqual(intent);
   });
+
+  it('reads stems only where a word is marked as a stem: no settings out of look-alike words', () => {
+    // each of these once set something from a word that only starts like a keyword
+    expect(readWish('parking przy hotelu').intent.interests).toBeUndefined(); // park
+    expect(readWish('vielleicht zwei Tage').intent.pace).toBeUndefined(); // viel
+    expect(readWish('ein voller Tag in Krakau').intent.pace).toBeUndefined(); // voll
+    expect(readWish('hotel w Nowej Hucie').intent.openNow).toBeUndefined(); // now
+    expect(readWish('hotel w Nowej Hucie').intent.activities).toBeUndefined(); // a place, not the tour
+    expect(readWish('nowe miejsca, 2 dni').intent.openNow).toBeUndefined();
+    expect(readWish('naturalnie chcemy sushi').intent.interests).toBeUndefined(); // natur
+    expect(readWish('degustacja wódki wieczorem').intent.activities).not.toContain('pierogi');
+  });
+
+  it('reads Polish endings of the words that carry a wish', () => {
+    expect(readWish('chcemy dużo widoków i punktów widokowych').intent.interests).toContain('views');
+    expect(readWish('jedziemy do Wieliczki').intent.activities).toContain('wieliczka-tour');
+    expect(readWish('escape room i paintballa wieczorem').intent.activities).toEqual(expect.arrayContaining(['escape-room', 'paintball']));
+    expect(readWish('3 dni, bez pośpiechu, spokojnie').intent.pace).toBe('easy');
+  });
 });
+
