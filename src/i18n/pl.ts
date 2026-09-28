@@ -707,6 +707,7 @@ export const pl: Strings = {
   'discover.native.book': "Terminy i ceny",
   'discover.native.pastEyebrow': "Dawniej i dziś",
   'discover.native.past': "Dawny Kraków",
+  'discover.native.mapCta': "Otwórz mapę: zabytki, jedzenie, noclegi",
   'discover.native.pastDoor': "Obiektyw: {n} miejsc, jak wyglądały dawniej",
   'discover.native.stay': "Gdzie spać",
   'discover.native.stayLine': "{n} hoteli, hosteli i apartamentów na mapie",

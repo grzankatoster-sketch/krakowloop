@@ -720,6 +720,7 @@ export const en = {
   'discover.native.book': "Dates and prices",
   'discover.native.pastEyebrow': "Then and now",
   'discover.native.past': "Kraków in the past",
+  'discover.native.mapCta': "Open the map: sights, food, stays",
   'discover.native.pastDoor': "Time Lens: {n} places as they were, then and now",
   'discover.native.stay': "Where to sleep",
   'discover.native.stayLine': "{n} hotels, hostels and flats on the map",

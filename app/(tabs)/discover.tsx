@@ -7,6 +7,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { placeName } from '../../src/components/placeName';
+import LoopMap from '../../src/components/LoopMap';
+import type { MapPoint } from '../../src/components/mapHtml';
+import { CATEGORY_COLOR } from '../../src/data/categoryColor';
 import { EventsSection } from '../../src/components/EventsSection';
 import { CITY } from '../../src/config/city';
 import { CuisineKey } from '../../src/data/cuisines';
@@ -24,6 +27,10 @@ import { colors, fonts, space } from '../../src/theme';
 
 const RYNEK = { lat: CITY.mapCentre.lat, lon: CITY.mapCentre.lon };
 const COUNTS = cuisineCounts();
+/** the sights in town, for the map at the top of Discover */
+const MAP_POINTS: MapPoint[] = places
+  .filter((p) => p.zone !== 'out' && p.cat !== 'food' && p.cat !== 'night')
+  .map((p) => ({ id: p.id, lat: p.lat, lon: p.lon, color: CATEGORY_COLOR[p.cat], glyph: p.cat, label: placeName(p), rank: p.priority }));
 const CUISINES = topCuisines(COUNTS, 8);
 const TILE_COLORS = [colors.brick, colors.gilt, colors.patina, colors.vistula, colors.night, colors.ink];
 const MORE = [
@@ -81,6 +88,17 @@ export default function DiscoverScreen() {
       <Pressable accessibilityRole="button" onPress={() => go('/wish')} style={({ pressed }) => [s.search, pressed && s.pressed]}>
         <MaterialCommunityIcons name="microphone" size={22} color={colors.brick} />
         <Text style={s.searchText}>{t('moment.ask')}</Text>
+      </Pressable>
+
+      {/* the map, visible at once: a picture of the sights that opens the full map on a tap */}
+      <Pressable accessibilityRole="button" accessibilityLabel={t('story.openMap')} onPress={() => go('/map')} style={({ pressed }) => [s.mapCard, pressed && s.pressed]}>
+        <View style={StyleSheet.absoluteFill} pointerEvents="none">
+          <LoopMap style={StyleSheet.absoluteFill} points={MAP_POINTS} fit inactive />
+        </View>
+        <View style={s.mapCardChip} pointerEvents="none">
+          <MaterialCommunityIcons name="map-search-outline" size={18} color={colors.white} />
+          <Text style={s.mapCardText}>{t('discover.native.mapCta')}</Text>
+        </View>
       </Pressable>
 
       {/* concerts, sport, theatre: today, tomorrow, the weekend */}
@@ -207,6 +225,9 @@ export default function DiscoverScreen() {
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
+  mapCard: { height: 210, marginHorizontal: space.l, marginTop: space.m, borderRadius: 24, overflow: 'hidden', backgroundColor: colors.stone },
+  mapCardChip: { position: 'absolute', left: space.m, bottom: space.m, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(14,19,48,0.85)' },
+  mapCardText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
   statusStrip: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.paper, opacity: 0.96 },
   pressed: { transform: [{ scale: 0.97 }] },
   fill: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },

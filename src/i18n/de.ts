@@ -707,6 +707,7 @@ export const de: Strings = {
   'discover.native.book': "Termine und Preise",
   'discover.native.pastEyebrow': "Damals und heute",
   'discover.native.past': "Das alte Krakau",
+  'discover.native.mapCta': "Karte öffnen: Sehenswertes, Essen, Unterkünfte",
   'discover.native.pastDoor': "Zeitlinse: {n} Orte, wie sie früher aussahen",
   'discover.native.stay': "Wo schlafen",
   'discover.native.stayLine': "{n} Hotels, Hostels und Wohnungen auf der Karte",
