@@ -18,10 +18,12 @@ const OUT = path.join(APP, 'src/data/placeMedia.ts');
 const REGISTER = path.resolve(APP, '../02_dane/media_places.json');
 const HEADERS = { 'User-Agent': 'KrakowLoop/0.1 (data build script; contact grzankatoster@gmail.com)' };
 /**
- * Enough for a phone card, small enough to ship ~50 photos inside the app. Commons serves only
- * standard thumbnail widths and rounds others up (640 came back as 960), so use one of them.
+ * Sharp on a full phone screen (the stories on Now fill 402 x 874 points, about 1200 px wide at 3x),
+ * still small enough to ship ~60 photos inside the app. Commons serves only standard thumbnail
+ * widths and rounds others up (640 came back as 960), so use one of them. Was 500: fine on a card,
+ * blurred full screen.
  */
-const WIDTH = 500;
+const WIDTH = 1280;
 
 /** place id -> [Wikidata id, max distance in km from our coordinates] */
 const LINKS = {
