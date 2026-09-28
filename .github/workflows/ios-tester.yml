@@ -1,0 +1,59 @@
+# The app tester on a GitHub macOS runner: installs an EAS simulator build (profile e2e-test) on an
+# iPhone simulator, walks through every screen with Maestro (.maestro/tour.yaml) and keeps the screenshots.
+# Run: gh workflow run ios-tester.yml -f app_url=<EAS build artifact .tar.gz>
+name: iOS tester
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: EAS simulator build (.tar.gz)
+        required: true
+
+jobs:
+  tour:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+
+      - name: Get the app
+        env:
+          APP_URL: ${{ inputs.app_url }}
+        run: |
+          mkdir -p build && curl -fsSL "$APP_URL" -o app.tar.gz && tar -xzf app.tar.gz -C build
+          echo "APP=$(find build -maxdepth 3 -name '*.app' | head -1)" >> "$GITHUB_ENV"
+
+      - name: Boot an iPhone and install
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in sorted(d.items(), reverse=True) if 'iOS' in k for x in v if x['name'].startswith('iPhone 16')))")
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" "$APP"
+
+      - name: Walk through the app
+        run: |
+          mkdir -p shots
+          cd shots && maestro --device "$UDID" test ../.maestro/tour.yaml --test-output-dir=../maestro-out || echo "TOUR_FAILED=1" >> "$GITHUB_ENV"
+
+      - name: Keep the app log
+        if: always()
+        run: xcrun simctl spawn "$UDID" log show --last 15m --predicate 'process == "KrakowLoop" OR eventMessage CONTAINS "ReactNative"' > maestro-out/device.log 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-tour
+          path: |
+            shots
+            maestro-out
+
+      - name: Fail when the tour failed
+        if: env.TOUR_FAILED == '1'
+        run: exit 1
