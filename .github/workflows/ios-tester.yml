@@ -1,3 +1,4 @@
+# Screenshots come back as the "ios-tour" artifact.
 # The app tester on a GitHub macOS runner: installs an EAS simulator build (profile e2e-test) on an
 # iPhone simulator, walks through every screen with Maestro (.maestro/tour.yaml) and keeps the screenshots.
 # Run: gh workflow run ios-tester.yml -f app_url=<EAS build artifact .tar.gz>
