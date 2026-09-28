@@ -33,6 +33,7 @@ name: KrakowLoop tour
     direction: DOWN
     optional: true
 - takeScreenshot: 11_discover_sights
+- assertVisible: "Cloth Hall"
 - swipe:
     direction: UP
 - takeScreenshot: 12_discover_more
@@ -45,12 +46,18 @@ name: KrakowLoop tour
 
 # the map in the eat mode: filters, comparing
 - openLink: "krakowloop://map?mode=eat"
+- tapOn:
+    text: "Open"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 8000
 - takeScreenshot: 20_map_eat
 
 # a place page and the heart
 - openLink: "krakowloop://place/czartoryski"
+- tapOn:
+    text: "Open"
+    optional: true
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: 30_place
@@ -62,6 +69,9 @@ name: KrakowLoop tour
 
 # the plan: two days, then the rail
 - openLink: "krakowloop://plan"
+- tapOn:
+    text: "Open"
+    optional: true
 - waitForAnimationToEnd
 - takeScreenshot: 40_plan_start
 - tapOn:

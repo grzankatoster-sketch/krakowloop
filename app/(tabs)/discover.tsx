@@ -62,6 +62,9 @@ export default function DiscoverScreen() {
   const topSpace = useTopSpace();
   const { width } = useWindowDimensions();
   const tileW = (width - space.l * 2 - space.s) / 2;
+  // a fixed height, not aspectRatio: on iOS a tile sized by aspectRatio, holding only absolutely placed
+  // children, took its place in the grid but was never drawn (seen on the simulator tour)
+  const tileH = Math.round(tileW / 0.78);
 
   const sights = useMemo(
     () => byDistance(places.filter((p) => p.zone !== 'out' && p.cat !== 'food' && p.cat !== 'night' && PLACE_MEDIA[p.id]?.image), RYNEK).slice(0, 8),
@@ -136,7 +139,7 @@ export default function DiscoverScreen() {
       <Text style={s.h2}>{t('discover.native.sights')}</Text>
       <View style={s.grid}>
         {sights.map(({ item: p, metres }) => (
-          <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [{ width: tileW }, s.tile, pressed && s.pressed]}>
+          <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [{ width: tileW, height: tileH }, s.tile, pressed && s.pressed]}>
             <Image source={PLACE_MEDIA[p.id]!.image!} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
             <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.85)']} locations={[0.4, 1]} style={s.fill} />
             <View style={s.tileWords}>
@@ -278,7 +281,7 @@ const s = StyleSheet.create({
   eyebrow: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 1, color: colors.mute, textTransform: 'uppercase', marginTop: space.xl, marginHorizontal: space.l },
   h2: { fontFamily: fonts.display, fontSize: 32, lineHeight: 36, color: colors.ink, marginHorizontal: space.l, marginTop: 4, marginBottom: space.m },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, paddingHorizontal: space.l },
-  tile: { aspectRatio: 0.78, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.stone },
+  tile: { borderRadius: 22, overflow: 'hidden', backgroundColor: colors.stone },
   tileWords: { position: 'absolute', left: 12, right: 12, bottom: 12, gap: 2 },
   tileMeta: { fontFamily: fonts.monoBold, fontSize: 10, letterSpacing: 0.6, color: 'rgba(255,255,255,0.85)', textTransform: 'uppercase' },
   tileName: { fontFamily: fonts.display, fontSize: 22, lineHeight: 24, color: colors.white },
