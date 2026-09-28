@@ -6,8 +6,7 @@ import { useTabBarSpace, useTopSpace } from '../../src/lib/useTabBarSpace';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { lensName, placeName } from '../../src/components/placeName';
-import { ReconBadge } from '../../src/components/ReconBadge';
+import { placeName } from '../../src/components/placeName';
 import { EventsSection } from '../../src/components/EventsSection';
 import { CITY } from '../../src/config/city';
 import { CuisineKey } from '../../src/data/cuisines';
@@ -45,6 +44,9 @@ function expText(id: string, field: 'name' | 'note', fallback: string): string {
  * Discover, as a magazine of the city: sights in photographs, food by what you crave, things to do,
  * the city in the past and places to sleep. The map is a tool behind a button, not the page.
  */
+// a failure on this screen shows its message instead of an empty screen
+export { ScreenError as ErrorBoundary } from '../../src/components/ScreenError';
+
 export default function DiscoverScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -154,19 +156,15 @@ export default function DiscoverScreen() {
       {/* the city in the past */}
       <Text style={s.eyebrow}>{t('discover.native.pastEyebrow')}</Text>
       <Text style={s.h2}>{t('discover.native.past')}</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
-        {lens.map(({ l, old }) => (
-          <Pressable key={l.id} accessibilityRole="button" onPress={() => go(`/lens/${l.id}`)} style={({ pressed }) => [s.past, pressed && s.pressed]}>
-            <Image source={old!.image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
-            <LinearGradient colors={['rgba(8,11,30,0.1)', 'rgba(8,11,30,0.85)']} style={s.fill} />
-            <ReconBadge show={old!.reconstruction} />
-            <Text style={s.pastYear}>{old!.year}</Text>
-            <Text style={s.pastName} numberOfLines={2}>
-              {lensName(l)}
-            </Text>
-          </Pressable>
-        ))}
-      </ScrollView>
+      {/* one door to the Time Lens tab, not a second gallery of the same old photos */}
+      {lens[0] ? (
+        <Pressable accessibilityRole="link" onPress={() => go('/obiektyw')} style={({ pressed }) => [s.pastDoor, pressed && s.pressed]}>
+          <Image source={lens[0].old!.image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
+          <LinearGradient colors={['rgba(8,11,30,0.15)', 'rgba(8,11,30,0.88)']} style={s.fill} />
+          <Text style={s.pastYear}>{lens[0].old!.year}</Text>
+          <Text style={s.pastName}>{t('discover.native.pastDoor', { n: lens.length })}</Text>
+        </Pressable>
+      ) : null}
 
       {/* where to sleep */}
       <Pressable accessibilityRole="button" onPress={() => go({ pathname: '/map', params: { mode: 'stay' } })} style={({ pressed }) => [s.stay, pressed && s.pressed]}>
@@ -249,6 +247,7 @@ const s = StyleSheet.create({
   expBtn: { alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: colors.white, justifyContent: 'center' },
   expBtnText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   past: { width: 220, height: 290, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.stone, justifyContent: 'flex-end', padding: space.m },
+  pastDoor: { height: 200, marginHorizontal: space.l, borderRadius: 24, overflow: 'hidden', justifyContent: 'flex-end', padding: space.l, backgroundColor: colors.ink },
   pastYear: { fontFamily: fonts.display, fontSize: 44, color: colors.white },
   pastName: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.white },
   stay: {

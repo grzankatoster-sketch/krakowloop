@@ -31,6 +31,7 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTar
 
   const onMessage = (e: WebViewMessageEvent) => {
     const msg = parseMapMessage(e.nativeEvent.data);
+    if (__DEV__) console.log('MAP', String(e.nativeEvent.data).slice(0, 200));
     if (!msg) return;
     if (msg.type === 'ready') ref.current?.injectJavaScript(`window.__apply(${latest.current}); true;`);
     dispatchMapMessage(msg, handlersRef.current);

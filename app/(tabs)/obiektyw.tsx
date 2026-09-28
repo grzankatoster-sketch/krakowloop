@@ -20,6 +20,9 @@ const PAGES: Page[] = lensPoints.flatMap((l) => l.layers.filter((x) => x.image).
  * Time Lens as a gallery: an old photograph or engraving fills the screen with its year, and one tap
  * takes you to the viewpoint to hold it against the view today.
  */
+// a failure on this screen shows its message instead of an empty screen
+export { ScreenError as ErrorBoundary } from '../../src/components/ScreenError';
+
 export default function LensGallery() {
   const router = useRouter();
   useStatusBarOnFocus('light');

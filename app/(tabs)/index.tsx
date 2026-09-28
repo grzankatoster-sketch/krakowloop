@@ -8,9 +8,8 @@ import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { lensName, placeName, placeText } from '../../src/components/placeName';
+import { placeName, placeText } from '../../src/components/placeName';
 import { CITY } from '../../src/config/city';
-import { lensPoints } from '../../src/data/lens';
 import { PLACE_MEDIA } from '../../src/data/placeMedia';
 import { CATEGORY_LABEL, places, Place } from '../../src/data/places';
 import { RESTAURANTS, restaurantHoursOn } from '../../src/data/restaurants';
@@ -81,17 +80,16 @@ function storySources(): (MomentSource & { image?: ImageSourcePropType; line: st
       ...o,
     });
   }
-  for (const l of lensPoints) {
-    const old = l.layers.find((x) => x.kind === 'photo') ?? l.layers[0];
-    if (!old) continue;
-    out.push({ id: `lens:${l.id}`, name: lensName(l), kind: 'lens', lat: l.lat, lon: l.lon, rank: 3, open: null, closesIn: null, image: old.image, year: old.year, line: old.reconstruction ? t('story.lensReconLine', { year: old.year.replace(/^c\./, '') }) : t('story.lensLine', { year: old.year }) });
-  }
+  // no Time Lens here: the past has its own tab, and the same old photos in two places read as a copy
   for (const r of PICKS) {
     const o = openInfo(restaurantHoursOn(r, new Date()), minutes);
     out.push({ id: r.id, name: r.name, kind: 'eat', lat: r.lat, lon: r.lon, rank: 2, line: o.until ? t('story.openUntil', { time: o.until }) : t('story.eatLine'), ...o });
   }
   return out;
 }
+
+// a failure on this screen shows its message instead of an empty screen
+export { ScreenError as ErrorBoundary } from '../../src/components/ScreenError';
 
 export default function TodayScreen() {
   const router = useRouter();
@@ -134,12 +132,14 @@ export default function TodayScreen() {
   const standing = useMemo(() => (live.here ? standingAt(SIGHTS, live.here, seen) : null), [live.here, seen]);
 
   const stories = useMemo<Story[]>(() => {
-    const picked = pickMoments(sources, anchor, 12, 2000);
+    const near = pickMoments(sources, anchor, 12, 2000);
+    const far = near.length < 3;
+    const picked = far ? pickMoments(sources, RYNEK, 12, 2000) : near;
     const byId = new Map(sources.map((s) => [s.id, s]));
     const out: Story[] = picked.map((m) => {
       const src = byId.get(m.id)!;
       const kind = t(`story.kind.${m.kind}` as StringKey);
-      return { ...m, image: src.image, line: src.line, place: src.place, year: src.year, eyebrow: `${src.cat ?? kind} · ${t('story.walk', { n: m.walkMinutes })}` };
+      return { ...m, image: src.image, line: src.line, place: src.place, year: src.year, eyebrow: far ? `${src.cat ?? kind} · ${t('story.inCentre')}` : `${src.cat ?? kind} · ${t('story.walk', { n: m.walkMinutes })}` };
     });
     // tonight's concert or match: up to two of today's events still to come, after the first story
     const tonight = pickEvents(cityEvents, daysFor('today'), [], 'time', anchor).slice(0, 2).map<Story>((e) => {
@@ -218,6 +218,8 @@ export default function TodayScreen() {
     [router],
   );
 
+  // the stories are the centre's when the traveller is too far from anything: say so, and how far
+  const awayKm = live.here && pickMoments(sources, anchor, 12, 2000).length < 3 ? Math.round(distance(live.here, RYNEK) / 100) / 10 : null;
   const now = krakowWallClock(new Date());
   const clock = formatTime(now.getHours() * 60 + now.getMinutes());
 
@@ -246,7 +248,7 @@ export default function TodayScreen() {
       <View style={[s.head, { top: topSpace + space.s }]} pointerEvents="box-none">
         <View>
           <Text style={s.brand}>KRAKÓW · {clock}</Text>
-          <Text style={s.where}>{live.here ? t('moment.nearYou') : t('moment.nearRynek')}</Text>
+          <Text style={s.where}>{!live.here ? t('moment.nearRynek') : awayKm ? t('moment.awayFromCentre', { km: awayKm }) : t('moment.nearYou')}</Text>
         </View>
         <View style={s.headRight}>
           {!live.on ? (
