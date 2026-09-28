@@ -1,8 +1,8 @@
 import { Category, Place, TripKind, ZONE_LABEL, Zone, places as allPlaces } from '../data/places';
 import { CITY } from '../config/city';
 import { addDays, parseISODate, toISODate } from './dates';
-import { LatLon, distance, roadMinutes } from './geo';
-import { opensLongEnough } from './hours';
+import { LatLon, distance, roadMinutes, walkingMinutes } from './geo';
+import { hoursOn, opensLongEnough } from './hours';
 import { Leg, leg } from './legs';
 import { t } from '../i18n';
 import type { Meal } from './meals';
@@ -141,6 +141,71 @@ export const LOW_WALK_MINUTES = 45;
 /** Time held back while a day is filled, so a meal still fits when one was asked for. */
 const DINNER_RESERVE_MINUTES = 75;
 
+/** A city day starts at this time (minutes after midnight): the clock stops and meals are placed on. */
+export const DAY_START = 9 * 60;
+
+/** The longest a traveller is asked to wait at a door that is not open yet. */
+const MAX_WAIT_MINUTES = 45;
+
+/**
+ * The first minute from `arrive` at which the place is open for its whole visit, on that date;
+ * `arrive` itself for a place with no hours in the data; null when it does not fit that day
+ * (or only after too long a wait).
+ */
+export function openFrom(p: Place, date: Date, arrive: number, maxWait = MAX_WAIT_MINUTES): number | null {
+  const hours = hoursOn(p.id, date);
+  if (!hours) return arrive;
+  for (const [from, to] of [...hours].sort((a, b) => a[0] - b[0])) {
+    const s = Math.max(arrive, from);
+    if (s + p.minutes <= to && s - arrive <= maxWait) return s;
+  }
+  return null;
+}
+
+/**
+ * A dated day in an order that meets every place open: from the start point (or the day's most
+ * important place), always the nearest place that is open when the traveller gets there; if none
+ * is, the one that opens soonest. Null when some place cannot be fitted in its opening hours.
+ */
+function orderByClock(stops: Place[], start: LatLon | undefined, date: Date): Place[] | null {
+  const left = [...stops];
+  const out: Place[] = [];
+  let clock = DAY_START;
+  let at: LatLon | undefined = start;
+  while (left.length) {
+    const near = at ? [...left].sort((a, b) => distance(at!, a) - distance(at!, b)) : left;
+    let chosen: Place | null = null;
+    let begin = Infinity;
+    for (const p of near) {
+      const arrive = clock + (at ? walkingMinutes(at, p) : 0);
+      // the first place sets when the day starts (a museum opening at 10 makes a 10 o'clock start);
+      // later ones may keep the traveller waiting at the door only a little
+      const s = openFrom(p, date, arrive, out.length ? MAX_WAIT_MINUTES : Infinity);
+      if (s === null) continue;
+      if (s === arrive) {
+        chosen = p;
+        begin = s;
+        break;
+      }
+      if (s < begin) {
+        chosen = p;
+        begin = s;
+      }
+    }
+    if (!chosen) return null;
+    out.push(chosen);
+    left.splice(left.indexOf(chosen), 1);
+    clock = begin + chosen.minutes;
+    at = chosen;
+  }
+  return out;
+}
+
+/** The day's order: by the clock when it has a date, else a plain loop by distance. Null = does not fit. */
+function orderDay(stops: Place[], start: LatLon | undefined, date: Date | null): Place[] | null {
+  return date ? orderByClock(stops, start, date) : orderAsLoop(stops, start);
+}
+
 /** Places this close are one stop on foot (the Main Square, the Cloth Hall, St Mary's): they share a stop. */
 const SAME_SPOT_METRES = 150;
 
@@ -267,7 +332,9 @@ function pickCityDay(
   for (const candidate of [...inOrder, ...borrowed]) {
     // keep a day in one part of town: nothing too far from its first chosen stop
     if (anchor && distance(anchor, candidate) > MAX_DAY_SPREAD_METRES) continue;
-    const trial = orderAsLoop([...chosen, candidate], start);
+    const trial = orderDay([...chosen, candidate], start, date);
+    // a place that cannot be met open at the time the day would reach it is left for another day
+    if (!trial) continue;
     // places a few steps apart share a stop, so they don't use up the day's stops
     if (spots(trial) > maxStops) continue;
     const m = measure(trial, start, date);
@@ -303,8 +370,8 @@ function withDinner(
     return !(wish.walking === 'low' && m.onFootMinutes > LOW_WALK_MINUTES) && m.totalMinutes <= available;
   };
   for (const place of food.slice(0, 6)) {
-    const trial = orderAsLoop([...chosen, place], start);
-    if (fits(trial)) return trial;
+    const trial = orderDay([...chosen, place], start, date);
+    if (trial && fits(trial)) return trial;
   }
   // no room left: the dinner takes the place of the day's least important stop, never the first one
   // (a café among the stops goes first, since a dinner replaces it anyway)
@@ -312,8 +379,8 @@ function withDinner(
   for (const out of drop) {
     const rest = chosen.filter((p) => p !== out);
     for (const place of food.slice(0, 6)) {
-      const trial = orderAsLoop([...rest, place], start);
-      if (fits(trial)) return trial;
+      const trial = orderDay([...rest, place], start, date);
+      if (trial && fits(trial)) return trial;
     }
   }
   return chosen;

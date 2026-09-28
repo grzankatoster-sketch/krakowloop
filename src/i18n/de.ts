@@ -654,6 +654,7 @@ export const de: Strings = {
   'plan.native.howMany': "Wie viele Tage hast du?",
   'plan.native.quickNote': "Ein Tippen und die Spaziergänge stehen: Sehenswertes, Essen, normales Tempo. Ändern kannst du alles danach.",
   'plan.native.tune': "Zuerst Details einstellen",
+  'plan.dayClock': "Der Tag: {from} bis etwa {to}",
   'plan.meals.title': "Mahlzeiten im Plan",
   'plan.meals.changed': "Mahlzeiten in jedem Tag geändert.",
   'meal.breakfast': "Frühstück",

@@ -654,6 +654,7 @@ export const pl: Strings = {
   'plan.native.howMany': "Ile masz dni?",
   'plan.native.quickNote': "Jedno dotknięcie i spacery są gotowe: zabytki, jedzenie i zwykłe tempo. Wszystko zmienisz potem.",
   'plan.native.tune': "Najpierw ustaw szczegóły",
+  'plan.dayClock': "Dzień: od {from} do ok. {to}",
   'plan.meals.title': "Posiłki w planie",
   'plan.meals.changed': "Posiłki zmienione w każdym dniu.",
   'meal.breakfast': "Śniadanie",

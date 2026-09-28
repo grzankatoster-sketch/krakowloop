@@ -21,7 +21,7 @@ import { addDays, formatDay, parseISODate, toISODate } from '../../src/lib/dates
 import { WALKING_ROUTES_ENABLED, WalkingRoute, walkingRoute } from '../../src/lib/directions';
 import { DETOUR } from '../../src/lib/geo';
 import { formatHours, formatTime, hoursOn } from '../../src/lib/hours';
-import { MEAL_KEYS, Meal, MealStop, planMeals } from '../../src/lib/meals';
+import { DayTimes, MEAL_KEYS, Meal, MealStop, dayTimes, planMeals } from '../../src/lib/meals';
 import { walkMinutes } from '../../src/lib/moments';
 import { openWalkingDirections } from '../../src/lib/navigate';
 import type { Leg } from '../../src/lib/legs';
@@ -325,6 +325,9 @@ export default function PlanScreen() {
     () => (day?.after ? planMeals(day.after, wantedMeals.filter((m) => m === 'coffee' || m === 'dinner'), dayDate) : []),
     [day, wantedMeals, dayDate],
   );
+  // the day on a clock: walks, visits, waiting for a door to open and the meals, in turn
+  const times = useMemo(() => (day && day.kind === 'city' ? dayTimes(day, dayMeals, dayDate) : null), [day, dayMeals, dayDate]);
+  const afterTimes = useMemo(() => (day?.after ? dayTimes(day.after, afterMeals, dayDate) : null), [day, afterMeals, dayDate]);
   const toggleMeal = (m: Meal) => {
     if (!options) return;
     Haptics.selectionAsync().catch(() => {});
@@ -570,6 +573,9 @@ export default function PlanScreen() {
                 ? t('plan.dayTotals', { stops: day.stops.length, total: fmt(dayTotal), walk: fmt(walkTotal(day, real)) })
                 : t('plan.tripTotals', { travel: fmt(day.travelMinutes), stay: fmt(day.visitMinutes), total: fmt(day.totalMinutes) })}
             </Text>
+            {times && times.start.length ? (
+              <Text style={s.dayClock}>{t('plan.dayClock', { from: formatTime(times.meal.breakfast ?? times.start[0]), to: formatTime(Math.max(times.end[times.end.length - 1], (times.meal.dinner ?? 0) + (times.meal.dinner ? 75 : 0))) })}</Text>
+            ) : null}
             {dayTotal > day.budgetMinutes ? (
               <Text style={s.warn}>
                 {t('plan.longDay', {
@@ -642,7 +648,7 @@ export default function PlanScreen() {
             {day.kind === 'trip' ? (
               <TripCard day={day} />
             ) : (
-              <Timeline day={day} real={real} onSkip={skipStop} meals={dayMeals} pick={(m) => mealPick[`${day.index}:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:${m}`, n)} />
+              <Timeline day={day} real={real} onSkip={skipStop} meals={dayMeals} times={times} pick={(m) => mealPick[`${day.index}:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:${m}`, n)} />
             )}
             {/* a short trip leaves the afternoon: a few places back in Kraków */}
             {day.after ? (
@@ -651,7 +657,7 @@ export default function PlanScreen() {
                   {t('plan.afterTrip')}
                 </Text>
                 <Text style={s.totals}>{t('plan.afterTripLine', { total: fmt(day.after.totalMinutes) })}</Text>
-                <Timeline day={day.after} real={null} onSkip={skipStop} meals={afterMeals} pick={(m) => mealPick[`${day.index}:after:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:after:${m}`, n)} />
+                <Timeline day={day.after} real={null} onSkip={skipStop} meals={afterMeals} times={afterTimes} pick={(m) => mealPick[`${day.index}:after:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:after:${m}`, n)} />
               </View>
             ) : null}
 
@@ -695,18 +701,18 @@ const MEAL_ICON: Record<Meal, React.ComponentProps<typeof MaterialCommunityIcons
 };
 
 /** A meal in the day: when, where (a real place near the stop, open then), and another one on a tap. */
-function MealCard({ stop, index, onAnother }: { stop: MealStop; index: number; onAnother: () => void }) {
+function MealCard({ stop, at, index, onAnother }: { stop: MealStop; at: number; index: number; onAnother: () => void }) {
   const o = stop.options[Math.min(index, stop.options.length - 1)];
   const r = o.place;
   const what = r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey);
   return (
-    <View style={s.meal} accessibilityLabel={`${t(`meal.${stop.meal}`)}, ${formatTime(stop.at)}: ${r.name}`}>
+    <View style={s.meal} accessibilityLabel={`${t(`meal.${stop.meal}`)}, ${formatTime(at)}: ${r.name}`}>
       <View style={s.mealIcon} aria-hidden importantForAccessibility="no-hide-descendants">
         <MaterialCommunityIcons name={MEAL_ICON[stop.meal]} size={22} color={colors.white} />
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={s.mealWhen}>
-          {t(`meal.${stop.meal}`)} · {t('plan.meal.at', { time: formatTime(stop.at) })}
+          {t(`meal.${stop.meal}`)} · {t('plan.meal.at', { time: formatTime(at) })}
         </Text>
         <Text style={s.mealName} numberOfLines={2}>
           {r.name}
@@ -730,6 +736,8 @@ function MealCard({ stop, index, onAnother }: { stop: MealStop; index: number; o
 }
 
 /** A city day as a numbered line of stops, with how to get from one to the next between them. */
+const five = (m: number) => Math.round(m / 5) * 5;
+
 function Timeline({
   day,
   real,
@@ -737,6 +745,7 @@ function Timeline({
   meals = [],
   pick = () => 0,
   onAnother = () => {},
+  times = null,
 }: {
   day: PlanDay;
   real: WalkingRoute | null;
@@ -744,8 +753,11 @@ function Timeline({
   meals?: MealStop[];
   pick?: (m: Meal) => number;
   onAnother?: (m: Meal, count: number) => void;
+  /** the day's clock (src/lib/meals.ts dayTimes); none on an undated day without a clock */
+  times?: DayTimes | null;
 }) {
-  const mealsAfter = (i: number) => meals.filter((m) => m.after === i).map((m) => <MealCard key={m.meal} stop={m} index={pick(m.meal)} onAnother={() => onAnother(m.meal, m.options.length)} />);
+  const mealsAfter = (i: number) =>
+    meals.filter((m) => m.after === i).map((m) => <MealCard key={m.meal} stop={m} at={times?.meal[m.meal] ?? m.at} index={pick(m.meal)} onAnother={() => onAnother(m.meal, m.options.length)} />);
   return (
     <View style={s.timeline}>
       {day.start ? <Text style={s.legText}>{t('plan.startPoint')}</Text> : null}
@@ -786,6 +798,8 @@ function Timeline({
                 <Text style={s.stopBlurb} numberOfLines={3}>
                   {placeText(st.place).text}
                 </Text>
+                {/* the clock, to five minutes: "9:45", not "9:46" worked out to the minute */}
+                {times ? <Text style={s.stopTime}>{`${formatTime(five(times.start[i]))}–${formatTime(five(times.end[i]))}`}</Text> : null}
                 <Text style={s.stopMeta}>
                   {t('plan.about', { time: fmt(st.place.minutes) })}
                   {hours ? t('plan.thatDay', { hours }) : ''}
@@ -931,6 +945,8 @@ const s = StyleSheet.create({
   activity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.s, paddingVertical: space.s, borderBottomWidth: 1, borderColor: colors.line },
   activityButtons: { flexDirection: 'row', gap: space.s },
   timeline: { marginTop: space.m },
+  stopTime: { fontFamily: fonts.monoBold, fontSize: 15, color: colors.ink },
+  dayClock: { fontFamily: fonts.monoBold, fontSize: 13, letterSpacing: 0.6, color: colors.brick, marginTop: 4 },
   meal: { flexDirection: 'row', gap: space.m, marginTop: space.s, padding: space.m, borderRadius: 20, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line, borderLeftWidth: 4, borderLeftColor: colors.brick },
   mealIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brick, alignItems: 'center', justifyContent: 'center' },
   mealWhen: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.brick, textTransform: 'uppercase' },

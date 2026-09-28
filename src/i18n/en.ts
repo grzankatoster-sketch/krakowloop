@@ -667,6 +667,7 @@ export const en = {
   'plan.native.howMany': "How many days do you have?",
   'plan.native.quickNote': "One tap and the walks are ready: sights, food and the usual pace. You can change everything afterwards.",
   'plan.native.tune': "Set the details first",
+  'plan.dayClock': "The day: {from} to about {to}",
   'plan.meals.title': "Meals in the plan",
   'plan.meals.changed': "Meals updated in every day.",
   'meal.breakfast': "Breakfast",

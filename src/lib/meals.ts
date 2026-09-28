@@ -4,13 +4,12 @@
 import { RESTAURANTS, Restaurant, restaurantHoursOn } from '../data/restaurants';
 import type { Interval } from './hours';
 import { LatLon, distance } from './geo';
-import type { PlanDay } from './planner';
+import { DAY_START, PlanDay, openFrom } from './planner';
 
 export type Meal = 'breakfast' | 'lunch' | 'coffee' | 'dinner';
 export const MEAL_KEYS: Meal[] = ['breakfast', 'lunch', 'coffee', 'dinner'];
 
-/** A city day starts at this time (minutes after midnight): the clock the meals are placed on. */
-export const DAY_START = 9 * 60;
+export { DAY_START };
 
 /** When each meal is best had, and how long it takes. */
 export const MEAL_TIME: Record<Meal, { at: number; minutes: number }> = {
@@ -22,6 +21,8 @@ export const MEAL_TIME: Record<Meal, { at: number; minutes: number }> = {
 
 /** Places further than this from the stop are not offered: a meal is a short walk away. */
 export const MEAL_RADIUS_METRES = 600;
+/** On the edges of town (a museum out in the suburbs) the search widens once to this before giving up. */
+export const MEAL_RADIUS_WIDE_METRES = 1200;
 /** How many places each meal offers, the first one chosen ("Another place" goes down the list). */
 const OPTIONS = 5;
 
@@ -75,12 +76,12 @@ function openness(r: Restaurant, meal: Meal, at: number, date: Date | null): 'op
 }
 
 /** The places for one meal near a point, best first: known open, a pick of ours, then the closest. */
-export function mealOptions(meal: Meal, near: LatLon, at: number, date: Date | null, taken: ReadonlySet<string> = new Set(), list: readonly Restaurant[] = RESTAURANTS): MealStop['options'] {
+export function mealOptions(meal: Meal, near: LatLon, at: number, date: Date | null, taken: ReadonlySet<string> = new Set(), list: readonly Restaurant[] = RESTAURANTS, radius = MEAL_RADIUS_METRES): MealStop['options'] {
   const found: { place: Restaurant; metres: number; known: boolean }[] = [];
   for (const r of list) {
     if (taken.has(r.id) || !suitsMeal(r, meal)) continue;
     const metres = distance(near, r);
-    if (metres > MEAL_RADIUS_METRES) continue;
+    if (metres > radius) continue;
     const o = openness(r, meal, at, date);
     if (o === 'closed') continue;
     found.push({ place: r, metres, known: o === 'open' });
@@ -125,7 +126,8 @@ export function planMeals(day: PlanDay, meals: readonly Meal[], date: Date | nul
     const near = after < 0 ? (day.start ?? day.stops[0].place) : day.stops[after].place;
     // "about 13:30", not "about 13:17": the time is a suggestion, rounded up to a quarter
     const at = meal === 'breakfast' ? Math.min(MEAL_TIME.breakfast.at, start - MEAL_TIME.breakfast.minutes) : Math.ceil(Math.max(MEAL_TIME[meal].at, after >= 0 ? ends[after] : start) / 15) * 15;
-    const options = mealOptions(meal, near, at, date, taken, list);
+    const close = mealOptions(meal, near, at, date, taken, list);
+    const options = close.length ? close : mealOptions(meal, near, at, date, taken, list, MEAL_RADIUS_WIDE_METRES);
     if (!options.length) continue;
     taken.add(options[0].place.id);
     out.push({ meal, at, after, near, options });
@@ -139,4 +141,41 @@ export const mealsToParam = (meals: readonly Meal[]) => MEAL_KEYS.filter((m) => 
 export function parseMeals(value: string | undefined): Meal[] {
   const letters = new Set((value ?? '').split(','));
   return MEAL_KEYS.filter((m) => letters.has(LETTER[m]));
+}
+
+export interface DayTimes {
+  /** when the visit of each stop begins (after the walk, and after waiting for the door to open) */
+  start: number[];
+  /** when it ends */
+  end: number[];
+  /** when each meal of the day begins */
+  meal: Partial<Record<Meal, number>>;
+}
+
+const quarter = (m: number) => Math.ceil(m / 15) * 15;
+
+/**
+ * The day on a clock, meals included: from DAY_START (or later, when the first place opens later),
+ * each walk, each visit and each meal in turn, so a lunch pushes the afternoon on by its hour.
+ * On a dated day a place is met when it is open, as the planner ordered it.
+ */
+export function dayTimes(day: PlanDay, meals: readonly MealStop[], date: Date | null): DayTimes {
+  const start: number[] = [];
+  const end: number[] = [];
+  const meal: Partial<Record<Meal, number>> = {};
+  let clock = DAY_START;
+  day.stops.forEach((st, i) => {
+    const arrive = clock + (st.leg?.minutes ?? 0);
+    const begin = date ? (openFrom(st.place, date, arrive, i === 0 ? Infinity : 45) ?? arrive) : arrive;
+    if (i === 0 && meals.some((m) => m.meal === 'breakfast')) meal.breakfast = Math.min(MEAL_TIME.breakfast.at, begin - (st.leg?.minutes ?? 0) - MEAL_TIME.breakfast.minutes);
+    start.push(begin);
+    clock = begin + st.place.minutes;
+    end.push(clock);
+    for (const m of meals.filter((x) => x.after === i && x.meal !== 'breakfast')) {
+      const at = quarter(Math.max(MEAL_TIME[m.meal].at, clock));
+      meal[m.meal] = at;
+      clock = at + MEAL_TIME[m.meal].minutes;
+    }
+  });
+  return { start, end, meal };
 }

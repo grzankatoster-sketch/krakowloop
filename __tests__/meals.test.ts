@@ -2,7 +2,8 @@ import { describe, expect, it } from '@jest/globals';
 import { RESTAURANTS, Restaurant, restaurantHoursOn } from '../src/data/restaurants';
 import { parseISODate } from '../src/lib/dates';
 import { distance } from '../src/lib/geo';
-import { DAY_START, MEAL_KEYS, MEAL_RADIUS_METRES, MEAL_TIME, mealOptions, mealsToParam, parseMeals, planMeals, stopEnds, suitsMeal } from '../src/lib/meals';
+import { DAY_START, MEAL_KEYS, MEAL_RADIUS_METRES, MEAL_RADIUS_WIDE_METRES, MEAL_TIME, dayTimes, mealOptions, mealsToParam, parseMeals, planMeals, stopEnds, suitsMeal } from '../src/lib/meals';
+import { hoursOn } from '../src/lib/hours';
 import { buildPlan } from '../src/lib/planner';
 
 const RYNEK = { lat: 50.0617, lon: 19.9373 };
@@ -23,7 +24,7 @@ describe('meals in a plan', () => {
     for (const m of meals) {
       expect(m.options.length).toBeGreaterThan(0);
       for (const o of m.options) {
-        expect(o.metres).toBeLessThanOrEqual(MEAL_RADIUS_METRES);
+        expect(o.metres).toBeLessThanOrEqual(MEAL_RADIUS_WIDE_METRES);
         expect(suitsMeal(o.place, m.meal)).toBe(true);
       }
     }
@@ -77,4 +78,39 @@ describe('meals in a plan', () => {
     expect(parseMeals('x,,l,<script>')).toEqual(['lunch']);
     expect(parseMeals(undefined)).toEqual([]);
   });
+
+  it('looks a little further on the edges of town rather than leaving a meal out', () => {
+    const d = day();
+    const near = RESTAURANTS.filter((r) => distance(r, d.stops[d.stops.length - 1].place) > MEAL_RADIUS_METRES && distance(r, d.stops[d.stops.length - 1].place) <= MEAL_RADIUS_WIDE_METRES);
+    const dinner = planMeals(d, ['dinner'], null, near);
+    if (near.some((r) => suitsMeal(r, 'dinner'))) expect(dinner).toHaveLength(1);
+  });
 });
+
+describe('the clock of a day', () => {
+  it('runs forward: every visit starts after the one before ended, meals in between', () => {
+    const d = day({ startDate: '2026-10-13' });
+    const date = parseISODate('2026-10-13')!;
+    const meals = planMeals(d, MEAL_KEYS, date);
+    const t = dayTimes(d, meals, date);
+    expect(t.start).toHaveLength(d.stops.length);
+    expect(t.start[0]).toBeGreaterThanOrEqual(DAY_START);
+    for (let i = 1; i < t.start.length; i++) expect(t.start[i]).toBeGreaterThanOrEqual(t.end[i - 1]);
+    // every place is met open, on that date
+    d.stops.forEach((st, i) => {
+      const h = hoursOn(st.place.id, date);
+      if (h) expect(h.some(([a, b]) => a <= t.start[i] && t.end[i] <= b)).toBe(true);
+    });
+    if (t.meal.breakfast !== undefined) expect(t.meal.breakfast).toBeLessThan(t.start[0]);
+  });
+
+  it('a lunch pushes the afternoon on by its hour', () => {
+    const d = day();
+    const withLunch = dayTimes(d, planMeals(d, ['lunch'], null), null);
+    const without = dayTimes(d, [], null);
+    const last = d.stops.length - 1;
+    const lunchAfter = planMeals(d, ['lunch'], null)[0]?.after ?? last;
+    if (lunchAfter < last) expect(withLunch.end[last] - without.end[last]).toBeGreaterThanOrEqual(MEAL_TIME.lunch.minutes);
+  });
+});
+
