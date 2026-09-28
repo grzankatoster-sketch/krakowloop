@@ -454,8 +454,15 @@ export function describeIntent(intent: WishIntent, tr: Translate = t): WishChip[
   if (intent.pace) chips.push({ key: 'pace', label: tr('wish.chip.pace', { pace: tr(`plan.pace.${intent.pace}`) }) });
   for (const i of intent.interests ?? []) chips.push({ key: `interest:${i}`, label: tr(`plan.interest.${i}`) });
   if (intent.dayTrips !== undefined) chips.push({ key: 'dayTrips', label: tr(intent.dayTrips ? 'wish.chip.dayTrips' : 'wish.chip.noDayTrips') });
-  for (const id of intent.activities ?? []) chips.push({ key: `activity:${id}`, label: EXPERIENCE_NAME.get(id) ?? id });
-  for (const id of intent.excludeActivities ?? []) chips.push({ key: `exclude:${id}`, label: tr('wish.chip.exclude', { name: EXPERIENCE_NAME.get(id) ?? id }) });
+  // an activity's name in the interface language (exp.<id>.name); the English original only when a
+  // dictionary lacks it (a missing key comes back as the key itself)
+  const activityName = (id: string) => {
+    const key = `exp.${id}.name` as StringKey;
+    const v = tr(key);
+    return v && v !== key ? v : (EXPERIENCE_NAME.get(id) ?? id);
+  };
+  for (const id of intent.activities ?? []) chips.push({ key: `activity:${id}`, label: activityName(id) });
+  for (const id of intent.excludeActivities ?? []) chips.push({ key: `exclude:${id}`, label: tr('wish.chip.exclude', { name: activityName(id) }) });
   if (intent.walking) chips.push({ key: 'walking', label: tr(intent.walking === 'low' ? 'wish.chip.walkLow' : 'wish.chip.walkNormal') });
   if (intent.dinner !== undefined) chips.push({ key: 'dinner', label: tr(intent.dinner ? 'wish.chip.dinner' : 'wish.chip.noDinner') });
   for (const c of intent.cuisines ?? []) chips.push({ key: `cuisine:${c}`, label: tr(`wish.chip.cuisine.${c}`) });
