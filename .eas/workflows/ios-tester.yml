@@ -1,0 +1,21 @@
+# The app tester on a cloud iPhone simulator: build for the simulator, walk through every screen
+# with Maestro (.maestro/tour.yaml) and keep the screenshots. Run: npx eas-cli workflow:run .eas/workflows/ios-tester.yml
+name: iOS tester
+
+jobs:
+  build_ios_simulator:
+    name: Build for the iOS simulator
+    type: build
+    params:
+      platform: ios
+      profile: e2e-test
+
+  tour:
+    name: Walk through the app
+    needs: [build_ios_simulator]
+    type: maestro
+    environment: preview
+    params:
+      build_id: ${{ needs.build_ios_simulator.outputs.build_id }}
+      flow_path: ['.maestro/tour.yaml']
+      record_screen: true

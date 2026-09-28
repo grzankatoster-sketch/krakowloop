@@ -14,6 +14,15 @@
     "production": {
       "environment": "production",
       "autoIncrement": true
+    },
+    "e2e-test": {
+      "environment": "preview",
+      "ios": {
+        "simulator": true
+      },
+      "android": {
+        "buildType": "apk"
+      }
     }
   },
   "submit": {
