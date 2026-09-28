@@ -648,6 +648,17 @@ test.describe('place page', () => {
     await expect(page).toHaveURL(/\/place\//);
     await expect(page.getByRole('heading', { name }).last()).toBeVisible();
   });
+
+  test('a heart keeps the place for later in Discover, and survives a reload', async ({ page }) => {
+    await page.goto('/place/czartoryski');
+    await page.getByRole('button', { name: /^Save .* for later$/ }).click();
+    await expect(page.getByRole('button', { name: /^Remove .* from saved$/ })).toBeVisible();
+
+    await page.goto('/discover');
+    await expect(page.getByText('For later', { exact: true }).last()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Saved · 1').last()).toBeVisible();
+  });
 });
 
 test.describe('day trips', () => {

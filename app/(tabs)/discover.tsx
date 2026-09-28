@@ -15,12 +15,13 @@ import { CITY } from '../../src/config/city';
 import { CuisineKey } from '../../src/data/cuisines';
 import { lensPoints } from '../../src/data/lens';
 import { PLACE_MEDIA } from '../../src/data/placeMedia';
-import { Experience, experiences, places } from '../../src/data/places';
+import { Experience, experiences, placeById, places } from '../../src/data/places';
 import { cuisineCounts } from '../../src/data/restaurants';
 import { STAYS } from '../../src/data/stays';
 import { byDistance, topCuisines } from '../../src/lib/discover';
 import { walkMinutes } from '../../src/lib/moments';
 import { openLink } from '../../src/lib/openLink';
+import { useSaved } from '../../src/lib/saved';
 import { t } from '../../src/i18n';
 import type { StringKey } from '../../src/i18n/en';
 import { colors, fonts, space } from '../../src/theme';
@@ -66,6 +67,8 @@ export default function DiscoverScreen() {
     () => byDistance(places.filter((p) => p.zone !== 'out' && p.cat !== 'food' && p.cat !== 'night' && PLACE_MEDIA[p.id]?.image), RYNEK).slice(0, 8),
     [],
   );
+  const savedIds = useSaved();
+  const saved = useMemo(() => savedIds.map((id) => placeById(id)).filter((p) => p !== undefined), [savedIds]);
   const lens = useMemo(() => lensPoints.map((l) => ({ l, old: l.layers.find((x) => x.kind === 'photo') ?? l.layers[0] })).filter((x) => x.old), []);
 
   const go = (href: Parameters<typeof router.push>[0]) => {
@@ -100,6 +103,30 @@ export default function DiscoverScreen() {
           <Text style={s.mapCardText}>{t('discover.native.mapCta')}</Text>
         </View>
       </Pressable>
+
+      {/* places kept for later with the heart on a place's screen */}
+      {saved.length ? (
+        <>
+          <Text style={s.eyebrow}>{t('saved.eyebrow', { n: saved.length })}</Text>
+          <Text style={s.h2}>{t('saved.title')}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
+            {saved.map((p) => (
+              <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [s.savedTile, pressed && s.pressed]}>
+                {PLACE_MEDIA[p.id]?.image ? (
+                  <Image source={PLACE_MEDIA[p.id]!.image!} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
+                ) : (
+                  <View style={[s.fill, { backgroundColor: CATEGORY_COLOR[p.cat] }]} />
+                )}
+                <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.85)']} locations={[0.35, 1]} style={s.fill} />
+                <MaterialCommunityIcons name="heart" size={18} color={colors.white} style={s.savedHeart} />
+                <Text style={[s.tileName, s.savedName]} numberOfLines={2}>
+                  {placeName(p)}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </>
+      ) : null}
 
       {/* concerts, sport, theatre: today, tomorrow, the weekend */}
         <EventsSection from={RYNEK} />
@@ -258,6 +285,9 @@ const s = StyleSheet.create({
   more: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginHorizontal: space.l, marginTop: space.m, minHeight: 44 },
   moreText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink, textDecorationLine: 'underline' },
   row: { gap: space.s, paddingHorizontal: space.l },
+  savedTile: { width: 150, height: 190, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.stone, justifyContent: 'flex-end', padding: 12 },
+  savedHeart: { position: 'absolute', top: 12, right: 12 },
+  savedName: { fontSize: 20, lineHeight: 22 },
   food: { width: 150, height: 170, borderRadius: 22, padding: space.m, justifyContent: 'space-between' },
   foodName: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.white },
   foodCount: { fontFamily: fonts.monoBold, fontSize: 12, color: 'rgba(255,255,255,0.85)' },

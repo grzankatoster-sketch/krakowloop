@@ -22,6 +22,7 @@ import { formatHours, weekHours } from '../../src/lib/hours';
 import { openLink } from '../../src/lib/openLink';
 import { lensById } from '../../src/data/lens';
 import { openWalkingDirections } from '../../src/lib/navigate';
+import { toggleSaved, useSaved } from '../../src/lib/saved';
 import { nearbyTransit } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
@@ -67,6 +68,7 @@ function PlaceDetails({ place }: { place: Place }) {
   const { height: screenH } = useWindowDimensions();
   const heroH = Math.round(screenH * 0.58);
   useStatusBarOnFocus('light');
+  const isSaved = useSaved().includes(place.id);
   useEffect(() => () => void Speech.stop(), []);
 
   // the photo drifts slower than the page and grows when pulled down: the page feels held by a finger
@@ -325,6 +327,18 @@ function PlaceDetails({ place }: { place: Place }) {
           <MaterialCommunityIcons name="navigation-variant" size={22} color={colors.white} />
           <Text style={s.goText}>{t('story.go')}</Text>
         </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={t(isSaved ? 'saved.remove' : 'saved.add', { name })}
+          accessibilityState={{ selected: isSaved }}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            toggleSaved(place.id);
+          }}
+          style={({ pressed }) => [s.listen, isSaved && s.savedOn, pressed && s.pressed]}
+        >
+          <MaterialCommunityIcons name={isSaved ? 'heart' : 'heart-outline'} size={24} color={isSaved ? colors.white : colors.ink} />
+        </Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel={t('moment.listen')} onPress={listen} style={({ pressed }) => [s.listen, pressed && s.pressed]}>
           <MaterialCommunityIcons name="volume-high" size={24} color={colors.ink} />
         </Pressable>
@@ -352,6 +366,7 @@ const s = StyleSheet.create({
   go: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 58, borderRadius: 29, backgroundColor: colors.ink },
   goText: { fontFamily: fonts.bodyBold, fontSize: 18, color: colors.white },
   listen: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.ink },
+  savedOn: { backgroundColor: colors.brick, borderColor: colors.brick },
   pastYear: { fontFamily: fonts.display, fontSize: 40, color: colors.white },
   col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m },
   credit: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, marginTop: 4 },
