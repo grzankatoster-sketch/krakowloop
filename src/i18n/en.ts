@@ -82,6 +82,8 @@ export const en = {
   'open.opens': 'Opens {time}',
   'open.doneToday': 'Closed for the rest of today',
   'open.closedToday': 'Closed today',
+  'open.nextTomorrow': "opens tomorrow {time}",
+  'open.nextDay': "opens {day} {time}",
   'open.nowPrefix': 'Open now · ',
 
   // home

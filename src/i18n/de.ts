@@ -76,6 +76,8 @@ export const de: Strings = {
   'open.opens': 'Öffnet um {time}',
   'open.doneToday': 'Heute bereits geschlossen',
   'open.closedToday': 'Heute geschlossen',
+  'open.nextTomorrow': "öffnet morgen um {time}",
+  'open.nextDay': "öffnet {day} um {time}",
   'open.nowPrefix': 'Jetzt geöffnet · ',
 
   'home.heroAlt': 'Der Krakauer Hauptmarkt mit den Tuchhallen, von oben gesehen',

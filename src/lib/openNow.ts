@@ -1,5 +1,6 @@
 import type { Place } from '../data/places';
 import { t } from '../i18n';
+import type { StringKey } from '../i18n/en';
 import { formatTime, type Interval } from './hours';
 
 /** Where a place stands at a moment of the day, from that day's opening intervals. */
@@ -86,4 +87,28 @@ export function groupOpenNow(list: Place[], date: Date, hoursOf: (placeId: strin
   groups.later.sort((a, b) => opens(a) - opens(b) || a.place.name.localeCompare(b.place.name));
   groups.closed.sort((a, b) => a.place.name.localeCompare(b.place.name));
   return groups;
+}
+
+/** When a place that is closed now opens next: in how many days (1 = tomorrow) and at what minute. */
+export interface NextOpening {
+  days: number;
+  at: number;
+}
+
+/**
+ * Looks up to a week ahead for the next day the place opens. `hoursIn(days)` gives the opening
+ * intervals that many days from today (null when unknown, [] when closed that day).
+ */
+export function nextOpening(hoursIn: (days: number) => Interval[] | null): NextOpening | null {
+  for (let d = 1; d <= 7; d++) {
+    const h = hoursIn(d);
+    if (h && h.length) return { days: d, at: Math.min(...h.map((x) => x[0])) };
+  }
+  return null;
+}
+
+/** "Opens tomorrow 10:00", "Opens Mon 10:00": `weekday` is 0 for Monday, of the day it opens. */
+export function nextOpeningLabel(n: NextOpening, weekday: number): string {
+  const time = formatTime(n.at);
+  return n.days === 1 ? t('open.nextTomorrow', { time }) : t('open.nextDay', { day: t(`day.${weekday}` as StringKey), time });
 }

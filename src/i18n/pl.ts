@@ -76,6 +76,8 @@ export const pl: Strings = {
   'open.opens': 'Otwarcie o {time}',
   'open.doneToday': 'Dziś już zamknięte',
   'open.closedToday': 'Dziś zamknięte',
+  'open.nextTomorrow': "otwarcie jutro o {time}",
+  'open.nextDay': "otwarcie: {day}, {time}",
   'open.nowPrefix': 'Teraz otwarte · ',
 
   'home.heroAlt': 'Rynek Główny w Krakowie z Sukiennicami, widok z góry',

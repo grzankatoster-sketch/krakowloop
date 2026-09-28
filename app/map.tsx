@@ -55,7 +55,7 @@ import { distance, formatDistance, LatLon } from '../src/lib/geo';
 import { formatHours, hoursOn } from '../src/lib/hours';
 import { openWalkingDirections } from '../src/lib/navigate';
 import { openLink, safeWebUrl } from '../src/lib/openLink';
-import { openState, statusLabel } from '../src/lib/openNow';
+import { nextOpening, nextOpeningLabel, openState, statusLabel } from '../src/lib/openNow';
 import { BUS_STOP_LIST, TRAM_STOPS } from '../src/lib/transit';
 import { placeName } from '../src/components/placeName';
 import { useMyLocation } from '../src/lib/useMyLocation';
@@ -103,6 +103,27 @@ const QUICK_CUISINES = topCuisines(COUNTS, 10);
 
 type Focus = { lat: number; lon: number; key: number } | null;
 type Picked = { type: 'eat'; item: Restaurant } | { type: 'stay'; item: Stay } | null;
+
+/** "· opens tomorrow 10:00" for a sight closed for the rest of today, from our hours of the coming days */
+function sightNext(id: string, today: Date): string {
+  const n = nextOpening((d) => {
+    const day = new Date(today);
+    day.setDate(day.getDate() + d);
+    return hoursOn(id, day);
+  });
+  if (!n) return '';
+  const day = new Date(today);
+  day.setDate(day.getDate() + n.days);
+  return ` · ${nextOpeningLabel(n, (day.getDay() + 6) % 7)}`;
+}
+
+/** the same for a place to eat, whose hours are read for a real instant */
+function restaurantNext(r: Restaurant): string {
+  const n = nextOpening((d) => restaurantHoursOn(r, new Date(Date.now() + d * 86400000)));
+  if (!n) return '';
+  const day = krakowWallClock(new Date(Date.now() + n.days * 86400000));
+  return ` · ${nextOpeningLabel(n, (day.getDay() + 6) % 7)}`;
+}
 
 function nowInKrakow() {
   const d = krakowWallClock(new Date());
@@ -559,6 +580,7 @@ export default function DiscoverScreen() {
                     <Text style={[s.rowMeta, st.state === 'open' && s.open]}>
                       {st.state === 'open' ? t('open.nowPrefix') : ''}
                       {statusLabel(st, now.minutes)}
+                      {st.state === 'done' || st.state === 'closed' ? sightNext(p.id, now.date) : ''}
                     </Text>
                   ) : null}
                 </View>
@@ -595,7 +617,7 @@ export default function DiscoverScreen() {
                   <View style={s.rowTags}>
                     {r.pick ? <Text style={s.badge}>{t('discover.pick')}</Text> : null}
                     {open === true ? <Text style={[s.rowMeta, s.open]}>{t('discover.openNow')}</Text> : null}
-                    {open === false ? <Text style={s.rowMeta}>{t('discover.closedNow')}</Text> : null}
+                    {open === false ? <Text style={s.rowMeta}>{t('discover.closedNow')}{restaurantNext(r)}</Text> : null}
                   </View>
                 </View>
               </Pressable>
@@ -692,7 +714,7 @@ export default function DiscoverScreen() {
           {r.pick ? <Text style={[s.badge, s.badgeBig]}>{t('discover.pick')}</Text> : null}
           {r.address ? <Text style={s.detailLine}>{r.address}</Text> : null}
           <Text style={[s.detailLine, st?.state === 'open' && s.open]}>
-            {st ? `${st.state === 'open' ? t('open.nowPrefix') : ''}${statusLabel(st, now.minutes)}` : t('discover.hoursUnknown')}
+            {st ? `${st.state === 'open' ? t('open.nowPrefix') : ''}${statusLabel(st, now.minutes)}${st.state === 'done' || st.state === 'closed' ? restaurantNext(r) : ''}` : t('discover.hoursUnknown')}
             {h ? ` · ${t('discover.today', { hours: formatHours(h) ?? '' })}` : ''}
           </Text>
           {r.diet?.length ? <Text style={s.detailLine}>{r.diet.map((d) => t(`discover.diet.${d}` as StringKey)).join(', ')}</Text> : null}

@@ -3,6 +3,7 @@ import type { Place } from '../src/data/places';
 import type { Interval } from '../src/lib/hours';
 import { krakowWallClock } from '../src/lib/cityTime';
 import { closingSoon, groupOpenNow, openState, statusLabel } from '../src/lib/openNow';
+import { nextOpening, nextOpeningLabel } from '../src/lib/openNow';
 
 const H = (h: number, m = 0) => h * 60 + m;
 
@@ -112,5 +113,18 @@ describe('groupOpenNow', () => {
     expect(groups.unknown).toBe(1);
     const all = [...groups.open, ...groups.later, ...groups.closed].map((r) => r.place.id);
     expect(all).not.toContain('trip');
+  });
+});
+
+describe('when a closed place opens next', () => {
+  it('finds the next day with hours, up to a week ahead', () => {
+    const week: Record<number, [number, number][] | null> = { 1: [], 2: [[600, 1080]], 3: [[540, 1000]] };
+    expect(nextOpening((d) => week[d] ?? [])).toEqual({ days: 2, at: 600 });
+    expect(nextOpening(() => [])).toBeNull();
+    expect(nextOpening(() => null)).toBeNull();
+  });
+  it('says tomorrow, or the day', () => {
+    expect(nextOpeningLabel({ days: 1, at: 600 }, 1)).toMatch(/10:00/);
+    expect(nextOpeningLabel({ days: 3, at: 570 }, 4)).toMatch(/9:30/);
   });
 });
