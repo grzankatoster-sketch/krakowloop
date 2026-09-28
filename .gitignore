@@ -49,3 +49,6 @@ yarn-error.*
 
 # private web preview build (deploy/preview)
 dist-preview/
+
+# screenshots from the iOS simulator tour (scripts/ios-tour.sh)
+ios-tour-out/
