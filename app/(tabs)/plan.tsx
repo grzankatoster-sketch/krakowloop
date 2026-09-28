@@ -727,7 +727,8 @@ export default function PlanScreen() {
 
       {result ? (
         // the two actions a finished plan needs most stay in reach, whatever the scroll
-        <View style={[s.bar, { bottom: tabSpace }]}>
+        // the paper runs down behind the floating tab bar: no strip of the scrolling plan shows between them
+        <View style={[s.bar, { paddingBottom: tabSpace + space.s }]}>
           {shareNote ? (
             <Text style={s.barNote} selectable>
               {shareNote}
