@@ -9,7 +9,7 @@ name: KrakowLoop tour
 - launchApp:
     clearState: true
     permissions:
-      location: allow
+      location: inuse
 - extendedWaitUntil:
     visible: "Skip"
     timeout: 30000
