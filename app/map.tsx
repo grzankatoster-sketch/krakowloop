@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AccessibilityInfo,
   FlatList,
   Image,
   LayoutChangeEvent,
@@ -12,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as ExpoLinking from 'expo-linking';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import * as Haptics from 'expo-haptics';
@@ -24,7 +26,7 @@ import { Button, Chip, Eyebrow } from '../src/components/ui';
 import { stay22Link } from '../src/config/affiliates';
 import { CITY } from '../src/config/city';
 import { CATEGORY_COLOR } from '../src/data/categoryColor';
-import { CUISINE_KEYS, CuisineKey } from '../src/data/cuisines';
+import { CuisineKey } from '../src/data/cuisines';
 import { FOOD_INFO } from '../src/data/foodInfo';
 import { lensPoints } from '../src/data/lens';
 import { PLACE_MEDIA } from '../src/data/placeMedia';
@@ -53,7 +55,9 @@ import {
 } from '../src/lib/discover';
 import { distance, formatDistance, LatLon } from '../src/lib/geo';
 import { formatHours, hoursOn } from '../src/lib/hours';
+import { eatShareUrl, EatLinkParams, paramsToEat } from '../src/lib/mapParams';
 import { openWalkingDirections } from '../src/lib/navigate';
+import { shareLink } from '../src/lib/share';
 import { openLink, safeWebUrl } from '../src/lib/openLink';
 import { nextOpening, nextOpeningLabel, openState, statusLabel } from '../src/lib/openNow';
 import { BUS_STOP_LIST, TRAM_STOPS } from '../src/lib/transit';
@@ -162,7 +166,7 @@ const chipLabel = (key: 'cuisine' | 'openNow' | 'picks' | 'veg', cuisine?: Cuisi
 
 export default function DiscoverScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ mode?: string; wish?: string; at?: string; cuisine?: string }>();
+  const params = useLocalSearchParams<{ mode?: string; wish?: string; at?: string } & EatLinkParams>();
   const calm = useReducedMotion();
   const me = useMyLocation();
   const here = me.status === 'ok' && !me.outsideCity ? me.coords ?? null : null;
@@ -187,10 +191,10 @@ export default function DiscoverScreen() {
   const [reading, setReading] = useState<'idle' | 'busy' | 'notUnderstood'>('idle');
   const readRun = useRef(0);
 
-  // a cuisine tile in Discover opens the map on that cuisine (/map?mode=eat&cuisine=sushi)
-  const [eat, setEat] = useState<EatFilters>(() =>
-    (CUISINE_KEYS as readonly string[]).includes(params.cuisine ?? '') ? { ...NO_EAT_FILTERS, cuisines: [params.cuisine as CuisineKey] } : NO_EAT_FILTERS,
-  );
+  // a cuisine tile in Discover, or a shared link, opens the map on those filters
+  // (/map?mode=eat&cuisine=sushi&open=1&sort=late): src/lib/mapParams.ts
+  const [linked] = useState(() => paramsToEat(params));
+  const [eat, setEat] = useState<EatFilters>(linked.eat);
   const [seeCats, setSeeCats] = useState<Set<Category>>(DEFAULT_SEE);
   const [stayKinds, setStayKinds] = useState<Set<Stay['kind']>>(new Set());
   const [expKind, setExpKind] = useState<(typeof EXP_KINDS)[number] | null>(null);
@@ -267,7 +271,16 @@ export default function DiscoverScreen() {
     );
   }, [seeCats, nameQuery, origin]);
 
-  const [eatSort, setEatSort] = useState<EatSort>('near');
+  const [eatSort, setEatSort] = useState<EatSort>(linked.sort);
+  const [shareNote, setShareNote] = useState<string | null>(null);
+  const shareEat = async () => {
+    Haptics.selectionAsync().catch(() => {});
+    const url = eatShareUrl(ExpoLinking.createURL('/map'), eat, eatSort);
+    const result = await shareLink(t('discover.shareTitle'), url);
+    const note = result === 'copied' ? t('plan.copied') : result === 'failed' ? t('plan.copyThis', { url }) : null;
+    setShareNote(note);
+    if (note) AccessibilityInfo.announceForAccessibility(note);
+  };
   const eatRows = useMemo(() => sortEat(byDistance(filterEat(RESTAURANTS, eat, nameQuery, restaurantOpen), origin), eatSort, restaurantMinutesLeft), [eat, nameQuery, origin, eatSort]);
 
   const stayRows = useMemo(() => {
@@ -521,6 +534,10 @@ export default function DiscoverScreen() {
         {EAT_SORTS.map((k) => (
           <Chip key={k} label={t(`discover.sort.${k}` as StringKey)} active={eatSort === k} onPress={() => setEatSort(k)} />
         ))}
+        <Pressable accessibilityRole="button" accessibilityLabel={t('discover.shareFilters')} onPress={shareEat} hitSlop={6} style={({ pressed }) => [s.shareBtn, pressed && { opacity: 0.6 }]}>
+          <MaterialCommunityIcons name="share-variant" size={18} color={colors.ink} />
+          <Text style={s.shareText}>{t('discover.shareShort')}</Text>
+        </Pressable>
       </ScrollView>
     ) : null;
 
@@ -528,6 +545,11 @@ export default function DiscoverScreen() {
     <View>
       {filterRow}
       {sortRow}
+      {mode === 'eat' && shareNote ? (
+        <Text style={s.shareNote} selectable>
+          {shareNote}
+        </Text>
+      ) : null}
       <View style={s.countRow}>
         <Text style={s.count} accessibilityLiveRegion="polite">
           {t('discover.count', { n: count })}
@@ -998,6 +1020,9 @@ const s = StyleSheet.create({
   },
   nearMeText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   filterRow: { gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
+  shareBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 12, marginLeft: 4 },
+  shareText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink, textDecorationLine: 'underline' },
+  shareNote: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, marginHorizontal: space.m, marginTop: 4 },
   sortLabel: { alignSelf: 'center', fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.mute, textTransform: 'uppercase' },
   countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.s, paddingHorizontal: space.m, minHeight: 36 },
   count: { flex: 1, fontFamily: fonts.monoBold, fontSize: 12, color: colors.mute, letterSpacing: 0.3 },

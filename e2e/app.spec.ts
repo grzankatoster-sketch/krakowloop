@@ -291,6 +291,14 @@ test.describe('map', () => {
     await expect(open).toHaveAttribute('aria-pressed', 'true');
   });
 
+  test('a shared food link opens the map on the same filters and order', async ({ page }) => {
+    await page.goto('/map?mode=eat&open=1&veg=1&sort=name');
+    await expect(page.getByRole('tab', { name: 'Eat', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByRole('button', { name: 'Open now', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'A–Z', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'Share these food filters as a link' })).toBeVisible();
+  });
+
   test('"sushi" finds the sushi places, shows what it understood and opens a place card', async ({ page }) => {
     await page.goto('/map');
     await page.getByLabel('Write what you would like to do or eat').fill('sushi');
