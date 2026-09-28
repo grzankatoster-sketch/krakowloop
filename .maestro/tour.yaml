@@ -1,5 +1,6 @@
-# The tester's walk through KrakowLoop on an iOS simulator (EAS Workflows, .eas/workflows/ios-tester.yml).
-# Every screen a traveller sees gets a screenshot: they come back in the "Maestro Test Results" artifact.
+# The tester's walk through KrakowLoop on an iOS simulator (scripts/ios-tour.sh, .github/workflows/ios-tester.yml).
+# Every screen a traveller sees gets a screenshot, and the features that matter are asserted on the way.
+# Deep links: iOS asks "Open in KrakowLoop?" each time, so every openLink is followed by a tap on "Open".
 appId: com.krakowloop.app
 name: KrakowLoop tour
 ---
@@ -23,7 +24,7 @@ name: KrakowLoop tour
 - scroll
 - takeScreenshot: 03_now_scrolled
 
-# Discover: the screen that shows nothing under "Sights to walk to" on the iPhone
+# Discover: the sight tiles once were an empty gap on iOS
 - tapOn: "Discover"
 - waitForAnimationToEnd:
     timeout: 5000
@@ -44,14 +45,57 @@ name: KrakowLoop tour
     direction: UP
 - takeScreenshot: 14_discover_bottom
 
-# the map in the eat mode: filters, comparing
-- openLink: "krakowloop://map?mode=eat"
+# a wish, from one of the examples: the map opens on what it understood
+- openLink: "krakowloop://wish"
+- tapOn:
+    text: "Open"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 15_wish_sheet
+- tapOn: "Sushi, open now"
+- waitForAnimationToEnd:
+    timeout: 8000
+- takeScreenshot: 16_wish_map
+
+# food filters from a shared link, the list raised
+- openLink: "krakowloop://map?mode=eat&open=1&veg=1&sort=name"
 - tapOn:
     text: "Open"
     optional: true
 - waitForAnimationToEnd:
     timeout: 8000
-- takeScreenshot: 20_map_eat
+- takeScreenshot: 20_map_link
+- tapOn:
+    text: "Show more of the list"
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: 21_map_list
+- assertVisible: "A–Z"
+
+# two places side by side
+- tapOn:
+    text: "Compare .*"
+    index: 0
+- assertVisible: "Pick one more place to compare"
+- tapOn:
+    text: "Compare .*"
+    index: 1
+- takeScreenshot: 22_compare_picked
+- tapOn: "Compare"
+- waitForAnimationToEnd
+- takeScreenshot: 23_compare_sheet
+- assertVisible: "Side by side"
+- tapOn: "Close the comparison"
+- waitForAnimationToEnd
+
+# the filters sent as a link: the system share sheet
+- tapOn: "Share these food filters as a link"
+- waitForAnimationToEnd
+- takeScreenshot: 24_share_sheet
+- tapOn:
+    text: "Close"
+    optional: true
+- waitForAnimationToEnd
 
 # a place page and the heart
 - openLink: "krakowloop://place/czartoryski"
@@ -61,13 +105,24 @@ name: KrakowLoop tour
 - waitForAnimationToEnd:
     timeout: 5000
 - takeScreenshot: 30_place
-- tapOn:
-    text: "Save .* for later"
-    optional: true
+- tapOn: "Save .* for later"
+- assertVisible: "Remove .* from saved"
 - scroll
 - takeScreenshot: 31_place_scrolled
 
-# the plan: two days, then the rail
+# the saved place waits in Discover
+- openLink: "krakowloop://discover"
+- tapOn:
+    text: "Open"
+    optional: true
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element: "For later"
+    direction: DOWN
+- takeScreenshot: 32_discover_saved
+- assertVisible: "Saved · 1"
+
+# the plan: two days, the rail, a visited stop
 - openLink: "krakowloop://plan"
 - tapOn:
     text: "Open"
@@ -80,12 +135,23 @@ name: KrakowLoop tour
 - takeScreenshot: 41_plan_day
 - scroll
 - takeScreenshot: 42_plan_rail
+- tapOn:
+    text: "Been to .*"
+    index: 0
+- waitForAnimationToEnd
+- takeScreenshot: 43_plan_visited
+- scrollUntilVisible:
+    element: "Visited 1 of .*"
+    direction: UP
+- takeScreenshot: 44_plan_progress
 - scroll
-- takeScreenshot: 43_plan_rail2
 - scroll
-- takeScreenshot: 44_plan_rail3
+- takeScreenshot: 45_plan_end
 
 # Time Lens
-- tapOn: "Time Lens"
+- openLink: "krakowloop://obiektyw"
+- tapOn:
+    text: "Open"
+    optional: true
 - waitForAnimationToEnd
 - takeScreenshot: 50_lens
