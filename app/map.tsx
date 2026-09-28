@@ -20,6 +20,7 @@ import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { scheduleOnRN } from 'react-native-worklets';
+import { CompareSheet } from '../src/components/CompareSheet';
 import LoopMap from '../src/components/LoopMap';
 import type { MapPoint } from '../src/components/mapHtml';
 import { Button, Chip, Eyebrow } from '../src/components/ui';
@@ -31,7 +32,7 @@ import { FOOD_INFO } from '../src/data/foodInfo';
 import { lensPoints } from '../src/data/lens';
 import { PLACE_MEDIA } from '../src/data/placeMedia';
 import { CATEGORY_LABEL, Category, Experience, ZONE_LABEL, experiences, places } from '../src/data/places';
-import { RESTAURANTS, Restaurant, cuisineCounts, restaurantHoursOn } from '../src/data/restaurants';
+import { RESTAURANTS, Restaurant, cuisineCounts, restaurantById, restaurantHoursOn } from '../src/data/restaurants';
 import { STAYS, Stay } from '../src/data/stays';
 import { krakowWallClock } from '../src/lib/cityTime';
 import {
@@ -55,6 +56,7 @@ import {
 } from '../src/lib/discover';
 import { distance, formatDistance, LatLon } from '../src/lib/geo';
 import { formatHours, hoursOn } from '../src/lib/hours';
+import { compareFacts, toggleCompare } from '../src/lib/compare';
 import { eatShareUrl, EatLinkParams, paramsToEat } from '../src/lib/mapParams';
 import { openWalkingDirections } from '../src/lib/navigate';
 import { shareLink } from '../src/lib/share';
@@ -273,6 +275,13 @@ export default function DiscoverScreen() {
 
   const [eatSort, setEatSort] = useState<EatSort>(linked.sort);
   const [shareNote, setShareNote] = useState<string | null>(null);
+  // places to eat picked for a side-by-side look (up to three), and whether the sheet is up
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparing, setComparing] = useState(false);
+  const flipCompare = (id: string) => {
+    Haptics.selectionAsync().catch(() => {});
+    setCompareIds((ids) => toggleCompare(ids, id));
+  };
   const shareEat = async () => {
     Haptics.selectionAsync().catch(() => {});
     const url = eatShareUrl(ExpoLinking.createURL('/map'), eat, eatSort);
@@ -545,6 +554,15 @@ export default function DiscoverScreen() {
     <View>
       {filterRow}
       {sortRow}
+      {mode === 'eat' && compareIds.length ? (
+        <View style={s.compareBar}>
+          <Text style={s.compareText}>{compareIds.length < 2 ? t('compare.pickOne') : t('compare.picked', { n: compareIds.length })}</Text>
+          {compareIds.length >= 2 ? <Button label={t('compare.cta')} onPress={() => setComparing(true)} /> : null}
+          <Pressable accessibilityRole="button" onPress={() => setCompareIds([])} hitSlop={6}>
+            <Text style={s.shareText}>{t('compare.clear')}</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {mode === 'eat' && shareNote ? (
         <Text style={s.shareNote} selectable>
           {shareNote}
@@ -642,6 +660,16 @@ export default function DiscoverScreen() {
                     {open === false ? <Text style={s.rowMeta}>{t('discover.closedNow')}{restaurantNext(r)}</Text> : null}
                   </View>
                 </View>
+                <Pressable
+                  accessibilityRole="checkbox"
+                  aria-checked={compareIds.includes(r.id)}
+                  accessibilityLabel={t('compare.toggle', { name: r.name })}
+                  onPress={() => flipCompare(r.id)}
+                  hitSlop={8}
+                  style={s.compareBox}
+                >
+                  <MaterialCommunityIcons name={compareIds.includes(r.id) ? 'checkbox-marked' : 'checkbox-blank-outline'} size={24} color={compareIds.includes(r.id) ? colors.patina : colors.mute} />
+                </Pressable>
               </Pressable>
             );
           }}
@@ -932,6 +960,26 @@ export default function DiscoverScreen() {
           <View style={s.drawerBody}>{picked ? detail() : list()}</View>
         </Animated.View>
       </View>
+      {comparing && compareIds.length >= 2 ? (
+        <CompareSheet
+          cols={compareIds
+            .map((id) => restaurantById(id))
+            .filter((r) => r !== undefined)
+            .map((r) => compareFacts(r, origin, restaurantHoursOn(r, new Date()), nowInKrakow().minutes))}
+          now={nowInKrakow().minutes}
+          onClose={() => setComparing(false)}
+          onRemove={(id) => {
+            const next = compareIds.filter((x) => x !== id);
+            setCompareIds(next);
+            if (next.length < 2) setComparing(false);
+          }}
+          onOpen={(id) => {
+            const r = restaurantById(id);
+            setComparing(false);
+            if (r) pickFromList({ type: 'eat', item: r });
+          }}
+        />
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -1020,6 +1068,9 @@ const s = StyleSheet.create({
   },
   nearMeText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   filterRow: { gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
+  compareBox: { alignSelf: 'center', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  compareBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.s, marginHorizontal: space.m, marginTop: space.s, padding: space.s, borderRadius: 16, backgroundColor: colors.stone },
+  compareText: { flex: 1, minWidth: 140, fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
   shareBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 12, marginLeft: 4 },
   shareText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink, textDecorationLine: 'underline' },
   shareNote: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, marginHorizontal: space.m, marginTop: 4 },

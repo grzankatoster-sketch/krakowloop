@@ -299,6 +299,19 @@ test.describe('map', () => {
     await expect(page.getByRole('button', { name: 'Share these food filters as a link' })).toBeVisible();
   });
 
+  test('two places to eat can be compared side by side', async ({ page }) => {
+    await page.goto('/map?mode=eat');
+    const boxes = page.getByRole('checkbox', { name: /^Compare / });
+    await boxes.nth(0).click();
+    await expect(page.getByText('Pick one more place to compare')).toBeVisible();
+    await boxes.nth(1).click();
+    await page.getByRole('button', { name: 'Compare', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Side by side' })).toBeVisible();
+    await expect(page.getByText('Walk', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Close the comparison' }).click();
+    await expect(page.getByRole('heading', { name: 'Side by side' })).toHaveCount(0);
+  });
+
   test('"sushi" finds the sushi places, shows what it understood and opens a place card', async ({ page }) => {
     await page.goto('/map');
     await page.getByLabel('Write what you would like to do or eat').fill('sushi');
