@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTabBarSpace, WEB_TABS_TOP } from '../../src/lib/useTabBarSpace';
@@ -22,7 +23,8 @@ import { DETOUR } from '../../src/lib/geo';
 import { formatHours, formatTime, hoursOn } from '../../src/lib/hours';
 import { DayTimes, MEAL_KEYS, Meal, MealStop, dayTimes, planMeals } from '../../src/lib/meals';
 import { walkMinutes } from '../../src/lib/moments';
-import { openWalkingDirections } from '../../src/lib/navigate';
+import { googleDayRoute, openWalkingDirections } from '../../src/lib/navigate';
+import { counted } from '../../src/lib/plural';
 import type { Leg } from '../../src/lib/legs';
 import { openLink } from '../../src/lib/openLink';
 import { paramsToPlan, planToParams, shareUrl } from '../../src/lib/planParams';
@@ -174,6 +176,27 @@ export default function PlanScreen() {
   const [mapKey, setMapKey] = useState(0);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [mealPick, setMealPick] = useState<Record<string, number>>({});
+  // places the traveller has been to, ticked on the day's rail and kept on the phone for this plan
+  const visitedKey = `kl.visited.${hashKey(planKey)}`;
+  const [visited, setVisited] = useState<{ key: string; ids: string[] }>({ key: '', ids: [] });
+  useEffect(() => {
+    let live = true;
+    AsyncStorage.getItem(visitedKey)
+      .then((v) => {
+        if (live) setVisited({ key: visitedKey, ids: v ? (JSON.parse(v) as string[]) : [] });
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [visitedKey]);
+  const visitedIds = useMemo(() => new Set(visited.key === visitedKey ? visited.ids : []), [visited, visitedKey]);
+  const toggleVisited = (id: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const ids = visitedIds.has(id) ? [...visitedIds].filter((x) => x !== id) : [...visitedIds, id];
+    setVisited({ key: visitedKey, ids });
+    AsyncStorage.setItem(visitedKey, JSON.stringify(ids)).catch(() => {});
+  };
   const scrollRef = useRef<ScrollView>(null);
   const me = useMyLocation();
 
@@ -554,7 +577,7 @@ export default function PlanScreen() {
                 ? `${formatTime(five(times.meal.breakfast ?? times.start[0]))}–${formatTime(five(Math.max(times.end[times.end.length - 1], (times.meal.dinner ?? 0) + (times.meal.dinner ? 75 : 0))))} · `
                 : ''}
               {day.kind === 'city'
-                ? t('plan.dayTotals', { stops: day.stops.length, total: fmt(dayTotal), walk: fmt(walkTotal(day, real)) })
+                ? t('plan.dayTotals', { stops: counted(day.stops.length, { one: t('plan.place.one'), few: t('plan.place.few'), many: t('plan.place.many') }), total: fmt(dayTotal), walk: fmt(walkTotal(day, real)) })
                 : t('plan.tripTotals', { travel: fmt(day.travelMinutes), stay: fmt(day.visitMinutes), total: fmt(day.totalMinutes) })}
             </Text>
             {dayTotal > day.budgetMinutes ? (
@@ -568,8 +591,21 @@ export default function PlanScreen() {
             ) : null}
             {day.closed.length ? <Text style={s.note}>{t('plan.closedLeftOut', { names: day.closed.map((p) => placeName(p)).join(', ') })}</Text> : null}
 
+            {day.kind === 'city' && visitedIds.size ? (
+              // how far through the day the traveller is: ticked places of this day's stops
+              <View accessibilityRole="progressbar" accessibilityLabel={t('plan.progress', { done: day.stops.filter((x) => visitedIds.has(x.place.id)).length, all: day.stops.length })}>
+                <Text style={s.progressText}>{t('plan.progress', { done: day.stops.filter((x) => visitedIds.has(x.place.id)).length, all: day.stops.length })}</Text>
+                <View style={s.progressTrack}>
+                  <View style={[s.progressFill, { width: `${(100 * day.stops.filter((x) => visitedIds.has(x.place.id)).length) / Math.max(1, day.stops.length)}%` }]} />
+                </View>
+              </View>
+            ) : null}
+
             {/* what a day can be changed by, as pills: the map, an activity, the meals */}
             <View style={s.pills}>
+              {day.kind === 'city' && googleDayRoute(day.stops.map((x) => x.place), day.start) ? (
+                <Pill icon="navigation-variant" label={t('plan.goWholeDay')} active={false} onPress={() => openLink(googleDayRoute(day.stops.map((x) => x.place), day.start)!)} />
+              ) : null}
               <Pill icon={mapOpen ? 'map' : 'map-outline'} label={mapOpen ? t('plan.hideMap') : t('plan.showMap')} active={mapOpen} onPress={() => setMapOpen((v) => !v)} />
               <Pill icon="plus" label={t('plan.addActivity')} active={pickerOpen} onPress={() => setPickerOpen((v) => !v)} />
             </View>
@@ -662,7 +698,7 @@ export default function PlanScreen() {
             {day.kind === 'trip' ? (
               <TripCard day={day} />
             ) : (
-              <Timeline day={day} real={real} onSkip={skipStop} meals={dayMeals} times={times} pick={(m) => mealPick[`${day.index}:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:${m}`, n)} />
+              <Timeline day={day} real={real} onSkip={skipStop} visited={visitedIds} onVisited={toggleVisited} meals={dayMeals} times={times} pick={(m) => mealPick[`${day.index}:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:${m}`, n)} />
             )}
             {/* a short trip leaves the afternoon: a few places back in Kraków */}
             {day.after ? (
@@ -671,7 +707,7 @@ export default function PlanScreen() {
                   {t('plan.afterTrip')}
                 </Text>
                 <Text style={s.totals}>{t('plan.afterTripLine', { total: fmt(day.after.totalMinutes) })}</Text>
-                <Timeline day={day.after} real={null} onSkip={skipStop} meals={afterMeals} times={afterTimes} pick={(m) => mealPick[`${day.index}:after:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:after:${m}`, n)} />
+                <Timeline day={day.after} real={null} onSkip={skipStop} visited={visitedIds} onVisited={toggleVisited} meals={afterMeals} times={afterTimes} pick={(m) => mealPick[`${day.index}:after:${m}`] ?? 0} onAnother={(m, n) => anotherPlace(`${day.index}:after:${m}`, n)} />
               </View>
             ) : null}
 
@@ -705,6 +741,16 @@ export default function PlanScreen() {
       ) : null}
     </SafeAreaView>
   );
+}
+
+/** A short stable name for a plan's settings: FNV-1a, 32 bits, in base 36. */
+function hashKey(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
 }
 
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
@@ -793,6 +839,8 @@ function Timeline({
   pick = () => 0,
   onAnother = () => {},
   times = null,
+  visited = new Set<string>(),
+  onVisited = () => {},
 }: {
   day: PlanDay;
   real: WalkingRoute | null;
@@ -802,6 +850,9 @@ function Timeline({
   onAnother?: (m: Meal, count: number) => void;
   /** the day's clock (src/lib/meals.ts dayTimes); none on an undated day without a clock */
   times?: DayTimes | null;
+  /** places ticked as visited, and what a tick does */
+  visited?: ReadonlySet<string>;
+  onVisited?: (id: string) => void;
 }) {
   const mealRows = (i: number) =>
     meals
@@ -840,17 +891,18 @@ function Timeline({
             ) : null}
             <RailRow dot="stop" time={times ? formatTime(five(times.start[i])) : undefined} first={i === 0 && !day.start && !meals.some((m) => m.after === -1)} last={end}>
               {/* a stop as a compact card: its photo, its number and name, how long, what to do */}
-              <View style={s.stop}>
+              <View style={[s.stop, visited.has(st.place.id) && s.stopDone]}>
                 <Pressable
                   accessibilityRole="link"
                   accessibilityLabel={t('now.openLabel', { name: placeName(st.place) })}
+                  accessibilityHint={t('plan.pointOf', { n: i + 1, all: day.stops.length })}
                   onPress={() => router.push(`/place/${st.place.id}`)}
                   style={({ pressed }) => [s.stopMain, pressed && { opacity: 0.85 }]}
                 >
                   <View style={s.thumb}>
                     {photo?.image ? <Image source={photo.image} style={s.thumbImg} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
-                    <View style={s.num}>
-                      <Text style={s.numText}>{i + 1}</Text>
+                    <View style={[s.num, visited.has(st.place.id) && s.numDone]}>
+                      {visited.has(st.place.id) ? <MaterialCommunityIcons name="check" size={14} color={colors.white} /> : <Text style={s.numText}>{i + 1}</Text>}
                     </View>
                   </View>
                   <View style={{ flex: 1, gap: 3 }}>
@@ -866,6 +918,17 @@ function Timeline({
                   <MaterialCommunityIcons name="chevron-right" size={22} color={colors.mute} />
                 </Pressable>
                 <View style={s.stopLinks}>
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    aria-checked={visited.has(st.place.id)}
+                    accessibilityLabel={t('plan.visitedLabel', { name: placeName(st.place) })}
+                    onPress={() => onVisited(st.place.id)}
+                    hitSlop={6}
+                    style={s.inlineAction}
+                  >
+                    <MaterialCommunityIcons name={visited.has(st.place.id) ? 'check-circle' : 'checkbox-blank-circle-outline'} size={18} color={visited.has(st.place.id) ? colors.patina : colors.ink} />
+                    <Text style={s.link}>{t('plan.visited')}</Text>
+                  </Pressable>
                   <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: placeName(st.place) })} onPress={() => openWalkingDirections(st.place)} hitSlop={6} style={s.inlineAction}>
                     <MaterialCommunityIcons name="navigation-variant" size={16} color={colors.ink} />
                     <Text style={s.link}>{t('story.go')}</Text>
@@ -1014,6 +1077,11 @@ const s = StyleSheet.create({
   activity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.s, paddingVertical: space.s, borderBottomWidth: 1, borderColor: colors.line },
   activityButtons: { flexDirection: 'row', gap: space.s },
   timeline: { marginTop: space.l },
+  stopDone: { opacity: 0.62 },
+  numDone: { backgroundColor: colors.patina },
+  progressText: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 0.6, color: colors.patina, marginTop: space.s, textTransform: 'uppercase' },
+  progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.line, marginTop: 6, overflow: 'hidden' },
+  progressFill: { height: 6, borderRadius: 3, backgroundColor: colors.patina },
   dayTabs: { gap: space.s, paddingBottom: space.m },
   dayTab: { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 150, maxWidth: 220, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 18, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
   dayTabOn: { backgroundColor: colors.ink, borderColor: colors.ink },

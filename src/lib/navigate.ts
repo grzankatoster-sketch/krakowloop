@@ -44,3 +44,22 @@ export async function openWalkingDirections(d: Destination): Promise<void> {
   }
   await Linking.openURL(googleWalking(d));
 }
+
+/** Google Maps takes at most this many stops between the start and the end of a route. */
+export const MAX_WAYPOINTS = 9;
+
+/**
+ * A whole day as one walking route in Google Maps: from the start point (a hotel) or the first
+ * stop, through the stops in the plan's order, to the last one. Apple Maps links take one
+ * destination only, so the day goes to Google Maps on every phone (the app when installed, the
+ * website otherwise). Null for a day of fewer than two places.
+ */
+export function googleDayRoute(stops: readonly Destination[], start?: Destination): string | null {
+  const from = start ?? stops[0];
+  const through = (start ? stops : stops.slice(1)).slice(0, -1).slice(0, MAX_WAYPOINTS);
+  const to = stops[stops.length - 1];
+  if (!from || !to || stops.length < (start ? 1 : 2)) return null;
+  const q = new URLSearchParams({ api: '1', origin: at(from), destination: at(to), travelmode: 'walking' });
+  if (through.length) q.set('waypoints', through.map(at).join('|'));
+  return `https://www.google.com/maps/dir/?${q.toString()}`;
+}

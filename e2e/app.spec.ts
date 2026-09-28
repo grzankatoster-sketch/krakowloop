@@ -30,9 +30,17 @@ type MapDebug = {
   rendered: () => string[];
 };
 
+/**
+ * The map on top: the newest map document. Discover keeps a small map of its own, and on the web the
+ * tabs stay mounted underneath, so the first map found can be that one instead of the page's.
+ */
+function mapFrame(page: Page) {
+  return page.frames().filter((f) => f.url().startsWith('blob:')).at(-1);
+}
+
 /** State the map document exposes for tests (window.__krk in mapHtml.ts); route = drawn route vertices. */
 async function mapState(page: Page): Promise<{ ready: boolean; points: number; route: number }> {
-  const frame = page.frames().find((f) => f.url().startsWith('blob:'));
+  const frame = mapFrame(page);
   if (!frame) return { ready: false, points: 0, route: 0 };
   return frame.evaluate(() => {
     const k = (window as unknown as { __krk?: MapDebug }).__krk;
@@ -47,7 +55,7 @@ async function mapState(page: Page): Promise<{ ready: boolean; points: number; r
 async function expectRouteLine(page: Page, drawn: boolean) {
   const look = expect.poll(
     async () => {
-      const frame = page.frames().find((f) => f.url().startsWith('blob:'));
+      const frame = mapFrame(page);
       if (!frame) return 'no map';
       return frame.evaluate(() => {
         const k = (window as unknown as { __krk?: MapDebug }).__krk;
@@ -62,7 +70,7 @@ async function expectRouteLine(page: Page, drawn: boolean) {
 
 /** Ids of the pins the map has actually drawn in view (not the data it was given). */
 async function renderedPins(page: Page): Promise<string[]> {
-  const frame = page.frames().find((f) => f.url().startsWith('blob:'));
+  const frame = mapFrame(page);
   if (!frame) return [];
   return frame.evaluate(() => (window as unknown as { __krk?: MapDebug }).__krk?.rendered() ?? []);
 }
@@ -183,7 +191,7 @@ test.describe('language from the phone', () => {
 test.describe('map', () => {
   test('the map loads its style and draws the places, without an error message', async ({ page }) => {
     await page.goto('/map');
-    await expect(page.frameLocator('iframe[title="Map"]').locator('canvas').first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.frameLocator('iframe[title="Map"]').last().locator('canvas').first()).toBeVisible({ timeout: 30_000 });
     await expect.poll(async () => (await mapState(page)).ready, { timeout: 30_000 }).toBe(true);
     // the data reached the map…
     await expect.poll(async () => (await mapState(page)).points).toBeGreaterThan(40);
@@ -200,7 +208,7 @@ test.describe('map', () => {
     await expect.poll(async () => (await mapState(page)).points, { timeout: 30_000 }).toBeGreaterThan(40);
     // the map is ready before its opening flight ends: wait until the camera has come down to the
     // close start view, then a moment for the pins to be placed, before asking where they are
-    const map = page.frames().find((f) => f.url().startsWith('blob:'))!;
+    const map = mapFrame(page)!;
     await expect.poll(() => map.evaluate(() => (window as unknown as { __krk: { zoom: () => number } }).__krk.zoom()), { timeout: 15_000 }).toBeGreaterThan(16);
     await page.waitForTimeout(1500);
 
@@ -220,7 +228,7 @@ test.describe('map', () => {
       { id: 'dominican', name: 'Dominican Basilica', lon: 19.93943, lat: 50.0593 },
       { id: 'dragons-den', name: "Dragon's Den", lon: 19.93358, lat: 50.05342 },
     ];
-    const frame = page.frames().find((f) => f.url().startsWith('blob:'))!;
+    const frame = mapFrame(page)!;
     // pins are placed a little after the map is ready (labels, collisions): ask again until one is found
     const findPick = () => frame.evaluate((list) => {
       const k = (window as unknown as { __krk: MapDebug }).__krk;
@@ -237,7 +245,7 @@ test.describe('map', () => {
     const pick = await findPick();
     expect(pick, 'no candidate pin was alone and on screen at the start view').not.toBeNull();
 
-    const box = (await page.locator('iframe[title="Map"]').boundingBox())!;
+    const box = (await page.locator('iframe[title="Map"]').last().boundingBox())!;
     await page.mouse.click(box.x + pick!.x, box.y + pick!.y);
     await expect(page).toHaveURL(new RegExp(`/place/${pick!.id}$`));
     await expect(page.getByRole('heading', { name: pick!.name }).last()).toBeVisible();
@@ -247,10 +255,10 @@ test.describe('map', () => {
     await openDrawer(page);
     await expect(page.getByRole('button', { name: /Czartoryski Museum/ })).toBeVisible();
     await page.getByRole('button', { name: 'Show more of the list' }).click();
-    await expect(page.locator('iframe[title="Map"]')).toHaveAttribute('tabindex', '-1');
+    await expect(page.locator('iframe[title="Map"]').last()).toHaveAttribute('tabindex', '-1');
     await expect(page.getByRole('button', { name: 'Near me', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Show the map' }).click();
-    await expect(page.locator('iframe[title="Map"]')).toHaveAttribute('tabindex', '0');
+    await expect(page.locator('iframe[title="Map"]').last()).toHaveAttribute('tabindex', '0');
   });
 
   test('a word the app cannot filter by searches the names, accent-insensitive', async ({ page }) => {
@@ -331,7 +339,7 @@ test.describe('map', () => {
     test.skip(!HAS_MAPBOX_TOKEN, '3D buildings need Mapbox');
     await page.goto('/map');
     await expect.poll(async () => (await mapState(page)).ready, { timeout: 30_000 }).toBe(true);
-    const frame = page.frames().find((f) => f.url().startsWith('blob:'))!;
+    const frame = mapFrame(page)!;
     await expect.poll(() => frame.evaluate(() => (window as unknown as { __krk: { zoom: () => number } }).__krk.zoom()), { timeout: 10_000 }).toBeGreaterThan(16);
   });
 
@@ -343,7 +351,7 @@ test.describe('map', () => {
     });
     await page.goto('/map');
     await expect.poll(async () => (await mapState(page)).ready, { timeout: 30_000 }).toBe(true);
-    const frame = page.frames().find((f) => f.url().startsWith('blob:'))!;
+    const frame = mapFrame(page)!;
     expect(await frame.evaluate(() => (window as unknown as { __krk: MapDebug }).__krk.models)).toBe(5);
     // the map is always 3D: the files load without pressing anything
     await expect.poll(() => new Set(glb).size, { timeout: 30_000 }).toBeGreaterThan(0);
