@@ -115,7 +115,7 @@ async function openPlaceFromList(page: Page, name: RegExp) {
 test.describe('home', () => {
   test('opens on stories of what is near now, with the wish and the map one tap away', async ({ page }) => {
     await page.goto('/');
-    await expect(page.getByText(/^KRAKÓW · \d\d:\d\d$/)).toBeVisible();
+    await expect(page.getByText(/^KRAKÓW · \d{1,2}:\d\d$/)).toBeVisible();
     await expect(page.getByText('Around the Main Square')).toBeVisible();
     // a story: its name as a heading, and the walk to it as the first thing to tap
     await expect(page.getByRole('heading').filter({ visible: true }).first()).toBeVisible();
