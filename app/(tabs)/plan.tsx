@@ -6,7 +6,6 @@ import * as Linking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTabBarSpace, WEB_TABS_TOP } from '../../src/lib/useTabBarSpace';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { LinearGradient } from 'expo-linear-gradient';
 import LoopMap from '../../src/components/LoopMap';
 import { placeName, placeText } from '../../src/components/placeName';
 import type { MapPoint } from '../../src/components/mapHtml';
@@ -516,17 +515,67 @@ export default function PlanScreen() {
 
         {result ? (
           <View style={[s.col, { marginTop: space.m }]}>
-            <View style={s.row}>
-              {plan!.map((d, i) => (
-                <Chip
-                  key={d.index}
-                  label={d.date ? t('plan.dayDate', { n: d.index, date: dayLabel(d.date) }) : t('plan.day', { n: d.index })}
-                  active={i === dayIdx}
-                  onPress={() => {
-                    setDaySel({ key: planKey, index: i });
-                    setPickerOpen(false);
-                  }}
-                />
+            {/* the days as tiles: the number big, the date and the part of town under it */}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dayTabs}>
+              {plan!.map((d, i) => {
+                const on = i === dayIdx;
+                return (
+                  <Pressable
+                    key={d.index}
+                    accessibilityRole="button"
+                    accessibilityLabel={d.date ? t('plan.dayDate', { n: d.index, date: dayLabel(d.date) }) : t('plan.day', { n: d.index })}
+                    aria-selected={on}
+                    onPress={() => {
+                      Haptics.selectionAsync().catch(() => {});
+                      setDaySel({ key: planKey, index: i });
+                      setPickerOpen(false);
+                    }}
+                    style={({ pressed }) => [s.dayTab, on && s.dayTabOn, pressed && { opacity: 0.85 }]}
+                  >
+                    <Text style={[s.dayTabNum, on && s.onInk]}>{d.index}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.dayTabDate, on && s.onInkSoft]} numberOfLines={1}>
+                        {d.date ? dayLabel(d.date) : t('plan.day', { n: d.index })}
+                      </Text>
+                      <Text style={[s.dayTabTitle, on && s.onInk]} numberOfLines={1}>
+                        {d.kind === 'trip' ? placeName(d.stops[0].place) : d.title}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            <Text style={s.dayTitle} accessibilityRole="header">
+              {day.kind === 'trip' ? placeName(day.stops[0].place) : day.title}
+            </Text>
+            <Text style={s.dayLine}>
+              {times && times.start.length
+                ? `${formatTime(five(times.meal.breakfast ?? times.start[0]))}–${formatTime(five(Math.max(times.end[times.end.length - 1], (times.meal.dinner ?? 0) + (times.meal.dinner ? 75 : 0))))} · `
+                : ''}
+              {day.kind === 'city'
+                ? t('plan.dayTotals', { stops: day.stops.length, total: fmt(dayTotal), walk: fmt(walkTotal(day, real)) })
+                : t('plan.tripTotals', { travel: fmt(day.travelMinutes), stay: fmt(day.visitMinutes), total: fmt(day.totalMinutes) })}
+            </Text>
+            {dayTotal > day.budgetMinutes ? (
+              <Text style={s.warn}>
+                {t('plan.longDay', {
+                  total: fmt(dayTotal),
+                  pace: PACES.find((p) => p.key === options.pace)?.label ?? options.pace,
+                  budget: fmt(day.budgetMinutes),
+                })}
+              </Text>
+            ) : null}
+            {day.closed.length ? <Text style={s.note}>{t('plan.closedLeftOut', { names: day.closed.map((p) => placeName(p)).join(', ') })}</Text> : null}
+
+            {/* what a day can be changed by, as pills: the map, an activity, the meals */}
+            <View style={s.pills}>
+              <Pill icon={mapOpen ? 'map' : 'map-outline'} label={mapOpen ? t('plan.hideMap') : t('plan.showMap')} active={mapOpen} onPress={() => setMapOpen((v) => !v)} />
+              <Pill icon="plus" label={t('plan.addActivity')} active={pickerOpen} onPress={() => setPickerOpen((v) => !v)} />
+            </View>
+            <View style={s.pills}>
+              {MEAL_KEYS.map((m) => (
+                <Pill key={m} icon={MEAL_ICON[m]} label={t(`meal.${m}`)} active={wantedMeals.includes(m)} onPress={() => toggleMeal(m)} />
               ))}
             </View>
 
@@ -564,33 +613,6 @@ export default function PlanScreen() {
                 ) : null}
               </View>
             ) : null}
-
-            <Text style={s.dayTitle} accessibilityRole="header">
-              {day.kind === 'trip' ? placeName(day.stops[0].place) : day.title}
-            </Text>
-            <Text style={s.totals}>
-              {day.kind === 'city'
-                ? t('plan.dayTotals', { stops: day.stops.length, total: fmt(dayTotal), walk: fmt(walkTotal(day, real)) })
-                : t('plan.tripTotals', { travel: fmt(day.travelMinutes), stay: fmt(day.visitMinutes), total: fmt(day.totalMinutes) })}
-            </Text>
-            {times && times.start.length ? (
-              <Text style={s.dayClock}>{t('plan.dayClock', { from: formatTime(times.meal.breakfast ?? times.start[0]), to: formatTime(Math.max(times.end[times.end.length - 1], (times.meal.dinner ?? 0) + (times.meal.dinner ? 75 : 0))) })}</Text>
-            ) : null}
-            {dayTotal > day.budgetMinutes ? (
-              <Text style={s.warn}>
-                {t('plan.longDay', {
-                  total: fmt(dayTotal),
-                  pace: PACES.find((p) => p.key === options.pace)?.label ?? options.pace,
-                  budget: fmt(day.budgetMinutes),
-                })}
-              </Text>
-            ) : null}
-            {day.closed.length ? <Text style={s.note}>{t('plan.closedLeftOut', { names: day.closed.map((p) => placeName(p)).join(', ') })}</Text> : null}
-
-            <View style={s.dayActions}>
-              <Button label={mapOpen ? t('plan.hideMap') : t('plan.showMap')} kind="quiet" expanded={mapOpen} onPress={() => setMapOpen((v) => !v)} style={s.grow} />
-              <Button label={t('plan.addActivity')} kind="quiet" expanded={pickerOpen} onPress={() => setPickerOpen((v) => !v)} style={s.grow} />
-            </View>
 
             {pickerOpen ? (
               <View style={s.picker}>
@@ -636,14 +658,6 @@ export default function PlanScreen() {
                 <Text style={s.small}>{t('plan.arrangeNote')}</Text>
               </View>
             ) : null}
-
-            {/* meals: tap to add them to every day, at their time and near the stop the day is at */}
-            <Text style={s.subQ}>{t('plan.meals.title')}</Text>
-            <View style={s.row}>
-              {MEAL_KEYS.map((m) => (
-                <Chip key={m} label={t(`meal.${m}`)} active={wantedMeals.includes(m)} onPress={() => toggleMeal(m)} />
-              ))}
-            </View>
 
             {day.kind === 'trip' ? (
               <TripCard day={day} />
@@ -693,6 +707,26 @@ export default function PlanScreen() {
   );
 }
 
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+
+/** A small switch with an icon: the day's map, an activity, a meal. */
+function Pill({ icon, label, active, onPress }: { icon: IconName; label: string; active: boolean; onPress: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      aria-pressed={active}
+      onPress={() => {
+        Haptics.selectionAsync().catch(() => {});
+        onPress();
+      }}
+      style={({ pressed }) => [s.pill, active && s.pillOn, pressed && { opacity: 0.85 }]}
+    >
+      <MaterialCommunityIcons name={icon} size={17} color={active ? colors.white : colors.ink} />
+      <Text style={[s.pillText, active && s.onInk]}>{label}</Text>
+    </Pressable>
+  );
+}
+
 const MEAL_ICON: Record<Meal, React.ComponentProps<typeof MaterialCommunityIcons>['name']> = {
   breakfast: 'food-croissant',
   lunch: 'silverware-fork-knife',
@@ -701,43 +735,56 @@ const MEAL_ICON: Record<Meal, React.ComponentProps<typeof MaterialCommunityIcons
 };
 
 /** A meal in the day: when, where (a real place near the stop, open then), and another one on a tap. */
-function MealCard({ stop, at, index, onAnother }: { stop: MealStop; at: number; index: number; onAnother: () => void }) {
+function MealCard({ stop, index, onAnother }: { stop: MealStop; index: number; onAnother: () => void }) {
   const o = stop.options[Math.min(index, stop.options.length - 1)];
   const r = o.place;
   const what = r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey);
   return (
-    <View style={s.meal} accessibilityLabel={`${t(`meal.${stop.meal}`)}, ${formatTime(at)}: ${r.name}`}>
-      <View style={s.mealIcon} aria-hidden importantForAccessibility="no-hide-descendants">
-        <MaterialCommunityIcons name={MEAL_ICON[stop.meal]} size={22} color={colors.white} />
-      </View>
-      <View style={{ flex: 1, gap: 2 }}>
-        <Text style={s.mealWhen}>
-          {t(`meal.${stop.meal}`)} · {t('plan.meal.at', { time: formatTime(at) })}
-        </Text>
-        <Text style={s.mealName} numberOfLines={2}>
-          {r.name}
-        </Text>
-        <Text style={s.mealMeta} numberOfLines={1}>
-          {what} · {t('plan.meal.walk', { n: walkMinutes(o.metres) })}
-        </Text>
-        <View style={s.mealActions}>
-          <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: r.name })} onPress={() => openWalkingDirections(r)} hitSlop={6}>
-            <Text style={s.link}>{t('story.go')}</Text>
+    <View style={s.meal} accessibilityLabel={`${t(`meal.${stop.meal}`)}: ${r.name}`}>
+      <Text style={s.mealWhen}>{t(`meal.${stop.meal}`)}</Text>
+      <Text style={s.mealName} numberOfLines={2}>
+        {r.name}
+      </Text>
+      <Text style={s.mealMeta} numberOfLines={1}>
+        {what} · {t('plan.meal.walk', { n: walkMinutes(o.metres) })}
+      </Text>
+      <View style={s.mealActions}>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: r.name })} onPress={() => openWalkingDirections(r)} hitSlop={6} style={s.inlineAction}>
+          <MaterialCommunityIcons name="navigation-variant" size={16} color={colors.brick} />
+          <Text style={s.linkBrick}>{t('story.go')}</Text>
+        </Pressable>
+        {stop.options.length > 1 ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={t('plan.meal.anotherLabel', { meal: t(`meal.${stop.meal}`) })} onPress={onAnother} hitSlop={6} style={s.inlineAction}>
+            <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.mute} />
+            <Text style={s.skip}>{t('plan.meal.another')}</Text>
           </Pressable>
-          {stop.options.length > 1 ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={t('plan.meal.anotherLabel', { meal: t(`meal.${stop.meal}`) })} onPress={onAnother} hitSlop={6}>
-              <Text style={s.skip}>{t('plan.meal.another')}</Text>
-            </Pressable>
-          ) : null}
-        </View>
+        ) : null}
       </View>
     </View>
   );
 }
 
-/** A city day as a numbered line of stops, with how to get from one to the next between them. */
+/** "9:45", not "9:46" worked out to the minute */
 const five = (m: number) => Math.round(m / 5) * 5;
 
+/**
+ * One line of the day's rail: the time on the left, a dot (a number, a meal, or nothing for a walk)
+ * on a thin line that runs through the whole day, and what happens then on the right.
+ */
+function RailRow({ time, dot, first, last, children }: { time?: string; dot: 'stop' | 'meal' | 'leg'; first?: boolean; last?: boolean; children: React.ReactNode }) {
+  return (
+    <View style={s.railRow}>
+      <Text style={s.railTime}>{time ?? ''}</Text>
+      <View style={s.railCol} aria-hidden importantForAccessibility="no-hide-descendants">
+        <View style={[s.railLine, first && { top: 18 }, last && { bottom: undefined, height: 18 }]} />
+        {dot === 'stop' ? <View style={s.railDot} /> : dot === 'meal' ? <View style={[s.railDot, s.railDotMeal]} /> : null}
+      </View>
+      <View style={s.railBody}>{children}</View>
+    </View>
+  );
+}
+
+/** A city day as a clock: stops, walks between them and meals, each at its time. */
 function Timeline({
   day,
   real,
@@ -756,86 +803,108 @@ function Timeline({
   /** the day's clock (src/lib/meals.ts dayTimes); none on an undated day without a clock */
   times?: DayTimes | null;
 }) {
-  const mealsAfter = (i: number) =>
-    meals.filter((m) => m.after === i).map((m) => <MealCard key={m.meal} stop={m} at={times?.meal[m.meal] ?? m.at} index={pick(m.meal)} onAnother={() => onAnother(m.meal, m.options.length)} />);
+  const mealRows = (i: number) =>
+    meals
+      .filter((m) => m.after === i)
+      .map((m) => (
+        <RailRow key={m.meal} dot="meal" time={formatTime(five(times?.meal[m.meal] ?? m.at))} first={i === -1}>
+          <MealCard stop={m} index={pick(m.meal)} onAnother={() => onAnother(m.meal, m.options.length)} />
+        </RailRow>
+      ));
+  const lastIndex = day.stops.length - 1;
   return (
     <View style={s.timeline}>
-      {day.start ? <Text style={s.legText}>{t('plan.startPoint')}</Text> : null}
-      {mealsAfter(-1)}
+      {day.start ? (
+        <RailRow dot="leg" first>
+          <Text style={s.legText}>{t('plan.startPoint')}</Text>
+        </RailRow>
+      ) : null}
+      {mealRows(-1)}
       {day.stops.map((st, i) => {
         const hours = hoursThatDay(st.place.id, day.date);
         const photo = PLACE_MEDIA[st.place.id];
+        const end = i === lastIndex && !day.returnLeg && !meals.some((m) => m.after === i);
         return (
           <View key={st.place.id}>
             {st.leg ? (
-              <View style={s.leg}>
-                <View aria-hidden importantForAccessibility="no-hide-descendants">
-                  <MaterialCommunityIcons name={LEG_ICON[st.leg.mode]} size={20} color={colors.mute} />
+              <RailRow dot="leg">
+                <View style={s.leg}>
+                  <View aria-hidden importantForAccessibility="no-hide-descendants">
+                    <MaterialCommunityIcons name={LEG_ICON[st.leg.mode]} size={16} color={colors.mute} />
+                  </View>
+                  <Text style={s.legText}>{legText(st.leg, realMinutes(day, real, i))}</Text>
                 </View>
-                <Text style={s.legText}>{legText(st.leg, realMinutes(day, real, i))}</Text>
-              </View>
+                {/* a taxi leg can be booked where it is shown: the destination is this stop */}
+                {st.leg.mode === 'taxi' ? <RideButtons to={st.place} /> : null}
+              </RailRow>
             ) : null}
-            {/* a taxi leg can be booked where it is shown: the destination is this stop */}
-            {st.leg?.mode === 'taxi' ? <RideButtons to={st.place} /> : null}
-            {/* a stop as a card: its photo, its number and its name on it, what to know below */}
-            <View style={s.card}>
-              <Pressable
-                accessibilityRole="link"
-                accessibilityLabel={t('now.openLabel', { name: placeName(st.place) })}
-                onPress={() => router.push(`/place/${st.place.id}`)}
-                style={({ pressed }) => [s.cardTop, !photo?.image && s.cardTopPlain, pressed && { opacity: 0.9 }]}
-              >
-                {photo?.image ? <Image source={photo.image} style={s.cardPhoto} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
-                {photo?.image ? <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.85)']} locations={[0.35, 1]} style={s.cardPhoto} /> : null}
-                <View style={s.num}>
-                  <Text style={s.numText}>{i + 1}</Text>
-                </View>
-                <Text style={s.cardName} numberOfLines={2}>
-                  {placeName(st.place)}
-                </Text>
-              </Pressable>
-              <View style={s.cardBody}>
-                <Text style={s.stopBlurb} numberOfLines={3}>
-                  {placeText(st.place).text}
-                </Text>
-                {/* the clock, to five minutes: "9:45", not "9:46" worked out to the minute */}
-                {times ? <Text style={s.stopTime}>{`${formatTime(five(times.start[i]))}–${formatTime(five(times.end[i]))}`}</Text> : null}
-                <Text style={s.stopMeta}>
-                  {t('plan.about', { time: fmt(st.place.minutes) })}
-                  {hours ? t('plan.thatDay', { hours }) : ''}
-                </Text>
+            <RailRow dot="stop" time={times ? formatTime(five(times.start[i])) : undefined} first={i === 0 && !day.start && !meals.some((m) => m.after === -1)} last={end}>
+              {/* a stop as a compact card: its photo, its number and name, how long, what to do */}
+              <View style={s.stop}>
+                <Pressable
+                  accessibilityRole="link"
+                  accessibilityLabel={t('now.openLabel', { name: placeName(st.place) })}
+                  onPress={() => router.push(`/place/${st.place.id}`)}
+                  style={({ pressed }) => [s.stopMain, pressed && { opacity: 0.85 }]}
+                >
+                  <View style={s.thumb}>
+                    {photo?.image ? <Image source={photo.image} style={s.thumbImg} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
+                    <View style={s.num}>
+                      <Text style={s.numText}>{i + 1}</Text>
+                    </View>
+                  </View>
+                  <View style={{ flex: 1, gap: 3 }}>
+                    <Text style={s.stopName} numberOfLines={2}>
+                      {placeName(st.place)}
+                    </Text>
+                    <Text style={s.stopMeta} numberOfLines={2}>
+                      {times ? `${formatTime(five(times.start[i]))}–${formatTime(five(times.end[i]))} · ` : ''}
+                      {t('plan.about', { time: fmt(st.place.minutes) })}
+                      {hours ? t('plan.thatDay', { hours }) : ''}
+                    </Text>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={22} color={colors.mute} />
+                </Pressable>
                 <View style={s.stopLinks}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: placeName(st.place) })} onPress={() => openWalkingDirections(st.place)} hitSlop={6} style={s.inlineAction}>
+                    <MaterialCommunityIcons name="navigation-variant" size={16} color={colors.ink} />
+                    <Text style={s.link}>{t('story.go')}</Text>
+                  </Pressable>
                   {st.place.booking ? (
-                    <Pressable accessibilityRole="link" onPress={() => openLink(st.place.booking!.url)} hitSlop={6}>
-                      <Text style={s.link}>
+                    <Pressable accessibilityRole="link" onPress={() => openLink(st.place.booking!.url)} hitSlop={6} style={s.inlineAction}>
+                      <MaterialCommunityIcons name="ticket-outline" size={16} color={colors.ink} />
+                      <Text style={s.link} numberOfLines={1}>
                         {st.place.booking.label}
                         {st.place.booking.affiliate ? t('plan.affiliate') : ''}
                       </Text>
                     </Pressable>
                   ) : null}
-                  <Pressable accessibilityRole="button" accessibilityLabel={t('plan.skipLabel', { name: placeName(st.place) })} onPress={() => onSkip(st.place.id, placeName(st.place))} hitSlop={8}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={t('plan.skipLabel', { name: placeName(st.place) })} onPress={() => onSkip(st.place.id, placeName(st.place))} hitSlop={8} style={s.inlineAction}>
+                    <MaterialCommunityIcons name="close" size={16} color={colors.mute} />
                     <Text style={s.skip}>{t('plan.skip')}</Text>
                   </Pressable>
                 </View>
               </View>
-            </View>
-            {mealsAfter(i)}
+            </RailRow>
+            {mealRows(i)}
           </View>
         );
       })}
       {day.returnLeg ? (
-        <View style={s.leg}>
-          <View aria-hidden importantForAccessibility="no-hide-descendants">
-            <MaterialCommunityIcons name={LEG_ICON[day.returnLeg.mode]} size={20} color={colors.mute} />
+        <RailRow dot="leg" last>
+          <View style={s.leg}>
+            <View aria-hidden importantForAccessibility="no-hide-descendants">
+              <MaterialCommunityIcons name={LEG_ICON[day.returnLeg.mode]} size={16} color={colors.mute} />
+            </View>
+            <Text style={s.legText}>
+              {day.start ? t('plan.backStart') : t('plan.backFirst')}: {legText(day.returnLeg, realMinutes(day, real, day.stops.length))}
+            </Text>
           </View>
-          <Text style={s.legText}>
-            {day.start ? t('plan.backStart') : t('plan.backFirst')}: {legText(day.returnLeg, realMinutes(day, real, day.stops.length))}
-          </Text>
-        </View>
-      ) : null}
-      {day.returnLeg?.mode === 'taxi' && day.stops[0] ? (
-        // back to the chosen start point (a hotel, say, known to about 100 m) or to the first stop
-        <RideButtons to={day.start ? { name: t('ride.startPoint'), lat: day.start.lat, lon: day.start.lon } : day.stops[0].place} />
+          {day.returnLeg.mode === 'taxi' && day.stops[0] ? (
+            // back to the chosen start point (a hotel, say, known to about 100 m) or to the first stop
+            <RideButtons to={day.start ? { name: t('ride.startPoint'), lat: day.start.lat, lon: day.start.lon } : day.stops[0].place} />
+          ) : null}
+        </RailRow>
       ) : null}
     </View>
   );
@@ -935,7 +1004,7 @@ const s = StyleSheet.create({
   cardPhoto: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
   cardName: { fontFamily: fonts.display, fontSize: 30, lineHeight: 32, color: colors.white },
   cardBody: { padding: space.m, gap: 6 },
-  mapBox: { height: 300, marginTop: space.m, borderRadius: 24, overflow: 'hidden' },
+  mapBox: { height: 220, marginTop: space.m, borderRadius: 24, overflow: 'hidden' },
   map: { flex: 1 },
   mapChip: { position: 'absolute', left: space.s, bottom: space.s, flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(14,19,48,0.82)' },
   mapChipText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
@@ -944,28 +1013,51 @@ const s = StyleSheet.create({
   arranged: { marginTop: space.m, backgroundColor: colors.paper, borderRadius: 16, borderWidth: 2, borderColor: colors.gilt, padding: space.m },
   activity: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.s, paddingVertical: space.s, borderBottomWidth: 1, borderColor: colors.line },
   activityButtons: { flexDirection: 'row', gap: space.s },
-  timeline: { marginTop: space.m },
+  timeline: { marginTop: space.l },
+  dayTabs: { gap: space.s, paddingBottom: space.m },
+  dayTab: { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 150, maxWidth: 220, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 18, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  dayTabOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  dayTabNum: { fontFamily: fonts.display, fontSize: 34, lineHeight: 36, color: colors.ink },
+  dayTabDate: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.6, color: colors.mute, textTransform: 'uppercase' },
+  dayTabTitle: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
+  onInkSoft: { color: 'rgba(255,255,255,0.7)' },
+  dayLine: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute, marginTop: 4 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.m },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  pillOn: { backgroundColor: colors.ink, borderColor: colors.ink },
+  pillText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
+  railRow: { flexDirection: 'row' },
+  railTime: { width: 46, paddingTop: 12, fontFamily: fonts.monoBold, fontSize: 13, color: colors.ink, textAlign: 'right' },
+  railCol: { width: 26, alignItems: 'center' },
+  railLine: { position: 'absolute', top: 0, bottom: 0, width: 2, backgroundColor: colors.line },
+  railDot: { marginTop: 14, width: 12, height: 12, borderRadius: 6, backgroundColor: colors.ink, borderWidth: 2, borderColor: colors.paper },
+  railDotMeal: { backgroundColor: colors.brick },
+  railBody: { flex: 1, paddingVertical: 4 },
+  stop: { borderRadius: 18, backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line, overflow: 'hidden' },
+  stopMain: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
+  thumb: { width: 72, height: 72, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.stone },
+  thumbImg: { width: '100%', height: '100%' },
+  inlineAction: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 32 },
+  linkBrick: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.brick },
   stopTime: { fontFamily: fonts.monoBold, fontSize: 15, color: colors.ink },
   dayClock: { fontFamily: fonts.monoBold, fontSize: 13, letterSpacing: 0.6, color: colors.brick, marginTop: 4 },
-  meal: { flexDirection: 'row', gap: space.m, marginTop: space.s, padding: space.m, borderRadius: 20, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line, borderLeftWidth: 4, borderLeftColor: colors.brick },
+  meal: { gap: 2, padding: 12, borderRadius: 18, backgroundColor: '#FBEFE6', borderWidth: 1, borderColor: '#F0D6C4' },
   mealIcon: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.brick, alignItems: 'center', justifyContent: 'center' },
   mealWhen: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.brick, textTransform: 'uppercase' },
-  mealName: { fontFamily: fonts.display, fontSize: 22, lineHeight: 25, color: colors.ink },
+  mealName: { fontFamily: fonts.display, fontSize: 18, lineHeight: 21, color: colors.ink },
   mealMeta: { fontFamily: fonts.body, fontSize: 14, color: colors.mute },
-  mealActions: { flexDirection: 'row', gap: space.l, marginTop: 6 },
-  leg: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, paddingLeft: 6, marginLeft: 14, borderLeftWidth: 3, borderColor: colors.line },
-  legText: { flex: 1, fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute },
-  stop: { flexDirection: 'row', gap: space.m, alignItems: 'flex-start', paddingVertical: space.s },
-  num: { position: 'absolute', top: 12, left: 12, width: 36, height: 36, borderRadius: 18, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
+  mealActions: { flexDirection: 'row', gap: space.l, marginTop: 4 },
+  leg: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
+  legText: { flex: 1, fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: colors.mute },
+  num: { position: 'absolute', top: 4, left: 4, minWidth: 24, height: 24, paddingHorizontal: 6, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
   // white is the text-on-ink token in every palette; gilt on ink fails contrast in several
-  numText: { fontFamily: fonts.monoBold, fontSize: 15, color: colors.ink },
-  thumb: { width: 76, height: 76, borderRadius: 12, backgroundColor: colors.line },
-  stopName: { fontFamily: fonts.bodyBold, fontSize: 18, lineHeight: 23, color: colors.ink },
+  numText: { fontFamily: fonts.monoBold, fontSize: 12, color: colors.ink },
+  stopName: { fontFamily: fonts.display, fontSize: 19, lineHeight: 22, color: colors.ink },
   stopNameLink: { textDecorationLine: 'underline', textDecorationColor: colors.line },
   stopBlurb: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.ink, marginTop: 2 },
-  stopMeta: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.mute, marginTop: 4 },
+  stopMeta: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: colors.mute },
   photoCredit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 6 },
-  stopLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.m, rowGap: space.s, marginTop: space.s },
+  stopLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.l, rowGap: 4, paddingHorizontal: 12, paddingBottom: 8, borderTopWidth: 1, borderColor: colors.line, paddingTop: 6 },
   link: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.vistula },
   skip: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, textDecorationLine: 'underline' },
   trip: { marginTop: space.m, backgroundColor: colors.paper, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.line },
