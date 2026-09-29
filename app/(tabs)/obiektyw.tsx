@@ -49,7 +49,8 @@ export default function LensGallery() {
   );
 
   return (
-    <View style={s.root} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
+    // collapsable={false}: the native tabs reach the list through it (tap the active tab to go back up)
+    <View style={s.root} collapsable={false} onLayout={(e) => setHeight(e.nativeEvent.layout.height)}>
       {height > 0 ? (
         <FlatList
           data={PAGES}

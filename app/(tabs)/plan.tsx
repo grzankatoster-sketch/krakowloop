@@ -362,7 +362,8 @@ export default function PlanScreen() {
   };
 
   return (
-    <SafeAreaView style={[s.safe, { paddingTop: WEB_TABS_TOP }]} edges={['top']}>
+    // collapsable={false}: the native tabs reach the ScrollView through it (tap the active tab to go back up)
+    <SafeAreaView style={[s.safe, { paddingTop: WEB_TABS_TOP }]} edges={['top']} collapsable={false}>
       <Text style={s.bigTitle} accessibilityRole="header">
         {hasPlan && !editing ? t('plan.native.yours') : t('plan.native.title')}
       </Text>

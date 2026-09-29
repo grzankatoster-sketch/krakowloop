@@ -80,7 +80,9 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <View style={s.root}>
+    // collapsable={false}: the native tabs find the ScrollView through it, so tapping the active tab
+    // scrolls to the top (Expo Router native tabs docs)
+    <View style={s.root} collapsable={false}>
       <ScrollView style={s.root} contentContainerStyle={{ paddingTop: topSpace + space.m, paddingBottom: Math.max(insets.bottom, tabSpace) + space.xl }}>
       <View style={s.head}>
         <Text style={s.title} accessibilityRole="header">
