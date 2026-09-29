@@ -89,15 +89,6 @@ name: KrakowLoop tour
 - tapOn: "Close the comparison"
 - waitForAnimationToEnd
 
-# the filters sent as a link: the system share sheet
-- tapOn: "Share these food filters as a link"
-- waitForAnimationToEnd
-- takeScreenshot: 24_share_sheet
-# the iOS share sheet has no close button: a tap on the dimmed screen above it closes it
-- tapOn:
-    point: "50%, 20%"
-- waitForAnimationToEnd
-- assertNotVisible: "Reminders"
 
 # a place page and the heart
 - openLink: "krakowloop://place/czartoryski"
@@ -161,3 +152,19 @@ name: KrakowLoop tour
     optional: true
 - waitForAnimationToEnd
 - takeScreenshot: 50_lens
+
+# last: the food filters sent as a link. The system share sheet closes unreliably under automation,
+# so it comes at the end, where it can stay open
+- openLink: "krakowloop://map?mode=eat&open=1&veg=1&sort=name"
+- tapOn:
+    text: "Open"
+    optional: true
+- waitForAnimationToEnd:
+    timeout: 8000
+- tapOn:
+    text: "Show more of the list"
+    optional: true
+- tapOn: "Share these food filters as a link"
+- waitForAnimationToEnd
+- takeScreenshot: 60_share_sheet
+- assertVisible: "Copy"
