@@ -9,7 +9,8 @@ import { colors } from '../../src/theme';
 export default function TabLayout() {
   return (
     // labels always on: many visitors are older, an icon alone is a guess
-    <NativeTabs tintColor={colors.brick} minimizeBehavior="onScrollDown" labelVisibilityMode="labeled">
+    // never minimised: on the full-screen stories of Now a shrunken bar hid the way to the other tabs
+    <NativeTabs tintColor={colors.brick} minimizeBehavior="never" labelVisibilityMode="labeled">
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Label>{t('tab.now')}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="location.north.circle.fill" md="near_me" />
