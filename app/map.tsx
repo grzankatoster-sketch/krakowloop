@@ -666,23 +666,27 @@ export default function DiscoverScreen() {
           renderItem={({ item: { item: r, metres } }) => {
             const open = restaurantOpen(r);
             return (
-              <Pressable accessibilityRole="button" onPress={() => pickFromList({ type: 'eat', item: r })} style={({ pressed }) => [s.row, pressed && s.pressed]}>
-                <View style={[s.rowIcon, { backgroundColor: r.pick ? colors.brick : CATEGORY_COLOR.food }]} aria-hidden>
-                  <MaterialCommunityIcons name={r.kind === 'cafe' ? 'coffee' : 'silverware-fork-knife'} size={22} color={colors.white} />
-                </View>
-                <View style={s.rowBody}>
-                  <Text style={s.rowName}>{r.name}</Text>
-                  <Eyebrow>
-                    {[r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey), metres !== null ? formatDistance(metres) : null]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </Eyebrow>
-                  <View style={s.rowTags}>
-                    {r.pick ? <Text style={s.badge}>{t('discover.pick')}</Text> : null}
-                    {open === true ? <Text style={[s.rowMeta, s.open]}>{t('discover.openNow')}</Text> : null}
-                    {open === false ? <Text style={s.rowMeta}>{t('discover.closedNow')}{restaurantNext(r)}</Text> : null}
+              // the checkbox sits beside the row's button, not inside it: iOS makes a button one element,
+              // so a checkbox within it could not be reached by VoiceOver (seen on the simulator tour)
+              <View style={s.row}>
+                <Pressable accessibilityRole="button" onPress={() => pickFromList({ type: 'eat', item: r })} style={({ pressed }) => [s.rowMain, pressed && s.pressed]}>
+                  <View style={[s.rowIcon, { backgroundColor: r.pick ? colors.brick : CATEGORY_COLOR.food }]} aria-hidden>
+                    <MaterialCommunityIcons name={r.kind === 'cafe' ? 'coffee' : 'silverware-fork-knife'} size={22} color={colors.white} />
                   </View>
-                </View>
+                  <View style={s.rowBody}>
+                    <Text style={s.rowName}>{r.name}</Text>
+                    <Eyebrow>
+                      {[r.cuisines.map((c) => t(`cuisine.${c}` as StringKey)).join(', ') || t(`discover.kind.${r.kind}` as StringKey), metres !== null ? formatDistance(metres) : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </Eyebrow>
+                    <View style={s.rowTags}>
+                      {r.pick ? <Text style={s.badge}>{t('discover.pick')}</Text> : null}
+                      {open === true ? <Text style={[s.rowMeta, s.open]}>{t('discover.openNow')}</Text> : null}
+                      {open === false ? <Text style={s.rowMeta}>{t('discover.closedNow')}{restaurantNext(r)}</Text> : null}
+                    </View>
+                  </View>
+                </Pressable>
                 <Pressable
                   accessibilityRole="checkbox"
                   aria-checked={compareIds.includes(r.id)}
@@ -693,7 +697,7 @@ export default function DiscoverScreen() {
                 >
                   <MaterialCommunityIcons name={compareIds.includes(r.id) ? 'checkbox-marked' : 'checkbox-blank-outline'} size={24} color={compareIds.includes(r.id) ? colors.patina : colors.mute} />
                 </Pressable>
-              </Pressable>
+              </View>
             );
           }}
         />
@@ -1091,6 +1095,7 @@ const s = StyleSheet.create({
   },
   nearMeText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   filterRow: { gap: space.s, paddingHorizontal: space.m, paddingBottom: space.s },
+  rowMain: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.m },
   compareBox: { alignSelf: 'center', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   compareBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.s, marginHorizontal: space.m, marginTop: space.s, padding: space.s, borderRadius: 16, backgroundColor: colors.stone },
   compareText: { flex: 1, minWidth: 140, fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
