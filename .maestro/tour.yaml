@@ -124,7 +124,7 @@ name: KrakowLoop tour
 - scrollUntilVisible:
     element: "For later"
     direction: DOWN
-    centerElement: true
+    visibilityPercentage: 30
 - takeScreenshot: 32_discover_saved
 - assertVisible: "Saved · 1"
 
