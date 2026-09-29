@@ -93,9 +93,10 @@ name: KrakowLoop tour
 - tapOn: "Share these food filters as a link"
 - waitForAnimationToEnd
 - takeScreenshot: 24_share_sheet
-- tapOn:
-    text: "Close"
-    optional: true
+# the iOS share sheet has no close button: it is pulled down
+- swipe:
+    start: "50%, 62%"
+    end: "50%, 98%"
 - waitForAnimationToEnd
 
 # a place page and the heart
