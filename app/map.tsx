@@ -589,7 +589,12 @@ export default function DiscoverScreen() {
       <View style={s.countRow}>
         <Text style={s.count} accessibilityLiveRegion="polite">
           {t('discover.count', { n: count })}
-          {mode !== 'do' ? ` · ${here ? t('discover.fromYou') : t('discover.fromRynek')}` : ''}
+          {/* the line says the order the list is in: nearest first, or the sort chosen for food */}
+          {mode === 'eat' && eatSort !== 'near'
+            ? ` · ${t(`discover.sort.${eatSort}` as StringKey)}`
+            : mode !== 'do'
+              ? ` · ${here ? t('discover.fromYou') : t('discover.fromRynek')}`
+              : ''}
         </Text>
       </View>
       {mode === 'stay' ? (
