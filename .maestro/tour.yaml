@@ -15,7 +15,6 @@ name: KrakowLoop tour
     visible: "Skip"
     timeout: 30000
     optional: true
-- startRecording: krakowloop_demo
 - takeScreenshot: 01_welcome
 - tapOn:
     text: "Skip"
@@ -157,4 +156,3 @@ name: KrakowLoop tour
     optional: true
 - waitForAnimationToEnd
 - takeScreenshot: 50_lens
-- stopRecording
