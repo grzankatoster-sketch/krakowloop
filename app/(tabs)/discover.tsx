@@ -260,7 +260,8 @@ const s = StyleSheet.create({
   mapCardText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
   statusStrip: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.paper, opacity: 0.96 },
   pressed: { transform: [{ scale: 0.97 }] },
-  fill: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
+  // pinned to all four edges, not 100% wide and high: on iOS a percentage leaves out the card's padding
+  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.l },
   title: { fontFamily: fonts.display, fontSize: 48, lineHeight: 52, color: colors.ink },
   mapBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },

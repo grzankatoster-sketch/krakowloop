@@ -120,7 +120,8 @@ const s = StyleSheet.create({
   credit: { fontFamily: fonts.body, fontSize: 12, color: colors.mute, marginHorizontal: space.l, marginTop: space.s },
   card: { width: 260, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.white, borderWidth: 1, borderColor: colors.line },
   top: { height: 150, alignItems: 'center', justifyContent: 'center' },
-  fill: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
+  // pinned to all four edges, not 100% wide and high: on iOS a percentage leaves out the card's padding
+  fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   when: { position: 'absolute', left: space.m, bottom: space.s, fontFamily: fonts.monoBold, fontSize: 13, letterSpacing: 0.6, color: colors.white },
   body: { padding: space.m, gap: 4 },
   title: { fontFamily: fonts.display, fontSize: 22, lineHeight: 25, color: colors.ink, minHeight: 50 },
