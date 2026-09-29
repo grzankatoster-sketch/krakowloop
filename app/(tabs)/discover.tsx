@@ -116,7 +116,7 @@ export default function DiscoverScreen() {
             {saved.map((p) => (
               <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [s.savedTile, pressed && s.pressed]}>
                 {PLACE_MEDIA[p.id]?.image ? (
-                  <Image source={PLACE_MEDIA[p.id]!.image!} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
+                  <View style={s.fill} pointerEvents="none"><Image source={PLACE_MEDIA[p.id]!.image!} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View>
                 ) : (
                   <View style={[s.fill, { backgroundColor: CATEGORY_COLOR[p.cat] }]} />
                 )}
@@ -140,7 +140,7 @@ export default function DiscoverScreen() {
       <View style={s.grid}>
         {sights.map(({ item: p, metres }) => (
           <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [{ width: tileW, height: tileH }, s.tile, pressed && s.pressed]}>
-            <Image source={PLACE_MEDIA[p.id]!.image!} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
+            <View style={s.fill} pointerEvents="none"><Image source={PLACE_MEDIA[p.id]!.image!} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View>
             <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.85)']} locations={[0.4, 1]} style={s.fill} />
             <View style={s.tileWords}>
               <Text style={s.tileMeta} numberOfLines={1}>
@@ -207,7 +207,7 @@ export default function DiscoverScreen() {
       {/* one door to the Time Lens tab, not a second gallery of the same old photos */}
       {lens[0] ? (
         <Pressable accessibilityRole="link" onPress={() => go('/obiektyw')} style={({ pressed }) => [s.pastDoor, pressed && s.pressed]}>
-          <Image source={lens[0].old!.image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors />
+          <View style={s.fill} pointerEvents="none"><Image source={lens[0].old!.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View>
           <LinearGradient colors={['rgba(8,11,30,0.15)', 'rgba(8,11,30,0.88)']} style={s.fill} />
           <Text style={s.pastYear}>{lens[0].old!.year}</Text>
           <Text style={s.pastName}>{t('discover.native.pastDoor', { n: lens.length })}</Text>
@@ -234,7 +234,7 @@ export default function DiscoverScreen() {
             onPress={() => go(m.href)}
             style={({ pressed }) => [s.moreCard, pressed && s.pressed]}
           >
-            {m.image ? <Image source={m.image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
+            {m.image ? <View style={s.fill} pointerEvents="none"><Image source={m.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View> : null}
             <LinearGradient colors={['rgba(8,11,30,0.05)', 'rgba(8,11,30,0.85)']} style={s.fill} />
             <Text style={s.moreTitle}>{t(m.title)}</Text>
             <Text style={s.moreLine} numberOfLines={2}>
@@ -260,8 +260,10 @@ const s = StyleSheet.create({
   mapCardText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
   statusStrip: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.paper, opacity: 0.96 },
   pressed: { transform: [{ scale: 0.97 }] },
-  // pinned to all four edges, not 100% wide and high: on iOS a percentage leaves out the card's padding
+  // a frame pinned to all four edges (on iOS a 100% size leaves out the card's padding), and the
+  // photo 100% of that frame: an Image left to the edges alone takes the file's own size
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  photo: { width: '100%', height: '100%' },
   head: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: space.l },
   title: { fontFamily: fonts.display, fontSize: 48, lineHeight: 52, color: colors.ink },
   mapBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },

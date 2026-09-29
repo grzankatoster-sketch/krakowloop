@@ -152,7 +152,7 @@ function PlaceDetails({ place }: { place: Place }) {
         <View style={{ height: heroH, overflow: 'visible' }}>
           <Animated.View style={[StyleSheet.absoluteFill, heroStyle]}>
             {media?.image ? (
-              <Image source={media.image} style={s.fill} resizeMode="cover" accessibilityLabel={t('place.photoAlt', { name })} />
+              <View style={s.fill} pointerEvents="none"><Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={t('place.photoAlt', { name })} /></View>
             ) : (
               <View style={[s.fill, { backgroundColor: CATEGORY_COLOR[place.cat] }]} />
             )}
@@ -208,7 +208,7 @@ function PlaceDetails({ place }: { place: Place }) {
               onPress={() => router.push(`/lens/${lens.id}`)}
               style={({ pressed }) => [s.past, pressed && s.pressed]}
             >
-              {lens.layers[0] ? <Image source={lens.layers[0].image} style={s.fill} resizeMode="cover" accessibilityIgnoresInvertColors /> : null}
+              {lens.layers[0] ? <View style={s.fill} pointerEvents="none"><Image source={lens.layers[0].image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View> : null}
               <LinearGradient colors={['rgba(8,11,30,0.05)', 'rgba(8,11,30,0.85)']} style={s.fill} pointerEvents="none" />
               <ReconBadge show={lens.layers[0]?.reconstruction} />
               {lens.layers[0]?.year ? <Text style={s.pastYear}>{lens.layers[0].year}</Text> : null}
@@ -351,8 +351,10 @@ const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
   root: { flex: 1, backgroundColor: colors.stone },
   body: { backgroundColor: colors.stone, paddingBottom: space.s },
-  // pinned to all four edges, not 100% wide and high: on iOS a percentage leaves out the card's padding
+  // a frame pinned to all four edges (on iOS a 100% size leaves out the card's padding), and the
+  // photo 100% of that frame: an Image left to the edges alone takes the file's own size
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  photo: { width: '100%', height: '100%' },
   pressed: { transform: [{ scale: 0.97 }], opacity: 0.92 },
   heroTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 160 },
   heroBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '70%' },
