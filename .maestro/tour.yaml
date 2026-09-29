@@ -118,9 +118,10 @@ name: KrakowLoop tour
     text: "Open"
     optional: true
 - waitForAnimationToEnd
+# Discover is still scrolled to its end from before: the saved row sits near the top
 - scrollUntilVisible:
     element: "For later"
-    direction: DOWN
+    direction: UP
 - takeScreenshot: 32_discover_saved
 - assertVisible: "Saved · 1"
 
