@@ -38,7 +38,7 @@ export function EventsSection({ from }: { from: LatLon }) {
   return (
     <View>
       <Text style={s.eyebrow}>{t('events.eyebrow')}</Text>
-      <Text style={s.h2}>{t('events.title')}</Text>
+      <Text style={s.h2} accessibilityRole="header">{t('events.title')}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chips}>
         {WHEN.map((w) => (
           <Chip key={w} label={t(`events.when.${w}` as StringKey)} active={when === w} onPress={() => setWhen(w)} />

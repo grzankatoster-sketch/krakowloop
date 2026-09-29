@@ -111,7 +111,7 @@ export default function DiscoverScreen() {
       {saved.length ? (
         <>
           <Text style={s.eyebrow}>{t('saved.eyebrow', { n: saved.length })}</Text>
-          <Text style={s.h2}>{t('saved.title')}</Text>
+          <Text style={s.h2} accessibilityRole="header">{t('saved.title')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
             {saved.map((p) => (
               <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [s.savedTile, pressed && s.pressed]}>
@@ -136,7 +136,7 @@ export default function DiscoverScreen() {
 
         {/* sights to walk to, in photographs */}
       <Text style={s.eyebrow}>{t('discover.native.nearRynek')}</Text>
-      <Text style={s.h2}>{t('discover.native.sights')}</Text>
+      <Text style={s.h2} accessibilityRole="header">{t('discover.native.sights')}</Text>
       <View style={s.grid}>
         {sights.map(({ item: p, metres }) => (
           <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [{ width: tileW, height: tileH }, s.tile, pressed && s.pressed]}>
@@ -160,7 +160,7 @@ export default function DiscoverScreen() {
 
       {/* food by what you crave */}
       <Text style={s.eyebrow}>{t('discover.native.hungry')}</Text>
-      <Text style={s.h2}>{t('discover.native.food')}</Text>
+      <Text style={s.h2} accessibilityRole="header">{t('discover.native.food')}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
         {CUISINES.map((c: CuisineKey, i) => (
           <Pressable
@@ -179,7 +179,7 @@ export default function DiscoverScreen() {
 
       {/* things to do */}
       <Text style={s.eyebrow}>{t('discover.native.doEyebrow')}</Text>
-      <Text style={s.h2}>{t('discover.native.do')}</Text>
+      <Text style={s.h2} accessibilityRole="header">{t('discover.native.do')}</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
         {experiences.map((x) => {
           const e = x as Experience & { kind?: string; minutes?: number; pickup?: boolean };
@@ -203,7 +203,7 @@ export default function DiscoverScreen() {
 
       {/* the city in the past */}
       <Text style={s.eyebrow}>{t('discover.native.pastEyebrow')}</Text>
-      <Text style={s.h2}>{t('discover.native.past')}</Text>
+      <Text style={s.h2} accessibilityRole="header">{t('discover.native.past')}</Text>
       {/* one door to the Time Lens tab, not a second gallery of the same old photos */}
       {lens[0] ? (
         <Pressable accessibilityRole="link" onPress={() => go('/obiektyw')} style={({ pressed }) => [s.pastDoor, pressed && s.pressed]}>
