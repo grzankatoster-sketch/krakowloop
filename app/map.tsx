@@ -561,10 +561,6 @@ export default function DiscoverScreen() {
         {EAT_SORTS.map((k) => (
           <Chip key={k} label={t(`discover.sort.${k}` as StringKey)} active={eatSort === k} onPress={() => setEatSort(k)} />
         ))}
-        <Pressable accessibilityRole="button" accessibilityLabel={t('discover.shareFilters')} onPress={shareEat} hitSlop={6} style={({ pressed }) => [s.shareBtn, pressed && { opacity: 0.6 }]}>
-          <MaterialCommunityIcons name="share-variant" size={18} color={colors.ink} />
-          <Text style={s.shareText}>{t('discover.shareShort')}</Text>
-        </Pressable>
       </ScrollView>
     ) : null;
 
@@ -596,6 +592,13 @@ export default function DiscoverScreen() {
               ? ` · ${here ? t('discover.fromYou') : t('discover.fromRynek')}`
               : ''}
         </Text>
+        {/* on the line under the filters, always in view: at the end of the sort row it sat off screen */}
+        {mode === 'eat' ? (
+          <Pressable accessibilityRole="button" accessibilityLabel={t('discover.shareFilters')} onPress={shareEat} hitSlop={6} style={({ pressed }) => [s.shareBtn, pressed && { opacity: 0.6 }]}>
+            <MaterialCommunityIcons name="share-variant" size={18} color={colors.ink} />
+            <Text style={s.shareText}>{t('discover.shareShort')}</Text>
+          </Pressable>
+        ) : null}
       </View>
       {mode === 'stay' ? (
         <View style={s.stayCta}>
@@ -1099,7 +1102,7 @@ const s = StyleSheet.create({
   compareBox: { alignSelf: 'center', width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   compareBar: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.s, marginHorizontal: space.m, marginTop: space.s, padding: space.s, borderRadius: 16, backgroundColor: colors.stone },
   compareText: { flex: 1, minWidth: 140, fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
-  shareBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 12, marginLeft: 4 },
+  shareBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingLeft: 8 },
   shareText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink, textDecorationLine: 'underline' },
   shareNote: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, marginHorizontal: space.m, marginTop: 4 },
   sortLabel: { alignSelf: 'center', fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.mute, textTransform: 'uppercase' },
