@@ -118,10 +118,12 @@ name: KrakowLoop tour
     text: "Open"
     optional: true
 - waitForAnimationToEnd
-# Discover is still scrolled to its end from before: the saved row sits near the top
+# Discover is still scrolled from before: a tap on its tab takes it to the top, as on any iPhone
+- tapOn: "Discover"
+- waitForAnimationToEnd
 - scrollUntilVisible:
     element: "For later"
-    direction: UP
+    direction: DOWN
     centerElement: true
 - takeScreenshot: 32_discover_saved
 - assertVisible: "Saved · 1"
