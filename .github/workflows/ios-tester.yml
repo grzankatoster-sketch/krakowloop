@@ -16,12 +16,20 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      # actions pinned to a commit (a tag can be moved), the version in the comment
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      # a fixed Maestro release, checked against its published SHA-256 before it is unpacked
+      # (no script piped from the internet into a shell)
       - name: Install Maestro
+        env:
+          MAESTRO_VERSION: cli-2.11.0
+          MAESTRO_SHA256: 5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a
         run: |
-          curl -fsSL "https://get.maestro.mobile.dev" | bash
-          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
+          curl -fsSL "https://github.com/mobile-dev-inc/maestro/releases/download/$MAESTRO_VERSION/maestro.zip" -o maestro.zip
+          echo "$MAESTRO_SHA256  maestro.zip" | shasum -a 256 -c -
+          unzip -q maestro.zip -d "$HOME"
+          echo "$HOME/maestro/bin" >> "$GITHUB_PATH"
 
       - name: Get the app
         env:
@@ -47,7 +55,7 @@ jobs:
         if: always()
         run: xcrun simctl spawn "$UDID" log show --last 15m --predicate 'process == "KrakowLoop" OR eventMessage CONTAINS "ReactNative"' > maestro-out/device.log 2>&1 || true
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: ios-tour
