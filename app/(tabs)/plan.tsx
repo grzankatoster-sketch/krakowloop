@@ -2,13 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessibilityInfo, Image, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Link, router, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Linking from 'expo-linking';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTabBarSpace, WEB_TABS_TOP } from '../../src/lib/useTabBarSpace';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import LoopMap from '../../src/components/LoopMap';
-import { placeName, placeText } from '../../src/components/placeName';
+import { bookingLabel, placeName, placeText } from '../../src/components/placeName';
 import type { MapPoint } from '../../src/components/mapHtml';
 import { Button, Chip } from '../../src/components/ui';
 import { AFFILIATE_NOTE } from '../../src/config/affiliates';
@@ -17,28 +17,37 @@ import { RideButtons } from '../../src/components/RideButtons';
 import { CATEGORY_COLOR } from '../../src/data/categoryColor';
 import { PLACE_MEDIA } from '../../src/data/placeMedia';
 import { Experience, experiences, places } from '../../src/data/places';
+import { krakowWallClock } from '../../src/lib/cityTime';
 import { addDays, formatDay, parseISODate, toISODate } from '../../src/lib/dates';
+import { expText } from '../../src/lib/expText';
+import { formatMinutes as fmt } from '../../src/lib/format';
 import { WALKING_ROUTES_ENABLED, WalkingRoute, walkingRoute } from '../../src/lib/directions';
 import { DETOUR } from '../../src/lib/geo';
 import { formatHours, formatTime, hoursOn } from '../../src/lib/hours';
-import { DayTimes, MEAL_KEYS, Meal, MealStop, dayTimes, planMeals } from '../../src/lib/meals';
+import { DayTimes, MEAL_KEYS, MEAL_TIME, Meal, MealStop, dayTimes, planMeals } from '../../src/lib/meals';
 import { walkMinutes } from '../../src/lib/moments';
 import { googleDayRoute, openWalkingDirections } from '../../src/lib/navigate';
 import { counted } from '../../src/lib/plural';
 import type { Leg } from '../../src/lib/legs';
 import { openLink } from '../../src/lib/openLink';
 import { paramsToPlan, planToParams, shareUrl } from '../../src/lib/planParams';
+import { loadLastDay, saveLastPlan } from '../../src/lib/planStore';
 import { Interest, MAX_PLAN_DAYS, PACE_LIMITS, Pace, PlanDay, PlanOptions, buildPlan, newSeed } from '../../src/lib/planner';
 import { realMinutes, shownTotal, walkTotal, walkedEndToEnd } from '../../src/lib/planView';
 import { shareLink } from '../../src/lib/share';
+import { loadVisited, planCore, saveVisited } from '../../src/lib/visited';
+import { useRestorePlan } from '../../src/lib/useRestorePlan';
 import { applyIntent } from '../../src/lib/wish';
-import { readWishAnywhere } from '../../src/lib/wishProxy';
-import { WISH_MAX_CHARS, WISH_PROXY_URL } from '../../src/config/wish';
+import { readWishAnywhere, wishProxyInUse } from '../../src/lib/wishProxy';
+import { WISH_MAX_CHARS } from '../../src/config/wish';
 import { TRANSIT_FEED_VERSION } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { t } from '../../src/i18n';
 import type { StringKey } from '../../src/i18n/en';
-import { colors, fonts, space } from '../../src/theme';
+import { colors, fonts, layout, radius, space } from '../../src/theme';
+
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../../src/components/ScreenError';
 
 const INTERESTS: { key: Interest; label: string }[] = [
   { key: 'history', label: t('plan.interest.history') },
@@ -57,8 +66,6 @@ const DAY_OPTIONS = Array.from({ length: MAX_PLAN_DAYS }, (_, i) => i + 1);
 const KNOWN_IDS: ReadonlySet<string> = new Set(places.map((p) => p.id));
 const DEFAULT_FORM: PlanOptions = { days: 2, pace: 'steady', interests: ['history', 'food'], dayTrips: true };
 const EXPERIENCE_BY_ID = new Map(experiences.map((x) => [x.id, x]));
-
-const fmt = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`);
 
 function legText(l: Leg, realWalkMinutes: number | null): string {
   if (l.mode === 'walk') return t('leg.walk', { time: fmt(realWalkMinutes ?? l.minutes) });
@@ -152,7 +159,19 @@ export default function PlanScreen() {
   );
   const plan = useMemo(() => (options ? buildPlan(options) : null), [options]);
   const planKey = options ? JSON.stringify(options) : '';
+  // what the plan is for the day chosen and the ticks: not what is in it, which edits change all the time
+  const core = options ? planCore(options) : '';
+  // the ticks belong to this plan: a new shuffle ("Show me another plan") or a new plan starts clean,
+  // edits of it (a skipped stop, a meal, an activity) keep them
+  const ticksKey = options ? `${core}|${options.seed ?? ''}` : '';
   const hasPlan = !!plan && plan.length > 0;
+
+  // The web tab's link carries no parameters: coming back to this tab, the last plan is put back.
+  // An address that carries a plan (a shared link) is the plan, and replaces the kept one below.
+  const restoring = useRestorePlan(!options && days === undefined, KNOWN_IDS);
+  useEffect(() => {
+    if (options) saveLastPlan(planToParams(options));
+  }, [options]);
 
   // The form belongs to the plan in the URL: a different plan arriving (a shared link, a skipped
   // stop, a rebuild) refills it, so "Build a new plan" never overwrites it with stale choices.
@@ -166,7 +185,8 @@ export default function PlanScreen() {
   const [wish, setWish] = useState('');
   const [wishNote, setWishNote] = useState<string | null>(null);
   const [reading, setReading] = useState(false);
-  const [today] = useState(() => toISODate(new Date()));
+  const [today] = useState(() => toISODate(krakowWallClock(new Date())));
+  // the chosen day survives edits of the same plan (a skipped stop, a meal, another shuffle)
   const [daySel, setDaySel] = useState({ key: '', index: 0 });
   const [walk, setWalk] = useState<{ key: string; route: WalkingRoute } | null>(null);
   const [mapOpen, setMapOpen] = useState(true);
@@ -176,34 +196,62 @@ export default function PlanScreen() {
   const [mapKey, setMapKey] = useState(0);
   const [shareNote, setShareNote] = useState<string | null>(null);
   const [mealPick, setMealPick] = useState<Record<string, number>>({});
+  // the day tiles scroll sideways: a soft edge says there is more on that side
+  const tabsDims = useRef({ x: 0, view: 0, content: 0 });
+  const [tabsMore, setTabsMore] = useState({ left: false, right: false });
+  const measureTabs = (patch: Partial<{ x: number; view: number; content: number }>) => {
+    const d = Object.assign(tabsDims.current, patch);
+    if (!d.view || !d.content) return;
+    const left = d.x > 4;
+    const right = d.x + d.view < d.content - 4;
+    setTabsMore((m) => (m.left === left && m.right === right ? m : { left, right }));
+  };
   // places the traveller has been to, ticked on the day's rail and kept on the phone for this plan
-  const visitedKey = `kl.visited.${hashKey(planKey)}`;
   const [visited, setVisited] = useState<{ key: string; ids: string[] }>({ key: '', ids: [] });
   useEffect(() => {
+    if (!ticksKey) return;
     let live = true;
-    AsyncStorage.getItem(visitedKey)
-      .then((v) => {
-        if (live) setVisited({ key: visitedKey, ids: v ? (JSON.parse(v) as string[]) : [] });
-      })
-      .catch(() => {});
+    loadVisited(ticksKey).then((ids) => {
+      if (live) setVisited({ key: ticksKey, ids });
+    });
     return () => {
       live = false;
     };
-  }, [visitedKey]);
-  const visitedIds = useMemo(() => new Set(visited.key === visitedKey ? visited.ids : []), [visited, visitedKey]);
+  }, [ticksKey]);
+  const visitedIds = useMemo(() => new Set(visited.key === ticksKey ? visited.ids : []), [visited, ticksKey]);
   const toggleVisited = (id: string) => {
+    // until the stored ticks are read, a tap would write over them: it waits those few milliseconds
+    if (visited.key !== ticksKey) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     const ids = visitedIds.has(id) ? [...visitedIds].filter((x) => x !== id) : [...visitedIds, id];
-    setVisited({ key: visitedKey, ids });
-    AsyncStorage.setItem(visitedKey, JSON.stringify(ids)).catch(() => {});
+    setVisited({ key: ticksKey, ids });
+    saveVisited(ticksKey, ids);
   };
   const scrollRef = useRef<ScrollView>(null);
+  const [scrolled, setScrolled] = useState(false);
   const me = useMyLocation();
 
-  const showQuick = !hasPlan && !editing;
+  const showQuick = !hasPlan && !editing && !restoring;
   const showForm = editing;
-  const dayIdx = plan && daySel.key === planKey ? Math.min(daySel.index, plan.length - 1) : 0;
+  const dayIdx = plan && daySel.key === core ? Math.min(daySel.index, plan.length - 1) : 0;
   const day = plan?.[dayIdx];
+  // the chosen day is kept with the plan (planStore): a reload of the page puts it back, unless a day was
+  // already chosen. Other days/date/start are another trip, and start on the first day.
+  const planParamsNow = options ? planToParams(options) : null;
+  useEffect(() => {
+    if (!planParamsNow) return;
+    let live = true;
+    // the kept number is the day's own number in the stay (a day with nothing left in it may be gone)
+    loadLastDay(planParamsNow).then((n) => {
+      const at = plan ? plan.findIndex((d) => d.index === n) : -1;
+      if (live && at > 0) setDaySel((cur) => (cur.key === core ? cur : { key: core, index: at }));
+    });
+    return () => {
+      live = false;
+    };
+    // only a different trip (core) looks for a kept day; an edit of the same plan does not
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [core]);
 
   // Real walking route for the chosen day (Mapbox Directions). Without a token, estimates stay.
   const walkKey = day?.kind === 'city' && day.route.length > 1 ? day.route.map((c) => c.join(',')).join(';') : '';
@@ -278,11 +326,11 @@ export default function PlanScreen() {
   const addActivity = (x: Experience) => {
     if (!options || !day) return;
     setPickerOpen(false);
-    show({ ...options, activities: [...(options.activities ?? []), { day: day.index, id: x.id }] }, t('plan.activityAdded', { name: x.name, n: day.index }));
+    show({ ...options, activities: [...(options.activities ?? []), { day: day.index, id: x.id }] }, t('plan.activityAdded', { name: expText(x.id, 'name', x.name), n: day.index }));
   };
   const removeActivity = (x: Experience) => {
     if (!options || !day) return;
-    show({ ...options, activities: (options.activities ?? []).filter((a) => !(a.day === day.index && a.id === x.id)) }, t('plan.activityRemoved', { name: x.name }));
+    show({ ...options, activities: (options.activities ?? []).filter((a) => !(a.day === day.index && a.id === x.id)) }, t('plan.activityRemoved', { name: expText(x.id, 'name', x.name) }));
   };
   /**
    * The traveller writes what they want; the reading turns it into the same settings the chips
@@ -364,11 +412,18 @@ export default function PlanScreen() {
   return (
     // collapsable={false}: the native tabs reach the ScrollView through it (tap the active tab to go back up)
     <SafeAreaView style={[s.safe, { paddingTop: WEB_TABS_TOP }]} edges={['top']} collapsable={false}>
-      <Text style={s.bigTitle} accessibilityRole="header">
-        {hasPlan && !editing ? t('plan.native.yours') : t('plan.native.title')}
-      </Text>
+      {/* the title stays while the plan scrolls under it: its own background, and a hairline once the page has moved */}
+      <View style={[s.head, scrolled && s.headScrolled]}>
+        <View style={s.col}>
+          <Text style={s.bigTitle} accessibilityRole="header">
+            {hasPlan && !editing ? t('plan.native.yours') : t('plan.native.title')}
+          </Text>
+        </View>
+      </View>
       <ScrollView
         ref={scrollRef}
+        scrollEventThrottle={64}
+        onScroll={(e) => setScrolled(e.nativeEvent.contentOffset.y > 4)}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         automaticallyAdjustKeyboardInsets
@@ -386,22 +441,50 @@ export default function PlanScreen() {
         {showQuick ? (
           <View style={s.col}>
             <Text style={s.quickQ}>{t('plan.native.howMany')}</Text>
-            <View style={s.quickGrid}>
-              {DAY_OPTIONS.map((n) => (
-                <Pressable
-                  key={n}
-                  accessibilityRole="button"
-                  accessibilityLabel={n === 1 ? t('plan.days.one') : t('plan.days.many', { n })}
-                  onPress={() => quick(n)}
-                  style={({ pressed }) => [s.quickTile, pressed && s.quickPressed]}
-                >
-                  <Text style={s.quickNum}>{n}</Text>
-                  <Text style={s.quickWord}>{n === 1 ? t('plan.dayWord.one') : t('plan.dayWord.many')}</Text>
-                </Pressable>
-              ))}
+            <View style={s.quickList}>
+              {DAY_OPTIONS.map((n) => {
+                const limit = PACE_LIMITS[form.pace];
+                return (
+                  <Pressable
+                    key={n}
+                    accessibilityRole="button"
+                    accessibilityLabel={n === 1 ? t('plan.days.one') : t('plan.days.many', { n })}
+                    accessibilityHint={t('plan.paceLine', { stops: limit.maxStops * n, hours: (limit.budgetMinutes * n) / 60 })}
+                    onPress={() => quick(n)}
+                    style={({ pressed }) => [s.quickRow, pressed && s.quickPressed]}
+                  >
+                    <View style={s.quickText}>
+                      <Text style={s.quickLabel}>{n === 1 ? t('plan.days.one') : t('plan.days.many', { n })}</Text>
+                      <Text style={s.quickLine}>{t('plan.paceLine', { stops: limit.maxStops * n, hours: (limit.budgetMinutes * n) / 60 })}</Text>
+                    </View>
+                    <View aria-hidden importantForAccessibility="no-hide-descendants">
+                      <MaterialCommunityIcons name="chevron-right" size={24} color={colors.mute} />
+                    </View>
+                  </Pressable>
+                );
+              })}
             </View>
             <Text style={s.note}>{t('plan.native.quickNote')}</Text>
-            <Button label={t('plan.native.tune')} kind="quiet" onPress={() => setEditing(true)} />
+            {/* the other way in: the same defaults, shown, so the traveller sees what one tap would build */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t('plan.native.tune')}
+              onPress={() => setEditing(true)}
+              style={({ pressed }) => [s.tuneCard, pressed && { opacity: 0.85 }]}
+            >
+              <View aria-hidden importantForAccessibility="no-hide-descendants">
+                <MaterialCommunityIcons name="tune-variant" size={24} color={colors.ink} />
+              </View>
+              <View style={s.quickText}>
+                <Text style={s.quickLabel}>{t('plan.native.tune')}</Text>
+                <Text style={s.quickLine}>
+                  {PACES.find((p) => p.key === form.pace)?.label ?? form.pace} · {prefsSummary(form)}
+                </Text>
+              </View>
+              <View aria-hidden importantForAccessibility="no-hide-descendants">
+                <MaterialCommunityIcons name="chevron-right" size={24} color={colors.mute} />
+              </View>
+            </Pressable>
           </View>
         ) : null}
 
@@ -422,7 +505,7 @@ export default function PlanScreen() {
             <View style={s.wishRow}>
               <Button label={reading ? t('wish.reading') : t('wish.read')} kind="quiet" onPress={readTheWish} style={s.grow} />
             </View>
-            <Text style={s.note}>{WISH_PROXY_URL ? t('wish.noteModel') : t('wish.notePhone')}</Text>
+            <Text style={s.note}>{wishProxyInUse() ? t('wish.noteModel') : t('wish.notePhone')}</Text>
             {wishNote ? (
               <Text style={s.wishNote} accessibilityLiveRegion="polite">
                 {wishNote}
@@ -540,7 +623,17 @@ export default function PlanScreen() {
         {result ? (
           <View style={[s.col, { marginTop: space.m }]}>
             {/* the days as tiles: the number big, the date and the part of town under it */}
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.dayTabs}>
+            <View style={s.dayTabsWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={s.dayTabsScroll}
+              contentContainerStyle={s.dayTabs}
+              scrollEventThrottle={32}
+              onLayout={(e) => measureTabs({ view: e.nativeEvent.layout.width })}
+              onContentSizeChange={(w) => measureTabs({ content: w })}
+              onScroll={(e) => measureTabs({ x: e.nativeEvent.contentOffset.x })}
+            >
               {plan!.map((d, i) => {
                 const on = i === dayIdx;
                 return (
@@ -551,7 +644,8 @@ export default function PlanScreen() {
                     aria-selected={on}
                     onPress={() => {
                       Haptics.selectionAsync().catch(() => {});
-                      setDaySel({ key: planKey, index: i });
+                      setDaySel({ key: core, index: i });
+                      if (planParamsNow) saveLastPlan(planParamsNow, d.index);
                       setPickerOpen(false);
                     }}
                     style={({ pressed }) => [s.dayTab, on && s.dayTabOn, pressed && { opacity: 0.85 }]}
@@ -569,13 +663,16 @@ export default function PlanScreen() {
                 );
               })}
             </ScrollView>
+            {tabsMore.left ? <LinearGradient pointerEvents="none" colors={[colors.stone, `${colors.stone}00`]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.tabsFade, { left: 0 }]} /> : null}
+            {tabsMore.right ? <LinearGradient pointerEvents="none" colors={[`${colors.stone}00`, colors.stone]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={[s.tabsFade, { right: 0 }]} /> : null}
+            </View>
 
             <Text style={s.dayTitle} accessibilityRole="header">
               {day.kind === 'trip' ? placeName(day.stops[0].place) : day.title}
             </Text>
             <Text style={s.dayLine}>
               {times && times.start.length
-                ? `${formatTime(five(times.meal.breakfast ?? times.start[0]))}–${formatTime(five(Math.max(times.end[times.end.length - 1], (times.meal.dinner ?? 0) + (times.meal.dinner ? 75 : 0))))} · `
+                ? `${formatTime(five(times.meal.breakfast ?? times.start[0]))}–${formatTime(five(Math.max(times.end[times.end.length - 1], (times.meal.dinner ?? 0) + (times.meal.dinner ? MEAL_TIME.dinner.minutes : 0))))} · `
                 : ''}
               {day.kind === 'city'
                 ? t('plan.dayTotals', { stops: counted(day.stops.length, { one: t('plan.place.one'), few: t('plan.place.few'), many: t('plan.place.many') }), total: fmt(dayTotal), walk: fmt(walkTotal(day, real)) })
@@ -610,9 +707,10 @@ export default function PlanScreen() {
               <Pill icon={mapOpen ? 'map' : 'map-outline'} label={mapOpen ? t('plan.hideMap') : t('plan.showMap')} active={mapOpen} onPress={() => setMapOpen((v) => !v)} />
               <Pill icon="plus" label={t('plan.addActivity')} active={pickerOpen} onPress={() => setPickerOpen((v) => !v)} />
             </View>
+            {/* the four meals as an even grid, two by two, so none is left alone on a row */}
             <View style={s.pills}>
               {MEAL_KEYS.map((m) => (
-                <Pill key={m} icon={MEAL_ICON[m]} label={t(`meal.${m}`)} active={wantedMeals.includes(m)} onPress={() => toggleMeal(m)} />
+                <Pill key={m} grid icon={MEAL_ICON[m]} label={t(`meal.${m}`)} active={wantedMeals.includes(m)} onPress={() => toggleMeal(m)} />
               ))}
             </View>
 
@@ -637,7 +735,7 @@ export default function PlanScreen() {
                 {mapError ? (
                   <View style={s.mapError}>
                     <Text style={s.stopName}>{t('map.errorTitle')}</Text>
-                    <Text style={s.stopBlurb}>{t('plan.mapStill', { message: mapError })}</Text>
+                    <Text style={s.stopBlurb}>{t('plan.mapStill', { message: t('map.errorHelp') })}</Text>
                     <Button
                       label={t('map.tryAgain')}
                       kind="quiet"
@@ -662,13 +760,13 @@ export default function PlanScreen() {
                   .map((x) => (
                     <View key={x.id} style={s.activity}>
                       <View style={{ flex: 1 }}>
-                        <Text style={s.stopName}>{x.name}</Text>
+                        <Text style={s.stopName}>{expText(x.id, 'name', x.name)}</Text>
                         <Text style={s.stopBlurb}>
-                          {x.note}
-                          {x.season ? ` ${x.season}.` : ''}
+                          {expText(x.id, 'note', x.note)}
+                          {x.season ? ` ${expText(x.id, 'season', x.season)}.` : ''}
                         </Text>
                       </View>
-                      <Button label={t('plan.addToDay', { n: day.index })} accessibilityLabel={t('plan.addNamed', { name: x.name, n: day.index })} onPress={() => addActivity(x)} />
+                      <Button label={t('plan.addToDay', { n: day.index })} accessibilityLabel={t('plan.addNamed', { name: expText(x.id, 'name', x.name), n: day.index })} onPress={() => addActivity(x)} />
                     </View>
                   ))}
                 {anyAffiliate ? <Text style={s.small}>{AFFILIATE_NOTE}</Text> : null}
@@ -683,12 +781,12 @@ export default function PlanScreen() {
                 {dayActivities.map((x) => (
                   <View key={x.id} style={s.activity}>
                     <View style={{ flex: 1 }}>
-                      <Text style={s.stopName}>{x.name}</Text>
-                      <Text style={s.stopBlurb}>{x.note}</Text>
+                      <Text style={s.stopName}>{expText(x.id, 'name', x.name)}</Text>
+                      <Text style={s.stopBlurb}>{expText(x.id, 'note', x.note)}</Text>
                     </View>
                     <View style={s.activityButtons}>
-                      <Button label={t('plan.book')} accessibilityLabel={t('plan.bookNamed', { name: x.name })} onPress={() => openLink(x.booking.url)} />
-                      <Button label={t('plan.remove')} kind="quiet" accessibilityLabel={t('plan.removeNamed', { name: x.name })} onPress={() => removeActivity(x)} />
+                      <Button label={t('plan.book')} accessibilityLabel={t('plan.bookNamed', { name: expText(x.id, 'name', x.name) })} onPress={() => openLink(x.booking.url)} />
+                      <Button label={t('plan.remove')} kind="quiet" accessibilityLabel={t('plan.removeNamed', { name: expText(x.id, 'name', x.name) })} onPress={() => removeActivity(x)} />
                     </View>
                   </View>
                 ))}
@@ -745,20 +843,10 @@ export default function PlanScreen() {
   );
 }
 
-/** A short stable name for a plan's settings: FNV-1a, 32 bits, in base 36. */
-function hashKey(text: string): string {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < text.length; i++) {
-    h ^= text.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return (h >>> 0).toString(36);
-}
-
 type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
 
 /** A small switch with an icon: the day's map, an activity, a meal. */
-function Pill({ icon, label, active, onPress }: { icon: IconName; label: string; active: boolean; onPress: () => void }) {
+function Pill({ icon, label, active, onPress, grid }: { icon: IconName; label: string; active: boolean; onPress: () => void; grid?: boolean }) {
   return (
     <Pressable
       accessibilityRole="button"
@@ -767,7 +855,7 @@ function Pill({ icon, label, active, onPress }: { icon: IconName; label: string;
         Haptics.selectionAsync().catch(() => {});
         onPress();
       }}
-      style={({ pressed }) => [s.pill, active && s.pillOn, pressed && { opacity: 0.85 }]}
+      style={({ pressed }) => [s.pill, grid && s.pillGrid, active && s.pillOn, pressed && { opacity: 0.85 }]}
     >
       <MaterialCommunityIcons name={icon} size={17} color={active ? colors.white : colors.ink} />
       <Text style={[s.pillText, active && s.onInk]}>{label}</Text>
@@ -797,14 +885,14 @@ function MealCard({ stop, index, onAnother }: { stop: MealStop; index: number; o
         {what} · {t('plan.meal.walk', { n: walkMinutes(o.metres) })}
       </Text>
       <View style={s.mealActions}>
-        <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: r.name })} onPress={() => openWalkingDirections(r)} hitSlop={6} style={s.inlineAction}>
+        <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: r.name })} onPress={() => openWalkingDirections(r)} style={({ pressed }) => [s.action, pressed && s.actionPressed]}>
           <MaterialCommunityIcons name="navigation-variant" size={16} color={colors.brick} />
-          <Text style={s.linkBrick}>{t('story.go')}</Text>
+          <Text style={s.actionText}>{t('story.go')}</Text>
         </Pressable>
         {stop.options.length > 1 ? (
-          <Pressable accessibilityRole="button" accessibilityLabel={t('plan.meal.anotherLabel', { meal: t(`meal.${stop.meal}`) })} onPress={onAnother} hitSlop={6} style={s.inlineAction}>
+          <Pressable accessibilityRole="button" accessibilityLabel={t('plan.meal.anotherLabel', { meal: t(`meal.${stop.meal}`) })} onPress={onAnother} style={({ pressed }) => [s.action, pressed && s.actionPressed]}>
             <MaterialCommunityIcons name="swap-horizontal" size={16} color={colors.mute} />
-            <Text style={s.skip}>{t('plan.meal.another')}</Text>
+            <Text style={s.actionText}>{t('plan.meal.another')}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -925,28 +1013,30 @@ function Timeline({
                     aria-checked={visited.has(st.place.id)}
                     accessibilityLabel={t('plan.visitedLabel', { name: placeName(st.place) })}
                     onPress={() => onVisited(st.place.id)}
-                    hitSlop={6}
-                    style={s.inlineAction}
+                    style={({ pressed }) => [s.action, pressed && s.actionPressed]}
                   >
                     <MaterialCommunityIcons name={visited.has(st.place.id) ? 'check-circle' : 'checkbox-blank-circle-outline'} size={18} color={visited.has(st.place.id) ? colors.patina : colors.ink} />
-                    <Text style={s.link}>{t('plan.visited')}</Text>
+                    <Text style={s.actionText}>{t('plan.visited')}</Text>
                   </Pressable>
-                  <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: placeName(st.place) })} onPress={() => openWalkingDirections(st.place)} hitSlop={6} style={s.inlineAction}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={t('moment.go', { name: placeName(st.place) })} onPress={() => openWalkingDirections(st.place)} style={({ pressed }) => [s.action, pressed && s.actionPressed]}>
                     <MaterialCommunityIcons name="navigation-variant" size={16} color={colors.ink} />
-                    <Text style={s.link}>{t('story.go')}</Text>
+                    <Text style={s.actionText}>{t('story.go')}</Text>
                   </Pressable>
                   {st.place.booking ? (
-                    <Pressable accessibilityRole="link" onPress={() => openLink(st.place.booking!.url)} hitSlop={6} style={s.inlineAction}>
-                      <MaterialCommunityIcons name="ticket-outline" size={16} color={colors.ink} />
-                      <Text style={s.link} numberOfLines={1}>
-                        {st.place.booking.label}
-                        {st.place.booking.affiliate ? t('plan.affiliate') : ''}
-                      </Text>
-                    </Pressable>
+                    <View style={s.bookWrap}>
+                      <Pressable accessibilityRole="link" onPress={() => openLink(st.place.booking!.url)} style={({ pressed }) => [s.action, s.actionShrink, pressed && s.actionPressed]}>
+                        <MaterialCommunityIcons name="ticket-outline" size={16} color={colors.ink} />
+                        <Text style={[s.actionText, s.actionTextShrink]} numberOfLines={1}>
+                          {bookingLabel(st.place.booking)}
+                        </Text>
+                      </Pressable>
+                      {/* an advertising mark is never cut: its own line under the button, wrapping as far as it needs */}
+                      {st.place.booking.affiliate ? <Text style={s.bookNote}>{AFFILIATE_NOTE}</Text> : null}
+                    </View>
                   ) : null}
-                  <Pressable accessibilityRole="button" accessibilityLabel={t('plan.skipLabel', { name: placeName(st.place) })} onPress={() => onSkip(st.place.id, placeName(st.place))} hitSlop={8} style={s.inlineAction}>
+                  <Pressable accessibilityRole="button" accessibilityLabel={t('plan.skipLabel', { name: placeName(st.place) })} onPress={() => onSkip(st.place.id, placeName(st.place))} style={({ pressed }) => [s.action, pressed && s.actionPressed]}>
                     <MaterialCommunityIcons name="close" size={16} color={colors.mute} />
-                    <Text style={s.skip}>{t('plan.skip')}</Text>
+                    <Text style={s.actionText}>{t('plan.skip')}</Text>
                   </Pressable>
                 </View>
               </View>
@@ -987,11 +1077,11 @@ function TripCard({ day }: { day: PlanDay }) {
         <Text style={s.stopBlurb}>{placeText(place).text}</Text>
         <View style={s.stopLinks}>
           {place.booking ? (
-            <Button label={place.booking.label} onPress={() => openLink(place.booking!.url)} style={s.grow} />
+            <Button label={bookingLabel(place.booking)} onPress={() => openLink(place.booking!.url)} style={s.grow} />
           ) : null}
           <Link href={`/place/${place.id}`} asChild>
-            <Pressable accessibilityRole="link" accessibilityLabel={t('now.openLabel', { name: placeName(place) })} hitSlop={6}>
-              <Text style={s.link}>{t('trips.details')}</Text>
+            <Pressable accessibilityRole="link" accessibilityLabel={t('now.openLabel', { name: placeName(place) })} style={({ pressed }) => [s.action, pressed && s.actionPressed]}>
+              <Text style={s.actionText}>{t('trips.details')}</Text>
             </Pressable>
           </Link>
         </View>
@@ -1008,17 +1098,22 @@ function TripCard({ day }: { day: PlanDay }) {
 
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
-  bigTitle: { fontFamily: fonts.display, fontSize: 40, lineHeight: 44, color: colors.ink, paddingHorizontal: space.m, paddingTop: space.m, paddingBottom: space.s },
+  head: { backgroundColor: colors.stone, zIndex: 1, borderBottomWidth: 1, borderBottomColor: colors.stone },
+  headScrolled: { borderBottomColor: colors.line },
+  bigTitle: { fontFamily: fonts.display, fontSize: 40, lineHeight: 44, color: colors.ink, paddingTop: space.m, paddingBottom: space.s },
   quickQ: { fontFamily: fonts.bodyBold, fontSize: 21, color: colors.ink, marginTop: space.s, marginBottom: space.m },
-  quickGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginBottom: space.m },
-  quickTile: { width: '48%', flexGrow: 1, aspectRatio: 1.35, borderRadius: 24, backgroundColor: colors.ink, padding: space.m, justifyContent: 'space-between' },
-  quickPressed: { transform: [{ scale: 0.97 }] },
-  quickNum: { fontFamily: fonts.display, fontSize: 64, lineHeight: 66, color: colors.white },
-  quickWord: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.white },
+  quickList: { gap: space.s, marginBottom: space.m },
+  // a light card, like the rest of the app's choices: each number of days and what it holds, on one row
+  quickRow: { flexDirection: 'row', alignItems: 'center', gap: space.m, minHeight: 72, paddingVertical: 14, paddingHorizontal: space.m, borderRadius: radius.m, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  quickPressed: { opacity: 0.8 },
+  quickText: { flex: 1, gap: 2 },
+  quickLabel: { fontFamily: fonts.bodyBold, fontSize: 20, lineHeight: 26, color: colors.ink },
+  quickLine: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, color: colors.mute },
+  tuneCard: { flexDirection: 'row', alignItems: 'center', gap: space.m, minHeight: 72, marginTop: space.m, paddingVertical: 14, paddingHorizontal: space.m, borderRadius: radius.m, borderWidth: 2, borderColor: colors.ink, backgroundColor: colors.paper },
   scroll: { paddingBottom: space.xl },
   // room under the last stop for the action bar that stays on screen
   scrollWithBar: { paddingBottom: 150 },
-  col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m },
+  col: { width: '100%', maxWidth: layout.column, alignSelf: 'center', paddingHorizontal: space.m },
   summaryBar: { flexDirection: 'row', alignItems: 'center', gap: space.m, paddingTop: space.s },
   summaryText: { fontFamily: fonts.bodyBold, fontSize: 16, lineHeight: 22, color: colors.ink, marginTop: 2 },
   q: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink, marginTop: space.l, marginBottom: space.s },
@@ -1071,7 +1166,8 @@ const s = StyleSheet.create({
   cardBody: { padding: space.m, gap: 6 },
   mapBox: { height: 220, marginTop: space.m, borderRadius: 24, overflow: 'hidden' },
   map: { flex: 1 },
-  mapChip: { position: 'absolute', left: space.s, bottom: space.s, flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(14,19,48,0.82)' },
+  // top right: the logo (bottom left) and the (i) (bottom right) of the map must stay in view
+  mapChip: { position: 'absolute', right: space.s, top: space.s, flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 44, paddingHorizontal: 14, borderRadius: 22, backgroundColor: 'rgba(14,19,48,0.82)' },
   mapChipText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
   mapError: { position: 'absolute', left: space.s, right: space.s, top: space.s, backgroundColor: colors.paper, borderRadius: 12, padding: space.m, gap: space.s },
   picker: { marginTop: space.m, backgroundColor: colors.paper, borderRadius: 16, borderWidth: 1, borderColor: colors.line, padding: space.m },
@@ -1084,7 +1180,10 @@ const s = StyleSheet.create({
   progressText: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 0.6, color: colors.patina, marginTop: space.s, textTransform: 'uppercase' },
   progressTrack: { height: 6, borderRadius: 3, backgroundColor: colors.line, marginTop: 6, overflow: 'hidden' },
   progressFill: { height: 6, borderRadius: 3, backgroundColor: colors.patina },
-  dayTabs: { gap: space.s, paddingBottom: space.m },
+  dayTabsWrap: { marginHorizontal: -space.m },
+  dayTabsScroll: { flexGrow: 0 },
+  dayTabs: { gap: space.s, paddingHorizontal: space.m, paddingBottom: space.m },
+  tabsFade: { position: 'absolute', top: 0, bottom: space.m, width: 40 },
   dayTab: { flexDirection: 'row', alignItems: 'center', gap: 10, minWidth: 150, maxWidth: 220, paddingVertical: 10, paddingHorizontal: 14, borderRadius: 18, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
   dayTabOn: { backgroundColor: colors.ink, borderColor: colors.ink },
   dayTabNum: { fontFamily: fonts.display, fontSize: 34, lineHeight: 36, color: colors.ink },
@@ -1093,7 +1192,8 @@ const s = StyleSheet.create({
   onInkSoft: { color: 'rgba(255,255,255,0.7)' },
   dayLine: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.mute, marginTop: 4 },
   pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.m },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  pill: { flexDirection: 'row', flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, paddingHorizontal: 14, borderRadius: 22, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  pillGrid: { flexBasis: '45%' },
   pillOn: { backgroundColor: colors.ink, borderColor: colors.ink },
   pillText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
   railRow: { flexDirection: 'row' },
@@ -1107,8 +1207,14 @@ const s = StyleSheet.create({
   stopMain: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 10 },
   thumb: { width: 72, height: 72, borderRadius: 14, overflow: 'hidden', backgroundColor: colors.stone },
   thumbImg: { width: '100%', height: '100%' },
-  inlineAction: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 32 },
-  linkBrick: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.brick },
+  // the one small action of a card (been here, take me there, skip, another place): a ghost pill, 44 px tall
+  action: { flexDirection: 'row', flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: 6, minHeight: 44, paddingHorizontal: 10, borderRadius: 22, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  actionPressed: { opacity: 0.8 },
+  bookWrap: { flexGrow: 1, flexShrink: 1, maxWidth: '100%', gap: 4 },
+  bookNote: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17, color: colors.mute, textAlign: 'center' },
+  actionShrink: { flexBasis: 'auto', flexShrink: 1, maxWidth: '100%' },
+  actionText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.ink },
+  actionTextShrink: { flexShrink: 1 },
   stopTime: { fontFamily: fonts.monoBold, fontSize: 15, color: colors.ink },
   dayClock: { fontFamily: fonts.monoBold, fontSize: 13, letterSpacing: 0.6, color: colors.brick, marginTop: 4 },
   meal: { gap: 2, padding: 12, borderRadius: 18, backgroundColor: '#FBEFE6', borderWidth: 1, borderColor: '#F0D6C4' },
@@ -1116,7 +1222,7 @@ const s = StyleSheet.create({
   mealWhen: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.brick, textTransform: 'uppercase' },
   mealName: { fontFamily: fonts.display, fontSize: 18, lineHeight: 21, color: colors.ink },
   mealMeta: { fontFamily: fonts.body, fontSize: 14, color: colors.mute },
-  mealActions: { flexDirection: 'row', gap: space.l, marginTop: 4 },
+  mealActions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.s },
   leg: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6 },
   legText: { flex: 1, fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: colors.mute },
   num: { position: 'absolute', top: 4, left: 4, minWidth: 24, height: 24, paddingHorizontal: 6, borderRadius: 12, backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center' },
@@ -1127,16 +1233,14 @@ const s = StyleSheet.create({
   stopBlurb: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, color: colors.ink, marginTop: 2 },
   stopMeta: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: colors.mute },
   photoCredit: { fontFamily: fonts.body, fontSize: 11, color: colors.mute, marginTop: 6 },
-  stopLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.l, rowGap: 4, paddingHorizontal: 12, paddingBottom: 8, borderTopWidth: 1, borderColor: colors.line, paddingTop: 6 },
-  link: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.vistula },
-  skip: { fontFamily: fonts.body, fontSize: 15, color: colors.mute, textDecorationLine: 'underline' },
+  stopLinks: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.s, paddingHorizontal: 10, paddingVertical: 10, borderTopWidth: 1, borderColor: colors.line },
   trip: { marginTop: space.m, backgroundColor: colors.paper, borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: colors.line },
   tripPhoto: { width: '100%', height: 200, backgroundColor: colors.line },
   tripBody: { padding: space.m, gap: 4 },
   small: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17, color: colors.mute, marginTop: space.m },
   bar: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: colors.paper, borderTopWidth: 1, borderColor: colors.line, paddingHorizontal: space.m, paddingTop: space.s, paddingBottom: space.s },
   barNote: { fontFamily: fonts.body, fontSize: 13, color: colors.ink, marginBottom: 6 },
-  barRow: { flexDirection: 'row', gap: space.s, width: '100%', maxWidth: 560, alignSelf: 'center' },
-  barMain: { flexGrow: 2 },
-  barSide: { flexGrow: 1 },
+  barRow: { flexDirection: 'row', gap: space.s, width: '100%', maxWidth: layout.column - 2 * space.m, alignSelf: 'center' },
+  barMain: { flexGrow: 2, flexShrink: 1 },
+  barSide: { flexGrow: 1, flexShrink: 1 },
 });

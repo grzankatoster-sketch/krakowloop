@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { WISH_MAX_CHARS, WISH_PROXY_URL } from '../config/wish';
 import { LANG } from '../i18n';
 import { WishIntent, cleanIntent, readWish } from './wish';
@@ -16,6 +17,39 @@ const TIMEOUT_MS = 10_000;
 /** Version of the request and answer (proxy/wish/README.md). Version 2 added cuisines, price, rating… */
 export const WISH_SCHEMA_VERSION = 2;
 
+const LOOPBACK = /^(localhost|127(\.\d{1,3}){3}|\[?::1\]?)$/i;
+
+function hostOf(url: string): string | null {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether the configured proxy is worth calling from where the app runs. A local proxy address
+ * (`npm run proxy:wish` on localhost:8787) only makes sense for the dev server on localhost: a static
+ * web build (served from any host, or even from localhost) has no proxy next to it, so every visit
+ * would fill the console with refused connections. A phone has no page host and is left alone.
+ */
+export function proxyReachable(proxyUrl: string | undefined, pageHost?: string | null, dev = true): boolean {
+  if (!proxyUrl) return false;
+  const proxyHost = hostOf(proxyUrl);
+  if (!proxyHost) return false;
+  if (!pageHost || !LOOPBACK.test(proxyHost)) return true;
+  return dev && LOOPBACK.test(pageHost);
+}
+
+// only a web page has a host; a phone app (whatever globals its runtime has) is never one
+const pageHost = (): string | null => (Platform.OS === 'web' && typeof location !== 'undefined' ? location.hostname : null);
+const usable = () => proxyReachable(WISH_PROXY_URL, pageHost(), __DEV__);
+
+/** Whether a wish is really sent to the proxy from here: the same test every call makes, for the screen's privacy note. */
+export function wishProxyInUse(): boolean {
+  return !!WISH_PROXY_URL && usable();
+}
+
 /**
  * Asks the owner's proxy to read a wish with a language model. The proxy answers with settings and
  * ids from the app's own catalogue only, and everything it says is checked again here, so a model
@@ -23,7 +57,7 @@ export const WISH_SCHEMA_VERSION = 2;
  * answer — simply returns null and the phone's own reading is used instead.
  */
 async function askProxy(text: string, signal: AbortSignal): Promise<WishIntent | null> {
-  if (!WISH_PROXY_URL) return null;
+  if (!WISH_PROXY_URL || !wishProxyInUse()) return null;
   try {
     const res = await fetch(`${WISH_PROXY_URL}/v1/interpret-wish`, {
       method: 'POST',
@@ -49,7 +83,7 @@ async function askProxy(text: string, signal: AbortSignal): Promise<WishIntent |
  * wish does not wait for it to start. Sends nothing but the request itself; failures are ignored.
  */
 export function warmWishProxy(): void {
-  if (!WISH_PROXY_URL) return;
+  if (!WISH_PROXY_URL || !wishProxyInUse()) return;
   fetch(`${WISH_PROXY_URL}/v1/warm`, { method: 'POST' }).catch(() => {});
 }
 
@@ -59,7 +93,7 @@ export function warmWishProxy(): void {
  */
 export async function readWishAnywhere(text: string): Promise<WishReading> {
   const here = readWish(text);
-  if (!WISH_PROXY_URL || !text.trim()) return { ...here, source: 'phone' };
+  if (!WISH_PROXY_URL || !wishProxyInUse() || !text.trim()) return { ...here, source: 'phone' };
 
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), TIMEOUT_MS);
