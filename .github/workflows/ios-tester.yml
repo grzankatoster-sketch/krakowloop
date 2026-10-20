@@ -44,6 +44,10 @@ jobs:
           echo "UDID=$UDID" >> "$GITHUB_ENV"
           xcrun simctl boot "$UDID"
           xcrun simctl bootstatus "$UDID" -b
+          # a fresh simulator covers the app with the swipe-typing intro the first time a field focuses
+          # (the wish sheet), and Maestro then sees only the screen underneath: mark it as already shown
+          xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.preferences DidShowContinuousPathIntroduction -bool true
+          xcrun simctl spawn "$UDID" defaults write com.apple.keyboard.preferences KeyboardContinuousPathEnabled -bool false
           xcrun simctl install "$UDID" "$APP"
 
       - name: Walk through the app

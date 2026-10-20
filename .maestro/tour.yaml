@@ -51,6 +51,11 @@ name: KrakowLoop tour
     text: "Open"
     optional: true
 - waitForAnimationToEnd
+# a fresh simulator covers the app with the keyboard's swipe-typing intro the first time the field focuses
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd
 - takeScreenshot: 15_wish_sheet
 - tapOn: "Sushi, open now"
 - waitForAnimationToEnd:
