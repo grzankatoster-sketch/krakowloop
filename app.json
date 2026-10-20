@@ -61,13 +61,13 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "07727aab-8a86-4b85-ab39-458d4b3c03f4"
+        "projectId": "c8e67231-cadb-41bb-aa71-683ade0349e9"
       }
     },
-    "owner": "grzanka51",
+    "owner": "grzanka551",
+    "runtimeVersion": "exposdk:57.0.0",
     "updates": {
-      "url": "https://u.expo.dev/07727aab-8a86-4b85-ab39-458d4b3c03f4"
-    },
-    "runtimeVersion": "exposdk:57.0.0"
+      "url": "https://u.expo.dev/c8e67231-cadb-41bb-aa71-683ade0349e9"
+    }
   }
 }
