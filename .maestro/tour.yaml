@@ -1,6 +1,7 @@
 # The tester's walk through KrakowLoop on an iOS simulator (scripts/ios-tour.sh, .github/workflows/ios-tester.yml).
 # Every screen a traveller sees gets a screenshot, and the features that matter are asserted on the way.
-# Deep links: iOS asks "Open in KrakowLoop?" each time, so every openLink is followed by a tap on "Open".
+# Deep links: iOS may ask "Open in KrakowLoop?", so every openLink is followed by an optional tap on "Open"
+# (in practice only the first link of a run asks).
 appId: com.krakowloop.app
 name: KrakowLoop tour
 ---
@@ -51,6 +52,15 @@ name: KrakowLoop tour
     text: "Open"
     optional: true
 - waitForAnimationToEnd
+# the first link of a run: Maestro does not always read iOS's "Open in KrakowLoop?" alert (it then sees
+# the screen underneath), so when the sheet has not come up, tap where the alert's Open button sits
+- runFlow:
+    when:
+      notVisible: "What would you like?"
+    commands:
+      - tapOn:
+          point: "80%,55%"
+      - waitForAnimationToEnd
 # a fresh simulator covers the app with the keyboard's swipe-typing intro the first time the field focuses
 - tapOn:
     text: "Continue"
