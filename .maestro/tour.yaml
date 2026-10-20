@@ -114,6 +114,17 @@ name: KrakowLoop tour
     timeout: 5000
 - takeScreenshot: 30_place
 - tapOn: "Save .* for later"
+- takeScreenshot: 30b_place_saved
+# diagnosis (20.10): a tap on the heart was lost while the small map lay under the bottom bar; if it
+# is lost again, the screenshot below marks it and the tap is tried with the map scrolled away
+- runFlow:
+    when:
+      visible: "Save .* for later"
+    commands:
+      - takeScreenshot: 30c_DIAG_heart_tap_lost
+      - scroll
+      - tapOn: "Save .* for later"
+      - takeScreenshot: 30d_DIAG_after_scroll
 - assertVisible: "Remove .* from saved"
 - scroll
 - takeScreenshot: 31_place_scrolled
