@@ -147,6 +147,12 @@ export const fonts = {
 
 export const space = { xs: 4, s: 8, m: 16, l: 24, xl: 40 } as const;
 
+/**
+ * One reading column for every screen on a wide window (the web preview on a computer): content,
+ * bottom action bars and grids stay this wide and centred instead of stretching across the screen.
+ */
+export const layout = { column: 560 } as const;
+
 /** Corner radii: s = thumbnails and small rows, m = cards and buttons, l = hero cards and tiles. */
 export const radius = { s: 10, m: 14, l: 18 } as const;
 

@@ -19,6 +19,7 @@ import { CATEGORY_LABEL, Place, ZONE_LABEL, placeById } from '../../src/data/pla
 import { walkingRoute } from '../../src/lib/directions';
 import { DETOUR, distance, formatDistance, walkingMinutes } from '../../src/lib/geo';
 import { formatHours, weekHours } from '../../src/lib/hours';
+import { formatMinutes } from '../../src/lib/format';
 import { openLink } from '../../src/lib/openLink';
 import { lensById } from '../../src/data/lens';
 import { openWalkingDirections } from '../../src/lib/navigate';
@@ -26,11 +27,14 @@ import { toggleSaved, useSaved } from '../../src/lib/saved';
 import { nearbyTransit } from '../../src/lib/transit';
 import { useMyLocation } from '../../src/lib/useMyLocation';
 import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
-import { FoodDetails } from '../../src/components/FoodDetails';
+import { FoodDetails, showsGoogleRating } from '../../src/components/FoodDetails';
 import { ReconBadge } from '../../src/components/ReconBadge';
 import { RideToggle } from '../../src/components/RideButtons';
 import { LANG, t } from '../../src/i18n';
-import { colors, fonts, space, typeScale } from '../../src/theme';
+import { colors, fonts, layout, space, typeScale } from '../../src/theme';
+
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../../src/components/ScreenError';
 
 const DAYS = [t('day.0'), t('day.1'), t('day.2'), t('day.3'), t('day.4'), t('day.5'), t('day.6')];
 
@@ -65,8 +69,16 @@ function PlaceDetails({ place }: { place: Place }) {
   const [walkFrom, setWalkFrom] = useState<{ lat: number; lon: number } | null>(null);
   const request = useRef(0);
   const insets = useSafeAreaInsets();
-  const { height: screenH } = useWindowDimensions();
-  const heroH = Math.round(screenH * 0.58);
+  const { height: screenH, width: screenW } = useWindowDimensions();
+  // a computer window: the photo is a framed picture in the middle, not a banner across 1200 px
+  const wide = screenW >= 820;
+  const heroW = wide ? Math.min(screenW - 2 * space.l, 720) : screenW;
+  const [photoAspect, setPhotoAspect] = useState(1.5);
+  const heroH = wide ? Math.round(Math.min(Math.max(heroW / photoAspect, 320), screenH * 0.6, 500)) : Math.round(screenH * 0.58);
+  const onPhotoLoad = (e: { nativeEvent: unknown }) => {
+    const src = (e.nativeEvent as { source?: { width?: number; height?: number } }).source;
+    if (src?.width && src?.height) setPhotoAspect(src.width / src.height);
+  };
   useStatusBarOnFocus('light');
   const isSaved = useSaved().includes(place.id);
   useEffect(() => () => void Speech.stop(), []);
@@ -94,6 +106,12 @@ function PlaceDetails({ place }: { place: Place }) {
   // English readers get the app's blurb and the English Wikipedia lead; others one text in their
   // language when Wikipedia has it, else the English blurb with its language marked
   const about = LANG === 'en' ? aboutOf(place.id) : null;
+  // the Wikipedia lead mostly retells the blurb above it: folded away, and left out when it is too
+  // short to add anything (a bare location line)
+  const wiki = about && about.text.length >= 80 ? about : null;
+  const [wikiOpen, setWikiOpen] = useState(false);
+  // a live Google rating may not sit next to a map (Google EEA terms): such a page has no map picture
+  const noMap = (place.cat === 'food' || place.cat === 'night') && showsGoogleRating(place.id);
   const text = placeText(place);
   const week = weekHours(place.id, today);
   const todayIndex = (today.getDay() + 6) % 7;
@@ -149,9 +167,17 @@ function PlaceDetails({ place }: { place: Place }) {
     <View style={s.root}>
       <Animated.ScrollView onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={{ paddingBottom: barH + space.l }} style={s.root}>
         {/* the place itself, filling the top of the screen, with its name on it */}
-        <View style={{ height: heroH, overflow: 'visible' }}>
+        <View style={wide ? { alignItems: 'center', paddingTop: space.m } : undefined}>
+        <View style={wide ? { height: heroH, width: heroW, overflow: 'hidden', borderRadius: 24 } : { height: heroH, overflow: 'visible' }}>
           <Animated.View style={[StyleSheet.absoluteFill, heroStyle]}>
-            {media?.image ? (
+            {media?.image && wide ? (
+              // whole picture, uncut: any spare room beside it is its own blurred, darkened copy
+              <View style={s.fill} pointerEvents="none">
+                <Image source={media.image} style={s.photoAbs} resizeMode="cover" blurRadius={24} accessible={false} />
+                <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(8,11,30,0.35)' }]} />
+                <Image source={media.image} style={s.photoAbs} resizeMode="contain" onLoad={onPhotoLoad} accessibilityLabel={t('place.photoAlt', { name })} />
+              </View>
+            ) : media?.image ? (
               <View style={s.fill} pointerEvents="none"><Image source={media.image} style={s.photo} resizeMode="cover" accessibilityLabel={t('place.photoAlt', { name })} /></View>
             ) : (
               <View style={[s.fill, { backgroundColor: CATEGORY_COLOR[place.cat] }]} />
@@ -160,14 +186,16 @@ function PlaceDetails({ place }: { place: Place }) {
           <LinearGradient colors={['rgba(8,11,30,0.55)', 'rgba(8,11,30,0)']} style={s.heroTop} pointerEvents="none" />
           <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.9)']} locations={[0.35, 1]} style={s.heroBottom} pointerEvents="none" />
           <View style={s.heroWords}>
-            <Text style={s.eyebrow} numberOfLines={1}>
-              {CATEGORY_LABEL[place.cat]} · {ZONE_LABEL[place.zone]} · {t('place.about', { minutes: place.minutes })}
+            {/* two lines rather than a cut: the length of the visit is the part a traveller needs */}
+            <Text style={s.eyebrow} numberOfLines={2}>
+              {CATEGORY_LABEL[place.cat]} · {ZONE_LABEL[place.zone]} · {t('place.about', { time: formatMinutes(place.minutes) })}
             </Text>
             <Text style={s.title} accessibilityRole="header" numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.7}>
               {name}
             </Text>
             {altName ? <Text style={s.heroLocal}>{altName}</Text> : null}
           </View>
+        </View>
         </View>
         <View style={s.body}>
         {media?.image ? (
@@ -183,17 +211,23 @@ function PlaceDetails({ place }: { place: Place }) {
           <Text style={s.blurb}>{text.text}</Text>
           {text.lang !== LANG ? <Text style={s.langTag}>{t('ui.inEnglish')}</Text> : null}
           {text.url ? (
-            <Pressable accessibilityRole="link" onPress={() => openLink(text.url!)} hitSlop={6}>
+            <Pressable accessibilityRole="link" onPress={() => openLink(text.url!)} style={s.linkHit}>
               <Text style={s.aboutCredit}>{t('place.aboutCredit')}</Text>
             </Pressable>
           ) : null}
-          {about ? (
-            <>
-              <Text style={s.about}>{about.text}</Text>
-              <Pressable accessibilityRole="link" onPress={() => openLink(about.url)} hitSlop={6}>
-                <Text style={s.aboutCredit}>{t('place.aboutCredit')}</Text>
+          {wiki ? (
+            wikiOpen ? (
+              <>
+                <Text style={s.about}>{wiki.text}</Text>
+                <Pressable accessibilityRole="link" onPress={() => openLink(wiki.url)} style={s.linkHit}>
+                  <Text style={s.aboutCredit}>{t('place.aboutCredit')}</Text>
+                </Pressable>
+              </>
+            ) : (
+              <Pressable accessibilityRole="button" aria-expanded={false} onPress={() => setWikiOpen(true)} style={({ pressed }) => [s.moreBtn, pressed && s.pressed]}>
+                <Text style={s.moreText}>{t('ui.more')} · Wikipedia</Text>
               </Pressable>
-            </>
+            )
           ) : null}
           {/* cuisine and diet from OpenStreetMap, and a live Google rating once the proxy is set up */}
           {place.cat === 'food' || place.cat === 'night' ? <FoodDetails placeId={place.id} /> : null}
@@ -220,9 +254,11 @@ function PlaceDetails({ place }: { place: Place }) {
 
         {/* the way there: a picture of the map (a finger on it scrolls the page), then the route on request */}
         <View style={[s.col, s.section]}>
-          <View style={s.mapBox} pointerEvents="none">
-            <LoopMap style={s.map} points={points} route={walk?.coordinates} focus={walk ? null : { lat: place.lat, lon: place.lon, key: 1 }} fit={!!walk} />
-          </View>
+          {noMap ? null : (
+            <View style={s.mapBox} pointerEvents="none">
+              <LoopMap style={s.map} points={points} route={walk?.coordinates} focus={walk ? null : { lat: place.lat, lon: place.lon, key: 1 }} fit={!!walk} />
+            </View>
+          )}
           {walk ? (
             <Text style={s.walk} accessibilityLiveRegion="polite">
               {t('walk.result', { minutes: walk.minutes, distance: formatDistance(walk.metres) })}
@@ -308,13 +344,14 @@ function PlaceDetails({ place }: { place: Place }) {
         accessibilityLabel={t('ui.back')}
         onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
         hitSlop={8}
-        style={({ pressed }) => [s.back, { top: insets.top + 6 }, pressed && s.pressed]}
+        style={({ pressed }) => [s.back, { top: insets.top + 6 + (wide ? space.m : 0), left: wide ? Math.round((screenW - heroW) / 2) + space.m : space.m }, pressed && s.pressed]}
       >
         <MaterialCommunityIcons name="chevron-left" size={30} color={colors.white} />
       </Pressable>
 
       {/* the two things a traveller does here, always under the thumb */}
       <View style={[s.bar, { paddingBottom: insets.bottom + space.s }]}>
+       <View style={s.barRow}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={t('moment.go', { name })}
@@ -342,6 +379,7 @@ function PlaceDetails({ place }: { place: Place }) {
         <Pressable accessibilityRole="button" accessibilityLabel={t('moment.listen')} onPress={listen} style={({ pressed }) => [s.listen, pressed && s.pressed]}>
           <MaterialCommunityIcons name="volume-high" size={24} color={colors.ink} />
         </Pressable>
+       </View>
       </View>
     </View>
   );
@@ -355,6 +393,7 @@ const s = StyleSheet.create({
   // photo 100% of that frame: an Image left to the edges alone takes the file's own size
   fill: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   photo: { width: '100%', height: '100%' },
+  photoAbs: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
   pressed: { transform: [{ scale: 0.97 }], opacity: 0.92 },
   heroTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 160 },
   heroBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '70%' },
@@ -365,19 +404,25 @@ const s = StyleSheet.create({
   topBar: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.paper, borderBottomWidth: 1, borderColor: colors.line, justifyContent: 'center', paddingLeft: 76, paddingRight: space.m },
   topBarText: { fontFamily: fonts.display, fontSize: 22, color: colors.ink },
   back: { position: 'absolute', left: space.m, width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(14,19,48,0.55)' },
-  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: space.s, paddingHorizontal: space.m, paddingTop: space.s, backgroundColor: colors.paper, borderTopWidth: 1, borderColor: colors.line },
+  // the paper runs edge to edge; the two actions stay in the same column as the text above
+  bar: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: space.m, paddingTop: space.s, backgroundColor: colors.paper, borderTopWidth: 1, borderColor: colors.line },
+  barRow: { flexDirection: 'row', gap: space.s, width: '100%', maxWidth: layout.column - 2 * space.m, alignSelf: 'center' },
   go: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 58, borderRadius: 29, backgroundColor: colors.ink },
   goText: { fontFamily: fonts.bodyBold, fontSize: 18, color: colors.white },
   listen: { width: 58, height: 58, borderRadius: 29, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: colors.ink },
   savedOn: { backgroundColor: colors.brick, borderColor: colors.brick },
   pastYear: { fontFamily: fonts.display, fontSize: 40, color: colors.white },
-  col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m },
+  col: { width: '100%', maxWidth: layout.column, alignSelf: 'center', paddingHorizontal: space.m },
   credit: { fontFamily: fonts.body, fontSize: 13, color: colors.mute, marginTop: 4 },
   head: { marginTop: space.m, gap: space.xs },
   local: { ...typeScale.meta, color: colors.mute },
   langTag: { ...typeScale.meta, color: colors.mute, alignSelf: 'flex-start', borderWidth: 1, borderColor: colors.line, borderRadius: 6, paddingHorizontal: 6, marginTop: space.xs },
   about: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: space.s },
-  aboutCredit: { fontFamily: fonts.body, fontSize: 15, color: colors.vistula, textDecorationLine: 'underline', marginTop: 4 },
+  moreBtn: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingHorizontal: 16, marginTop: space.s, borderRadius: 999, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.paper },
+  moreText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
+  aboutCredit: { fontFamily: fonts.body, fontSize: 15, color: colors.vistula, textDecorationLine: 'underline' },
+  // a short text link with a full finger's height to tap (44 pt)
+  linkHit: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
   blurb: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: space.s },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.m },
   grow: { flexGrow: 1 },

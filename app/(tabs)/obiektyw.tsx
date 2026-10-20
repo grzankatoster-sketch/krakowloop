@@ -6,7 +6,7 @@ import { useTabBarSpace, useTopSpace } from '../../src/lib/useTabBarSpace';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
-import { lensName, lensWhere } from '../../src/components/placeName';
+import { lensCaption, lensName, lensWhere } from '../../src/components/placeName';
 import { ReconBadge } from '../../src/components/ReconBadge';
 import { lensPoints } from '../../src/data/lens';
 import { t } from '../../src/i18n';
@@ -81,7 +81,7 @@ export default function LensGallery() {
 const LensPage = memo(function LensPage({ item, width, height, bottom, onCompare }: { item: Page; width: number; height: number; bottom: number; onCompare: (id: string) => void }) {
   return (
     <View style={{ width, height }}>
-      <Image source={item.layer.image} style={s.photo} resizeMode={item.layer.kind === 'artwork' ? 'contain' : 'cover'} accessibilityLabel={item.layer.title} />
+      <Image source={item.layer.image} style={s.photo} resizeMode={item.layer.kind === 'artwork' ? 'contain' : 'cover'} accessibilityLabel={lensCaption(item.point, item.layer).title} />
       <LinearGradient colors={['rgba(8,11,30,0.55)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
       <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.92)']} locations={[0, 0.6]} style={s.shadeBottom} pointerEvents="none" />
       <View style={[s.words, { paddingBottom: bottom }]}>
@@ -97,8 +97,8 @@ const LensPage = memo(function LensPage({ item, width, height, bottom, onCompare
           <MaterialCommunityIcons name="camera-iris" size={22} color={colors.ink} />
           <Text style={s.ctaText}>{t('lensGallery.compare')}</Text>
         </Pressable>
-        <Text style={s.credit} numberOfLines={1}>
-          {item.layer.credit} · {item.layer.license}
+        <Text style={s.credit}>
+          {lensCaption(item.point, item.layer).credit} · {item.layer.license}
         </Text>
       </View>
     </View>

@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Image, ImageSourcePropType, Pressable, StyleSheet, Text, View, ViewToken } from 'react-native';
+import { FlatList, Image, ImageSourcePropType, Pressable, StyleSheet, Text, useWindowDimensions, View, ViewToken } from 'react-native';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
@@ -8,11 +8,11 @@ import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
 import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { placeName, placeText } from '../../src/components/placeName';
+import { firstSentence, placeName, placeText } from '../../src/components/placeName';
 import { CITY } from '../../src/config/city';
 import { PLACE_MEDIA } from '../../src/data/placeMedia';
 import { CATEGORY_LABEL, places, Place } from '../../src/data/places';
-import { RESTAURANTS, restaurantHoursOn } from '../../src/data/restaurants';
+import { RESTAURANTS, restaurantHoursNextDay, restaurantHoursOn } from '../../src/data/restaurants';
 import { krakowWallClock } from '../../src/lib/cityTime';
 import { distance, LatLon } from '../../src/lib/geo';
 import { formatTime, hoursOn, Interval } from '../../src/lib/hours';
@@ -25,7 +25,7 @@ import { EVENT_COLOR, EVENT_ICON } from '../../src/components/EventsSection';
 import { openLink } from '../../src/lib/openLink';
 import { LANG, t } from '../../src/i18n';
 import type { StringKey } from '../../src/i18n/en';
-import { colors, fonts, space } from '../../src/theme';
+import { colors, fonts, layout, space } from '../../src/theme';
 import { WELCOME_KEY } from '../welcome';
 
 const RYNEK = { lat: CITY.mapCentre.lat, lon: CITY.mapCentre.lon };
@@ -50,14 +50,13 @@ interface Story extends Moment {
   year?: string;
 }
 
-function openInfo(hours: Interval[] | null, minutes: number): { open: boolean | null; closesIn: number | null; until: string | null } {
+function openInfo(hours: Interval[] | null, minutes: number, nextDay?: Interval[] | null): { open: boolean | null; closesIn: number | null; until: string | null } {
   if (!hours) return { open: null, closesIn: null, until: null };
-  const st = openState(hours, minutes);
+  // the next day's hours carry a bar open until 02:00 past midnight, as on the map
+  const st = openState(hours, minutes, nextDay);
   if (st.state !== 'open') return { open: false, closesIn: null, until: null };
-  return { open: true, closesIn: st.closesAt - minutes, until: st.closesAt >= 1440 ? '24:00' : formatTime(st.closesAt) };
+  return { open: true, closesIn: st.closesAt - minutes, until: st.closesAt === 1440 ? '24:00' : formatTime(st.closesAt % 1440) };
 }
-
-const firstSentence = (text: string) => text.split(/(?<=\.)\s/)[0];
 
 /** Everything that could be a story now, each with its picture and the one line that says why now. */
 function storySources(): (MomentSource & { image?: ImageSourcePropType; line: string; place?: Place; year?: string; cat?: string })[] {
@@ -82,7 +81,7 @@ function storySources(): (MomentSource & { image?: ImageSourcePropType; line: st
   }
   // no Time Lens here: the past has its own tab, and the same old photos in two places read as a copy
   for (const r of PICKS) {
-    const o = openInfo(restaurantHoursOn(r, new Date()), minutes);
+    const o = openInfo(restaurantHoursOn(r, new Date()), minutes, restaurantHoursNextDay(r, new Date()));
     out.push({ id: r.id, name: r.name, kind: 'eat', lat: r.lat, lon: r.lon, rank: 2, line: o.until ? t('story.openUntil', { time: o.until }) : t('story.eatLine'), ...o });
   }
   return out;
@@ -246,7 +245,8 @@ export default function TodayScreen() {
       ) : null}
 
       {/* over every story: the time, how far down the stories are, and the way to the map */}
-      <View style={[s.head, { top: topSpace + space.s }]} pointerEvents="box-none">
+      <View style={[s.colWrap, { top: topSpace + space.s }]} pointerEvents="box-none">
+      <View style={s.head} pointerEvents="box-none">
         <View>
           <Text style={s.brand}>KRAKÓW · {clock}</Text>
           <Text style={s.where}>{!live.here ? t('moment.nearRynek') : awayKm ? t('moment.awayFromCentre', { km: awayKm }) : t('moment.nearYou')}</Text>
@@ -269,13 +269,17 @@ export default function TodayScreen() {
           </Pressable>
         </View>
       </View>
-      <View style={[s.progress, { top: topSpace + space.s + 58 }]} pointerEvents="none">
-        <Text style={s.count}>
-          {stories.length ? `${Math.min(page + 1, stories.length)} / ${stories.length}` : ''}
-        </Text>
+      </View>
+      <View style={[s.colWrap, { top: topSpace + space.s + 58 }]} pointerEvents="none">
+        <View style={s.progress}>
+          <Text style={s.count}>
+            {stories.length ? `${Math.min(page + 1, stories.length)} / ${stories.length}` : ''}
+          </Text>
+        </View>
       </View>
 
       {/* the wish, always one tap away */}
+      <View style={[s.colWrap, s.askWrap, { bottom: 24 + tabSpace }]} pointerEvents="box-none">
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={t('moment.ask')}
@@ -283,11 +287,12 @@ export default function TodayScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
           router.push('/wish');
         }}
-        style={({ pressed }) => [s.ask, { bottom: 24 + tabSpace }, pressed && s.pressed]}
+        style={({ pressed }) => [s.ask, pressed && s.pressed]}
       >
         <MaterialCommunityIcons name="microphone" size={22} color={colors.white} />
         <Text style={s.askText}>{t('moment.ask')}</Text>
       </Pressable>
+      </View>
     </View>
   );
 }
@@ -308,9 +313,23 @@ const StoryPage = memo(function StoryPage({
   onListen: (s: Story) => void;
   onOpen: (s: Story) => void;
 }) {
+  const { width } = useWindowDimensions();
+  // a phone shows the photo full screen, cropped: the story layout. A wide window (the web preview, a
+  // landscape tablet) shows the whole photo over a blurred, dimmed copy of itself instead of a harsh crop.
+  const wide = width > layout.column;
+  // a narrow phone gets tighter buttons so the three fit on one line
+  const narrow = Math.min(width, layout.column) < 380;
   return (
     <View style={{ height }}>
-      {st.image ? (
+      {st.image && wide ? (
+        <>
+          <View style={s.photoClip} pointerEvents="none">
+            <Image source={st.image} style={[s.photo, s.photoBlur]} resizeMode="cover" blurRadius={28} accessible={false} accessibilityIgnoresInvertColors />
+          </View>
+          <View style={s.photoDim} pointerEvents="none" />
+          <Image source={st.image} style={s.photo} resizeMode="contain" accessibilityIgnoresInvertColors />
+        </>
+      ) : st.image ? (
         <Image source={st.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors />
       ) : (
         <View style={[StyleSheet.absoluteFill, s.eatBg, st.tint ? { backgroundColor: st.tint } : null]}>
@@ -318,11 +337,12 @@ const StoryPage = memo(function StoryPage({
         </View>
       )}
       {/* darker at the top for the clock and at the bottom for the words: the photo stays in the middle */}
-      <LinearGradient colors={['rgba(8,11,30,0.6)', 'rgba(8,11,30,0)']} style={s.shadeTop} pointerEvents="none" />
+      <LinearGradient colors={['rgba(8,11,30,0.78)', 'rgba(8,11,30,0.4)', 'rgba(8,11,30,0)']} locations={[0, 0.55, 1]} style={s.shadeTop} pointerEvents="none" />
       <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.55)', 'rgba(8,11,30,0.92)']} locations={[0, 0.35, 1]} style={s.shadeBottom} pointerEvents="none" />
       {st.kind === 'lens' && st.year ? <Text style={[s.year, { top: top + 70 }]}>{st.year}</Text> : null}
 
-      <View style={[s.words, { paddingBottom: bottom }]}>
+      <View style={s.words}>
+      <View style={[s.wordsIn, { paddingBottom: bottom }]}>
         <Text style={[s.eyebrow, st.here && s.eyebrowHere]} numberOfLines={1}>
           {st.eyebrow}
         </Text>
@@ -341,23 +361,24 @@ const StoryPage = memo(function StoryPage({
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
                 openWalkingDirections(st);
               }}
-              style={({ pressed }) => [s.primary, pressed && s.pressed]}
+              style={({ pressed }) => [s.primary, narrow && s.primaryNarrow, pressed && s.pressed]}
             >
-              <MaterialCommunityIcons name="navigation-variant" size={20} color={colors.ink} />
+              <MaterialCommunityIcons name="navigation-variant" size={narrow ? 18 : 20} color={colors.ink} />
               <Text style={s.primaryText}>{t('story.go')}</Text>
             </Pressable>
           ) : null}
           {st.place ? (
-            <Pressable accessibilityRole="button" accessibilityLabel={t('moment.listen')} onPress={() => onListen(st)} style={({ pressed }) => [s.round, pressed && s.pressed]}>
+            <Pressable accessibilityRole="button" accessibilityLabel={t('moment.listen')} onPress={() => onListen(st)} style={({ pressed }) => [s.round, narrow && s.roundNarrow, pressed && s.pressed]}>
               <MaterialCommunityIcons name="volume-high" size={22} color={colors.white} />
             </Pressable>
           ) : null}
-          <Pressable accessibilityRole="button" onPress={() => onOpen(st)} style={({ pressed }) => [s.ghost, pressed && s.pressed]}>
+          <Pressable accessibilityRole="button" onPress={() => onOpen(st)} style={({ pressed }) => [s.ghost, narrow && s.ghostNarrow, pressed && s.pressed]}>
             <Text style={s.ghostText} numberOfLines={1}>
               {st.kind === 'lens' ? t('story.seeThen') : st.kind === 'event' ? t('events.tickets') : t('moment.more')}
             </Text>
           </Pressable>
         </View>
+      </View>
       </View>
     </View>
   );
@@ -367,34 +388,41 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0E1330' },
   pressed: { transform: [{ scale: 0.97 }] },
   photo: { position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' },
+  photoClip: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' },
+  photoBlur: { transform: [{ scale: 1.15 }] },
+  photoDim: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(8,11,30,0.5)' },
+  // a strip as wide as the reading column, centred: the clock, the counter and the wish sit in it
+  colWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   eatBg: { backgroundColor: colors.brick, alignItems: 'center', justifyContent: 'center' },
   eatIcon: { transform: [{ rotate: '-12deg' }] },
   shadeTop: { position: 'absolute', left: 0, right: 0, top: 0, height: 200 },
   shadeBottom: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '65%' },
   year: { position: 'absolute', right: space.l, fontFamily: fonts.display, fontSize: 64, color: 'rgba(255,255,255,0.9)' },
-  words: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: space.l, gap: 10 },
+  words: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
+  wordsIn: { width: '100%', maxWidth: layout.column, paddingHorizontal: space.l, gap: 10 },
   eyebrow: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 1, color: 'rgba(255,255,255,0.85)', textTransform: 'uppercase' },
   eyebrowHere: { color: '#F2C66D' },
   title: { fontFamily: fonts.display, fontSize: 50, lineHeight: 52, color: colors.white },
   line: { fontFamily: fonts.body, fontSize: 18, lineHeight: 26, color: 'rgba(255,255,255,0.92)' },
-  actions: { flexDirection: 'row', alignItems: 'center', gap: space.s, marginTop: space.s },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: space.s, marginTop: space.s },
   primary: { flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 52, paddingHorizontal: 22, borderRadius: 26, backgroundColor: colors.white },
+  primaryNarrow: { gap: 6, paddingHorizontal: 16 },
+  roundNarrow: { width: 48, height: 48, borderRadius: 24 },
+  ghostNarrow: { paddingHorizontal: 14 },
   primaryText: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.ink },
   round: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.4)' },
   ghost: { minHeight: 52, paddingHorizontal: 18, borderRadius: 26, justifyContent: 'center', borderWidth: 1.5, borderColor: 'rgba(255,255,255,0.7)' },
   ghostText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.white },
-  head: { position: 'absolute', left: space.l, right: space.m, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  head: { width: '100%', maxWidth: layout.column, paddingLeft: space.l, paddingRight: space.m, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
   brand: { fontFamily: fonts.monoBold, fontSize: 12, letterSpacing: 1, color: colors.white },
   where: { fontFamily: fonts.display, fontSize: 26, color: colors.white, marginTop: 2 },
   headRight: { flexDirection: 'row', gap: space.s },
   headBtn: { width: 46, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(255,255,255,0.18)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)' },
-  progress: { position: 'absolute', left: space.l },
-  count: { fontFamily: fonts.monoBold, fontSize: 12, color: 'rgba(255,255,255,0.7)' },
+  progress: { width: '100%', maxWidth: layout.column, paddingLeft: space.l, alignItems: 'flex-start' },
+  count: { fontFamily: fonts.monoBold, fontSize: 14, color: colors.white, textShadowColor: 'rgba(8,11,30,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 5 },
   ask: {
-    position: 'absolute',
-    left: space.l,
-    right: space.l,
-    bottom: 24,
+    width: '100%',
+    maxWidth: layout.column - space.l * 2,
     minHeight: 58,
     borderRadius: 29,
     flexDirection: 'row',
@@ -403,5 +431,6 @@ const s = StyleSheet.create({
     gap: 10,
     backgroundColor: colors.brick,
   },
+  askWrap: { top: undefined, paddingHorizontal: space.l },
   askText: { fontFamily: fonts.bodyBold, fontSize: 17, color: colors.white },
 });

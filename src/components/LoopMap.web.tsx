@@ -2,18 +2,20 @@ import { createElement, useEffect, useRef } from 'react';
 import { View } from 'react-native';
 import { MAP_HTML } from './mapHtml';
 import type { LoopMapProps } from './LoopMap';
-import { MapHandlers, dispatchMapMessage, parseMapMessage } from './mapMessages';
+import { t } from '../i18n';
+import { MapHandlers, clampInset, dispatchMapMessage, insetMessage, parseMapMessage } from './mapMessages';
 import { useReducedMotion } from '../lib/useReducedMotion';
 
 const send = (frame: HTMLIFrameElement | null, payload: string) =>
   frame?.contentWindow?.postMessage(JSON.stringify({ type: 'data', payload: JSON.parse(payload) }), window.location.origin);
 
 // Web preview: same map document, hosted in an iframe instead of a WebView.
-export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, style, ...handlers }: LoopMapProps) {
+export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, bottomInset = 0, style, ...handlers }: LoopMapProps) {
   const calm = useReducedMotion();
   const frame = useRef<HTMLIFrameElement | null>(null);
   const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, calm });
   const latest = useRef(payload);
+  const inset = useRef(clampInset(bottomInset));
   const handlersRef = useRef<MapHandlers>(handlers);
 
   useEffect(() => {
@@ -24,6 +26,11 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTar
     latest.current = payload;
     send(frame.current, payload);
   }, [payload]);
+
+  useEffect(() => {
+    inset.current = clampInset(bottomInset);
+    frame.current?.contentWindow?.postMessage(insetMessage(inset.current), window.location.origin);
+  }, [bottomInset]);
 
   // A blob: document instead of srcDoc: the map never started inside an about:srcdoc frame.
   // Created and revoked in the same effect, so a remount (or Strict Mode) always gets a live URL.
@@ -38,7 +45,10 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTar
       if (!frame.current || e.source !== frame.current.contentWindow) return;
       const msg = parseMapMessage(e.data);
       if (!msg) return;
-      if (msg.type === 'ready') send(frame.current, latest.current);
+      if (msg.type === 'ready') {
+        send(frame.current, latest.current);
+        frame.current?.contentWindow?.postMessage(insetMessage(inset.current), window.location.origin);
+      }
       dispatchMapMessage(msg, handlersRef.current);
     };
     window.addEventListener('message', onMessage);
@@ -49,7 +59,9 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTar
     <View style={style}>
       {createElement('iframe', {
         ref: frame,
-        title: 'Map',
+        // the covered height reaches the document as soon as it exists, before the map is ready
+        onLoad: () => frame.current?.contentWindow?.postMessage(insetMessage(inset.current), window.location.origin),
+        title: t('map.frameTitle'),
         // aria-hidden alone doesn't stop the Tab key: a covered map also leaves the focus order
         tabIndex: inactive ? -1 : 0,
         'aria-hidden': inactive ? 'true' : undefined,

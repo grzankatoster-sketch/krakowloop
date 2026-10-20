@@ -46,3 +46,25 @@ export function dispatchMapMessage(msg: MapMessage, h: MapHandlers) {
   else if (msg.type === 'error') h.onError?.(msg.message);
   else h.onWarning?.(msg.message);
 }
+
+// ---- app -> map: how much of the map's bottom edge another view covers ---------------------------
+// The drawer on the map screen lies over the lower part of the map. The map document moves its
+// logo and attribution control up by this much, so they are never hidden (a licence requirement).
+
+export const MAX_INSET = 4000;
+
+/** a pixel count the map document will accept: finite, whole, between 0 and MAX_INSET */
+export function clampInset(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.min(MAX_INSET, Math.round(value));
+}
+
+/** the message the iframe (web preview) receives; the WebView calls window.__inset directly */
+export function insetMessage(px: unknown): string {
+  return JSON.stringify({ type: 'inset', value: clampInset(px) });
+}
+
+/** the script the WebView runs to hand the map the covered height */
+export function insetScript(px: unknown): string {
+  return `window.__inset && window.__inset(${clampInset(px)}); true;`;
+}

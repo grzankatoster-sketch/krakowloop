@@ -9,29 +9,6 @@ export function Eyebrow({ children, style }: { children: ReactNode; style?: Styl
   return <Text style={[s.eyebrow, style]}>{children}</Text>;
 }
 
-/** @param back false on the tab screens, where the tab bar is the way around */
-export function TopBar({ title, right, back = true }: { title: string; right?: ReactNode; back?: boolean }) {
-  const router = useRouter();
-  return (
-    <View style={s.bar}>
-      {back ? (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={t('ui.goBack')}
-        onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
-        style={({ pressed }) => [s.back, pressed && s.pressed]}
-      >
-        <Text style={s.backText}>{t('ui.back')}</Text>
-      </Pressable>
-      ) : null}
-      <Text style={s.barTitle} numberOfLines={1} accessibilityRole="header">
-        {title}
-      </Text>
-      <View style={s.barRight}>{right}</View>
-    </View>
-  );
-}
-
 export function Chip({
   label,
   active,
@@ -132,33 +109,64 @@ export function ScreenHeader({ title, eyebrow, right, back = true }: { title: st
 /**
  * A photo shown whole: its box takes the picture's own proportions (read when it loads), so nothing
  * is cut off. `ratio` is the width/height used until then. With `height`, the width follows instead.
+ * A tall photo in a full-width box would be taller than the screen (a portrait at 528 px wide is
+ * 700-800 px high): past `maxHeight` the box stops growing and the whole picture sits in it on a
+ * blurred, darkened copy of itself, still uncut.
  */
 export function Photo({
   source,
   ratio = 1.5,
   height,
+  maxHeight = 420,
   style,
   accessibilityLabel,
 }: {
   source: ImageSourcePropType;
   ratio?: number;
   height?: number;
+  maxHeight?: number;
   style?: StyleProp<ImageStyle>;
   accessibilityLabel?: string;
 }) {
   const [aspect, setAspect] = useState(ratio);
+  const [boxW, setBoxW] = useState(0);
+  const onLoad = (e: { nativeEvent: unknown }) => {
+    const src = (e.nativeEvent as { source?: { width?: number; height?: number } }).source;
+    if (src?.width && src?.height) setAspect(src.width / src.height);
+  };
+  if (height) {
+    return (
+      <Image
+        source={source}
+        resizeMode="cover"
+        accessibilityLabel={accessibilityLabel}
+        accessibilityIgnoresInvertColors
+        onLoad={onLoad}
+        style={[{ height, width: Math.round(height * aspect) }, { backgroundColor: colors.line }, style]}
+      />
+    );
+  }
+  const capped = boxW > 0 && boxW / aspect > maxHeight;
   return (
-    <Image
-      source={source}
-      resizeMode="cover"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityIgnoresInvertColors
-      onLoad={(e) => {
-        const src = (e.nativeEvent as { source?: { width?: number; height?: number } }).source;
-        if (src?.width && src?.height) setAspect(src.width / src.height);
-      }}
-      style={[height ? { height, width: Math.round(height * aspect) } : { width: '100%', aspectRatio: aspect }, { backgroundColor: colors.line }, style]}
-    />
+    <View
+      onLayout={(e) => setBoxW(e.nativeEvent.layout.width)}
+      style={[{ width: '100%', backgroundColor: colors.line, overflow: 'hidden' }, capped ? { height: maxHeight } : { aspectRatio: aspect }, style as StyleProp<ViewStyle>]}
+    >
+      {capped ? (
+        <>
+          <Image source={source} resizeMode="cover" blurRadius={24} style={StyleSheet.absoluteFill} accessible={false} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.35)' }]} />
+        </>
+      ) : null}
+      <Image
+        source={source}
+        resizeMode={capped ? 'contain' : 'cover'}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityIgnoresInvertColors
+        onLoad={onLoad}
+        style={StyleSheet.absoluteFill}
+      />
+    </View>
   );
 }
 

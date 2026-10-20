@@ -4,20 +4,26 @@ import { WebView, WebViewMessageEvent } from 'react-native-webview';
 import { APP } from '../config/city';
 import { openLink } from '../lib/openLink';
 import { MAP_HTML, MapPayload } from './mapHtml';
-import { MapHandlers, dispatchMapMessage, parseMapMessage } from './mapMessages';
+import { MapHandlers, clampInset, dispatchMapMessage, insetScript, parseMapMessage } from './mapMessages';
 import { useReducedMotion } from '../lib/useReducedMotion';
 
 export interface LoopMapProps extends MapPayload, MapHandlers {
   style?: StyleProp<ViewStyle>;
   /** covered by another view: hidden from screen readers and keyboard focus */
   inactive?: boolean;
+  /**
+   * px of the map's bottom edge that another view covers (a drawer): the map's logo and attribution
+   * control sit above it, so they are never hidden. Default 0, as before.
+   */
+  bottomInset?: number;
 }
 
-export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, style, ...handlers }: LoopMapProps) {
+export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, inactive, bottomInset = 0, style, ...handlers }: LoopMapProps) {
   const calm = useReducedMotion();
   const ref = useRef<WebView>(null);
   const payload = JSON.stringify({ points, route, selectedId, fit, fitKey, fitTarget, focus, threeD, calm });
   const latest = useRef(payload);
+  const inset = useRef(clampInset(bottomInset));
   const handlersRef = useRef<MapHandlers>(handlers);
 
   useEffect(() => {
@@ -29,11 +35,19 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTar
     ref.current?.injectJavaScript(`window.__apply && window.__apply(${payload}); true;`);
   }, [payload]);
 
+  useEffect(() => {
+    inset.current = clampInset(bottomInset);
+    ref.current?.injectJavaScript(insetScript(inset.current));
+  }, [bottomInset]);
+
   const onMessage = (e: WebViewMessageEvent) => {
     const msg = parseMapMessage(e.nativeEvent.data);
     if (__DEV__) console.log('MAP', String(e.nativeEvent.data).slice(0, 200));
     if (!msg) return;
-    if (msg.type === 'ready') ref.current?.injectJavaScript(`window.__apply(${latest.current}); true;`);
+    if (msg.type === 'ready') {
+      ref.current?.injectJavaScript(`window.__apply(${latest.current}); true;`);
+      ref.current?.injectJavaScript(insetScript(inset.current));
+    }
     dispatchMapMessage(msg, handlersRef.current);
   };
 
@@ -46,6 +60,8 @@ export default function LoopMap({ points, route, selectedId, fit, fitKey, fitTar
       originWhitelist={['*']}
       source={{ html: MAP_HTML, baseUrl: APP.webViewBaseUrl }}
       onMessage={onMessage}
+      // the covered height reaches the document as soon as it exists, before the map is ready
+      onLoadEnd={() => ref.current?.injectJavaScript(insetScript(inset.current))}
       onError={(e) => handlersRef.current.onError?.(e.nativeEvent.description)}
       // The map document itself loads here; links inside it (attribution, logo) open in the browser.
       onShouldStartLoadWithRequest={(req) => {

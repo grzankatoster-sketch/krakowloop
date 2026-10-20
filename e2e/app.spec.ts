@@ -383,7 +383,7 @@ test.describe('planner', () => {
   test('a wish written in the traveller’s own words sets the plan up', async ({ page }) => {
     await page.goto('/plan');
     await page.getByRole('button', { name: 'Set the details first' }).click();
-    await page.getByLabel('Tell us what you would like').fill('two calm days, quads and a shooting range, good dinners, we do not want to walk much');
+    await page.getByLabel('What would you like?').fill('two calm days, quads and a shooting range, good dinners, we do not want to walk much');
     // the note says who reads it: the phone, or (with a proxy in .env) the language model behind it
     await expect(page.getByText(/^Read on your phone, nothing is sent anywhere\.$|^Your words go to our server/)).toBeVisible();
     await page.getByRole('button', { name: 'Read my wish' }).click();
@@ -407,7 +407,7 @@ test.describe('planner', () => {
   test('a wish the app cannot read changes nothing and says so', async ({ page }) => {
     await page.goto('/plan');
     await page.getByRole('button', { name: 'Set the details first' }).click();
-    await page.getByLabel('Tell us what you would like').fill('surprise me completely');
+    await page.getByLabel('What would you like?').fill('surprise me completely');
     await page.getByRole('button', { name: 'Read my wish' }).click();
     await expect(page.getByText('Nothing in there matched what the app can do. Choose below instead.')).toBeVisible();
     await expect(page.getByRole('button', { name: '2 days' })).toHaveAttribute('aria-pressed', 'true');
@@ -500,15 +500,73 @@ test.describe('planner', () => {
     await expect(page.getByText(changed, { exact: true })).toBeVisible();
   });
 
-  test('skipping a stop rebuilds the plan and can be undone', async ({ page }) => {
+  test('skipping a stop takes it out of the plan and can be undone', async ({ page }) => {
     await page.goto(MONDAY_PLAN);
-    const firstSkip = page.getByRole('button', { name: /^Skip / }).first();
-    const skipped = ((await firstSkip.getAttribute('aria-label')) ?? '').replace(/^Skip /, '');
+    const firstSkip = page.getByRole('button', { name: /^Skip this stop: / }).first();
+    const skipped = ((await firstSkip.getAttribute('aria-label')) ?? '').replace(/^Skip this stop: /, '');
     await firstSkip.click();
     await expect(page).toHaveURL(/skip=/);
-    await expect(page.getByRole('button', { name: `Skip ${skipped}` })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: `Skip this stop: ${skipped}` })).toHaveCount(0);
     await page.getByRole('button', { name: 'Bring back skipped (1)' }).click();
-    await expect(page.getByRole('button', { name: `Skip ${skipped}` })).toBeVisible();
+    await expect(page.getByRole('button', { name: `Skip this stop: ${skipped}` })).toBeVisible();
+  });
+
+  test('editing the plan keeps the chosen day', async ({ page }) => {
+    await page.goto(MONDAY_PLAN);
+    const day3 = page.getByRole('button', { name: 'Day 3 · Wed 14 Oct' });
+    await day3.click();
+    await expect(day3).toHaveAttribute('aria-selected', 'true');
+    // a meal, a skipped stop and another shuffle all rebuild the plan: none of them goes back to day 1
+    await page.getByRole('button', { name: /Lunch$/ }).click();
+    await expect(page).toHaveURL(/meals=/);
+    await expect(day3).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: /^Skip / }).last().click();
+    await expect(page).toHaveURL(/skip=/);
+    await expect(day3).toHaveAttribute('aria-selected', 'true');
+    await page.getByRole('button', { name: 'Show me another plan' }).click();
+    await expect(page).toHaveURL(/seed=/);
+    await expect(day3).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('the chosen day survives a reload, and other days or a new date go back to day 1', async ({ page }) => {
+    await page.goto(MONDAY_PLAN);
+    await page.getByRole('button', { name: 'Day 3 · Wed 14 Oct' }).click();
+    await expect(page.getByRole('button', { name: 'Day 3 · Wed 14 Oct' })).toHaveAttribute('aria-selected', 'true');
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Day 3 · Wed 14 Oct' })).toHaveAttribute('aria-selected', 'true');
+    // two days from the same date is another trip: it starts on its first day
+    await page.goto('/plan?days=2&pace=steady&likes=history,museums&trips=1&date=2026-10-12');
+    await expect(page.getByRole('button', { name: 'Day 1 · Mon 12 Oct' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  test('a place marked as been to stays marked when another stop is skipped', async ({ page }) => {
+    await page.goto(MONDAY_PLAN);
+    const first = page.getByRole('checkbox', { name: /^Been to / }).first();
+    const name = ((await first.getAttribute('aria-label')) ?? '').replace(/^Been to /, '');
+    await first.click();
+    await expect(first).toHaveAttribute('aria-checked', 'true');
+    const lastSkip = page.getByRole('button', { name: /^Skip / }).last();
+    expect(await lastSkip.getAttribute('aria-label')).not.toBe(`Skip this stop: ${name}`);
+    await lastSkip.click();
+    await expect(page).toHaveURL(/skip=/);
+    await expect(page.getByRole('checkbox', { name: `Been to ${name}` })).toHaveAttribute('aria-checked', 'true');
+    // and it is kept for the plan: a reload of the same plan still shows it
+    await page.reload();
+    await expect(page.getByRole('checkbox', { name: `Been to ${name}` })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  test('coming back to the plan tab shows the plan again', async ({ page }) => {
+    // on the plan's first day: a trip that is over is not put back (planStore)
+    await page.clock.setFixedTime(new Date('2026-10-12T09:00:00+02:00'));
+    await page.goto(MONDAY_PLAN);
+    await expect(page.getByText(SUMMARY, { exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Discover', exact: true }).click();
+    await page.getByRole('tab', { name: 'My plan', exact: true }).click();
+    await expect(page.getByText(SUMMARY, { exact: true })).toBeVisible();
+    await expect(page.getByText('How many days do you have?')).toHaveCount(0);
+    // the same on a fresh visit to /plan: the kept plan, not the question
+    await page.goto('/plan');
+    await expect(page.getByText(SUMMARY, { exact: true })).toBeVisible();
   });
 
   test('a broken date in a link is ignored instead of crashing', async ({ page }) => {

@@ -7,12 +7,15 @@ import MaterialCommunityIcons from '@expo/vector-icons/MaterialCommunityIcons';
 import { useStatusBarOnFocus } from '../../src/lib/useStatusBarOnFocus';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { ScreenHeader } from '../../src/components/ui';
-import { lensName, lensWhere } from '../../src/components/placeName';
+import { lensCaption, lensName, lensWhere } from '../../src/components/placeName';
 import { ReconBadge } from '../../src/components/ReconBadge';
 import { LensLayer, LensPoint, cameraProblem, firstShown, lensById } from '../../src/data/lens';
 import { openLink } from '../../src/lib/openLink';
 import { t } from '../../src/i18n';
-import { colors, fonts, space } from '../../src/theme';
+import { colors, fonts, layout, space } from '../../src/theme';
+
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../../src/components/ScreenError';
 
 export default function LensScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -67,6 +70,8 @@ function LensViewer({ point }: { point: LensPoint }) {
   const photos = point.layers.filter((l) => l.kind === 'photo');
   const artworks = point.layers.filter((l) => l.kind === 'artwork');
   const today = point.reference;
+  // captions and credits in the reader's language; names, years and licences are untouched (src/data/lensText.ts)
+  const caption = (l: { key?: string; title: string; credit: string }) => lensCaption(point, l);
   const [shown, setShown] = useState(() => firstShown(point));
   const [permission, requestPermission] = useCameraPermissions();
   const [cameraWanted, setCameraWanted] = useState(false);
@@ -79,13 +84,16 @@ function LensViewer({ point }: { point: LensPoint }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width, height: screenH } = useWindowDimensions();
+  // a computer window: the picture and the text share one centred column instead of a banner across 1200 px
+  const frameW = Math.min(width, layout.column);
+  const wide = width > layout.column;
   // room for the back button, then the picture at about its own shape: an old photo is never cropped
-  const frameH = Math.round(Math.min(screenH * 0.62, insets.top + 56 + width * 0.8));
+  const frameH = wide ? Math.round(frameW * 0.75) : Math.round(Math.min(screenH * 0.62, insets.top + 56 + frameW * 0.8));
   const pager = useRef<FlatList<{ key: string; label: string }>>(null);
 
   const current: LensLayer | undefined = photos.find((p) => p.key === shown);
   const choices = [...photos.map((p) => ({ key: p.key, label: p.year })), ...(today ? [{ key: 'today', label: t('lens.today') }] : [])];
-  const layerOf = (key: string): Pick<LensLayer, 'image' | 'title' | 'credit' | 'license' | 'sourceUrl' | 'reconstruction'> | undefined => (key === 'today' ? today : photos.find((p) => p.key === key));
+  const layerOf = (key: string): Pick<LensLayer, 'image' | 'title' | 'credit' | 'license' | 'sourceUrl' | 'reconstruction'> & { key?: string } | undefined => (key === 'today' ? today : photos.find((p) => p.key === key));
   // the pictures are swiped like pages; the years under them follow, and a tap on a year turns the page
   const [onViewable] = useState(() => ({ viewableItems }: { viewableItems: ViewToken[] }) => {
     const key = (viewableItems[0]?.item as { key: string } | undefined)?.key;
@@ -133,7 +141,7 @@ function LensViewer({ point }: { point: LensPoint }) {
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + space.xl }}>
         {/* the pictures, the whole width of the phone: swipe through the years */}
         {choices.length ? (
-          <View style={{ height: frameH, backgroundColor: '#000' }}>
+          <View style={{ height: frameH, width: frameW, alignSelf: 'center', backgroundColor: '#000', ...(wide ? { marginTop: space.m, borderRadius: 24, overflow: 'hidden' as const } : null) }}>
             <FlatList
               ref={pager}
               data={choices}
@@ -142,28 +150,33 @@ function LensViewer({ point }: { point: LensPoint }) {
               pagingEnabled
               showsHorizontalScrollIndicator={false}
               initialScrollIndex={startIndex}
-              getItemLayout={(_d, i) => ({ length: width, offset: width * i, index: i })}
+              getItemLayout={(_d, i) => ({ length: frameW, offset: frameW * i, index: i })}
               onViewableItemsChanged={onViewable}
               viewabilityConfig={{ itemVisiblePercentThreshold: 60 }}
               renderItem={({ item }) => {
                 const layer = layerOf(item.key);
                 return (
-                  <View style={{ width, height: frameH, paddingTop: insets.top + 56 }}>
-                    {layer ? <Image source={layer.image} style={s.fill} resizeMode="contain" accessibilityLabel={layer.title} /> : null}
+                  <View style={{ width: frameW, height: frameH, paddingTop: wide ? 0 : insets.top + 56 }}>
+                    {layer ? <Image source={layer.image} style={s.fill} resizeMode="contain" accessibilityLabel={caption(layer).title} /> : null}
                   </View>
                 );
               }}
             />
-            <View style={s.bigYearBox} pointerEvents="none">
-              <ReconBadge show={current?.reconstruction ?? (!current && today?.reconstruction)} />
-              <Text style={s.bigYearText}>{current ? current.year : t('lens.today')}</Text>
-            </View>
           </View>
         ) : (
           <View style={{ height: insets.top + 64 }} />
         )}
 
         <View style={s.col}>
+          {/* the year and what kind of picture it is, under the picture: never on the edge of it */}
+          {choices.length ? (
+            <View style={s.yearHead}>
+              <Text style={s.bigYearText}>{current ? current.year : t('lens.today')}</Text>
+              <View>
+                <ReconBadge show={current?.reconstruction ?? (!current && today?.reconstruction)} />
+              </View>
+            </View>
+          ) : null}
           {choices.length > 1 ? (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.years}>
               {choices.map((c) => {
@@ -188,7 +201,7 @@ function LensViewer({ point }: { point: LensPoint }) {
             {lensName(point)}
           </Text>
           <Text style={s.where}>{t('lens.standAt', { where: lensWhere(point) })}</Text>
-          {shownLayer ? <Credit title={shownLayer.title} credit={shownLayer.credit} license={shownLayer.license} url={shownLayer.sourceUrl} made={shownLayer.reconstruction} /> : null}
+          {shownLayer ? <Credit title={caption(shownLayer).title} credit={caption(shownLayer).credit} license={shownLayer.license} url={shownLayer.sourceUrl} made={shownLayer.reconstruction} /> : null}
 
           {overlay ? (
             <View style={s.section}>
@@ -208,7 +221,7 @@ function LensViewer({ point }: { point: LensPoint }) {
                       }}
                     />
                     {showOld ? (
-                      <Image source={overlay.image} style={s.cameraOverlay} resizeMode="contain" accessibilityLabel={overlay.title} />
+                      <Image source={overlay.image} style={s.cameraOverlay} resizeMode="contain" accessibilityLabel={caption(overlay).title} />
                     ) : null}
                   </View>
                   <View style={s.row}>
@@ -251,11 +264,11 @@ function LensViewer({ point }: { point: LensPoint }) {
               <Text style={s.line}>{t('lens.artistLine')}</Text>
               {artworks.map((a) => (
                 <View key={a.key} style={s.card}>
-                  <Image source={a.image} style={s.artwork} resizeMode="contain" accessibilityLabel={a.title} />
+                  <Image source={a.image} style={s.artwork} resizeMode="contain" accessibilityLabel={caption(a).title} />
                   <Text style={s.cardTitle}>
-                    {a.year} · {a.title}
+                    {a.year} · {caption(a).title}
                   </Text>
-                  <Credit title={t('lens.source')} credit={a.credit} license={a.license} url={a.sourceUrl} />
+                  <Credit title={t('lens.source')} credit={caption(a).credit} license={a.license} url={a.sourceUrl} />
                 </View>
               ))}
             </View>
@@ -268,7 +281,7 @@ function LensViewer({ point }: { point: LensPoint }) {
         accessibilityLabel={t('ui.back')}
         onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))}
         hitSlop={8}
-        style={({ pressed }) => [s.back, { top: insets.top + 6 }, pressed && s.pressed]}
+        style={({ pressed }) => [s.back, { top: insets.top + 6 + (wide ? space.m : 0), left: wide ? Math.round((width - frameW) / 2) + space.m : space.m }, pressed && s.pressed]}
       >
         <MaterialCommunityIcons name="chevron-left" size={30} color={colors.white} />
       </Pressable>
@@ -281,9 +294,9 @@ const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: '#0E1330' },
   fill: { width: '100%', height: '100%' },
   pressed: { transform: [{ scale: 0.97 }], opacity: 0.92 },
-  bigYearBox: { position: 'absolute', left: space.l, bottom: space.m, gap: 4 },
-  bigYearText: { fontFamily: fonts.display, fontSize: 72, lineHeight: 76, color: colors.white, textShadowColor: 'rgba(0,0,0,0.6)', textShadowRadius: 12 },
-  col: { width: '100%', maxWidth: 620, alignSelf: 'center', paddingHorizontal: space.l, gap: space.m, marginTop: space.m },
+  yearHead: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: space.m, rowGap: space.xs },
+  bigYearText: { fontFamily: fonts.display, fontSize: 56, lineHeight: 60, color: colors.white },
+  col: { width: '100%', maxWidth: layout.column, alignSelf: 'center', paddingHorizontal: space.l, gap: space.m, marginTop: space.m },
   title: { fontFamily: fonts.display, fontSize: 36, lineHeight: 40, color: colors.white, marginTop: space.s },
   where: { fontFamily: fonts.body, fontSize: 17, lineHeight: 24, color: 'rgba(255,255,255,0.85)' },
   years: { gap: space.s },

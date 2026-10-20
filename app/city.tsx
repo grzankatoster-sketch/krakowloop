@@ -8,6 +8,9 @@ import type { StringKey } from '../src/i18n/en';
 import { openLink } from '../src/lib/openLink';
 import { colors, fonts, space } from '../src/theme';
 
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../src/components/ScreenError';
+
 /**
  * What Kraków is known for: seven things, each in a picture and two sentences. Topics and images
  * chosen with Codex (22.09.2026); every image is one the app already carries with its licence, and
@@ -23,8 +26,13 @@ const TOPICS: { key: string; photo?: string; place?: string }[] = [
   { key: 'szopki' },
 ];
 
+// every topic's facts have a source here (checked 19.10.2026)
 const SOURCES: { label: string; url: string }[] = [
+  { label: 'Wikipedia: Coronations in Poland (Wawel, 1320 to 1734)', url: 'https://en.wikipedia.org/wiki/Coronations_in_Poland' },
+  { label: 'Wikipedia: Wawel Cathedral (royal burials)', url: 'https://en.wikipedia.org/wiki/Wawel_Cathedral' },
   { label: 'UNESCO World Heritage List: Historic Centre of Kraków', url: 'https://whc.unesco.org/en/list/29' },
+  { label: 'Wikipedia: Hejnał mariacki', url: 'https://en.wikipedia.org/wiki/Hejna%C5%82_mariacki' },
+  { label: 'Wikipedia: Synagogues of Kraków (the seven of Kazimierz)', url: 'https://en.wikipedia.org/wiki/Synagogues_of_Krak%C3%B3w' },
   { label: 'UNESCO: Nativity scene (szopka) tradition in Kraków, 2018', url: 'https://ich.unesco.org/en/decisions/13.COM/10.B.29' },
   { label: 'Wawel Royal Castle: Looking for the dragon', url: 'https://wawel.krakow.pl/en/route/looking-for-the-dragon' },
   { label: 'Kraków culinary heritage: obwarzanek', url: 'https://culinary.krakow.pl/culinary_heritage/224845,2072,komunikat,obwarzanek_-_the_round_symbol_of_krakow.html' },
@@ -68,7 +76,7 @@ export default function City() {
           ))}
           <Text style={s.sourcesTitle}>{t('city.sources')}</Text>
           {SOURCES.map((src) => (
-            <Pressable key={src.url} accessibilityRole="link" onPress={() => openLink(src.url)} hitSlop={6}>
+            <Pressable key={src.url} accessibilityRole="link" onPress={() => openLink(src.url)} style={{ minHeight: 44, justifyContent: 'center' }}>
               <Text style={s.source}>{src.label}</Text>
             </Pressable>
           ))}

@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { AccessibilityInfo, findNodeHandle, LayoutChangeEvent, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ScreenHeader } from '../src/components/ui';
-import { lensName, placeName } from '../src/components/placeName';
+import { lensCaption, lensName, placeName } from '../src/components/placeName';
 import { MAP_PROVIDER } from '../src/components/mapHtml';
 import { AFFILIATE_NOTE } from '../src/config/affiliates';
 import { LANDMARKS_3D_CREDIT } from '../src/data/landmarks3d';
@@ -17,6 +17,9 @@ import { TRANSIT_FEED_VERSION } from '../src/lib/transit';
 import { t } from '../src/i18n';
 import { colors, fonts, space } from '../src/theme';
 
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../src/components/ScreenError';
+
 interface Credit {
   key: string;
   title: string;
@@ -27,11 +30,11 @@ interface Credit {
 
 const LENS_CREDITS: Credit[] = lensPoints.flatMap((p) => [
   ...(p.reference
-    ? [{ key: `${p.id}-ref`, title: t('about.today', { name: lensName(p) }), credit: p.reference.credit, license: p.reference.license, url: p.reference.sourceUrl }]
+    ? [{ key: `${p.id}-ref`, title: t('about.today', { name: lensName(p) }), credit: lensCaption(p, p.reference).credit, license: p.reference.license, url: p.reference.sourceUrl }]
     : []),
   ...p.layers
     .filter((l) => l.image)
-    .map((l) => ({ key: l.key, title: l.title, credit: l.credit, license: l.license, url: l.sourceUrl })),
+    .map((l) => ({ key: l.key, title: lensCaption(p, l).title, credit: lensCaption(p, l).credit, license: l.license, url: l.sourceUrl })),
 ]);
 
 const PLACE_CREDITS: Credit[] = Object.entries(PLACE_MEDIA)
@@ -72,7 +75,7 @@ function Section({
 
 function Link({ label, url }: { label: string; url: string }) {
   return (
-    <Pressable accessibilityRole="link" onPress={() => openLink(url)}>
+    <Pressable accessibilityRole="link" onPress={() => openLink(url)} style={s.linkHit}>
       <Text style={s.link}>{label}</Text>
     </Pressable>
   );
@@ -217,16 +220,18 @@ const s = StyleSheet.create({
   scroll: { paddingBottom: space.xl },
   col: { width: '100%', maxWidth: 560, alignSelf: 'center', paddingHorizontal: space.m },
   jumps: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.s },
-  jump: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: 999, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
+  jump: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 999, backgroundColor: colors.paper, borderWidth: 1, borderColor: colors.line },
   jumpText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   section: { marginTop: space.l, gap: space.s },
   h2: { fontFamily: fonts.bodyBold, fontSize: 19, color: colors.ink },
   p: { fontFamily: fonts.body, fontSize: 15, lineHeight: 22, color: colors.ink },
   link: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.vistula },
+  // a text link is short; its touch area is a full finger high (44 pt)
+  linkHit: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
   group: { backgroundColor: colors.paper, borderRadius: 12, borderWidth: 1, borderColor: colors.line, paddingHorizontal: space.m },
   groupHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12 },
   groupTitle: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink },
-  credit: { paddingBottom: space.s },
+  credit: { paddingBottom: space.s, minHeight: 44, justifyContent: 'center' },
   creditTitle: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
   creditLine: { fontFamily: fonts.body, fontSize: 15, color: colors.mute },
 });

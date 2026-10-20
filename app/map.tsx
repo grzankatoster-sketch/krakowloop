@@ -11,6 +11,7 @@ import {
   Text,
   TextInput,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as ExpoLinking from 'expo-linking';
@@ -24,7 +25,7 @@ import { CompareSheet } from '../src/components/CompareSheet';
 import LoopMap from '../src/components/LoopMap';
 import type { MapPoint } from '../src/components/mapHtml';
 import { Button, Chip, Eyebrow } from '../src/components/ui';
-import { stay22Link } from '../src/config/affiliates';
+import { AFFILIATE_NOTE, stay22Link } from '../src/config/affiliates';
 import { CITY } from '../src/config/city';
 import { CATEGORY_COLOR } from '../src/data/categoryColor';
 import { CuisineKey } from '../src/data/cuisines';
@@ -32,7 +33,7 @@ import { FOOD_INFO } from '../src/data/foodInfo';
 import { lensPoints } from '../src/data/lens';
 import { PLACE_MEDIA } from '../src/data/placeMedia';
 import { CATEGORY_LABEL, Category, Experience, ZONE_LABEL, experiences, places } from '../src/data/places';
-import { RESTAURANTS, Restaurant, cuisineCounts, restaurantById, restaurantHoursOn } from '../src/data/restaurants';
+import { RESTAURANTS, Restaurant, cuisineCounts, restaurantById, restaurantHoursNextDay, restaurantHoursOn } from '../src/data/restaurants';
 import { STAYS, Stay } from '../src/data/stays';
 import { krakowWallClock } from '../src/lib/cityTime';
 import {
@@ -63,13 +64,16 @@ import { shareLink } from '../src/lib/share';
 import { openLink, safeWebUrl } from '../src/lib/openLink';
 import { nextOpening, nextOpeningLabel, openState, statusLabel } from '../src/lib/openNow';
 import { BUS_STOP_LIST, TRAM_STOPS } from '../src/lib/transit';
-import { placeName } from '../src/components/placeName';
+import { lensName, placeName } from '../src/components/placeName';
 import { useMyLocation } from '../src/lib/useMyLocation';
 import { useReducedMotion } from '../src/lib/useReducedMotion';
 import { readWishAnywhere, warmWishProxy } from '../src/lib/wishProxy';
 import { t } from '../src/i18n';
 import type { StringKey } from '../src/i18n/en';
-import { colors, fonts, space } from '../src/theme';
+import { colors, fonts, layout, space } from '../src/theme';
+
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../src/components/ScreenError';
 
 const ME = '__me';
 const LENS_PREFIX = 'lens:';
@@ -95,7 +99,7 @@ const LENS_MARKERS: MapPoint[] = lensPoints.filter((l) => l.onMap !== false).map
   kind: 'lens',
   glyph: 'lens',
   rank: 3,
-  label: t('map.lensPin', { name: l.name }),
+  label: t('map.lensPin', { name: lensName(l) }),
 }));
 const STOP_MARKERS: MapPoint[] = [
   ...TRAM_STOPS.map(([name, lat, lon], i): MapPoint => ({ id: `stop:t${i}`, lat, lon, color: colors.ink, kind: 'stop', label: name })),
@@ -142,7 +146,7 @@ function restaurantMinutesLeft(r: Restaurant): number | null {
   const now = nowInKrakow();
   const h = restaurantHoursOn(r, new Date());
   if (!h) return null;
-  const st = openState(h, now.minutes);
+  const st = openState(h, now.minutes, restaurantHoursNextDay(r, new Date()));
   return st.state === 'open' ? st.closesAt - now.minutes : null;
 }
 
@@ -154,7 +158,7 @@ function restaurantOpen(r: Restaurant): boolean | null {
 }
 
 /** An activity's name or note in the app language (i18n exp.<id>.*), the English original otherwise. */
-function expText(id: string, field: 'name' | 'note', fallback: string): string {
+function expText(id: string, field: 'name' | 'note' | 'season', fallback: string): string {
   const key = `exp.${id}.${field}` as StringKey;
   const v = t(key);
   return v && v !== key ? v : fallback;
@@ -215,10 +219,23 @@ export default function DiscoverScreen() {
   const [areaH, setAreaH] = useState(0);
   const [topH, setTopH] = useState(0);
   const [snap, setSnap] = useState<0 | 1 | 2>(0);
+  // On a wide window (the web preview on a computer) the question, the doors and the drawer sit in
+  // one centred column and the map shows on both sides; on a phone the column is the screen.
+  const { width: winW } = useWindowDimensions();
+  const side = Math.max(space.m, Math.round((winW - layout.column) / 2));
+  const wide = side > space.m;
+  // the logo (about 90 px) and (i) sit in the map's bottom corners: only margins this wide leave them
+  // free beside a centred drawer; a narrower window lifts them above the drawer as on a phone
+  const roomy = side >= 110;
   const heights = useMemo(() => {
-    const full = Math.max(260, areaH - topH - space.s);
+    // A full drawer still leaves a strip of map under the question, wide enough for the map's logo
+    // and attribution (Mapbox and OSM terms: always visible); in a column they stay clear at the sides.
+    const full = Math.max(260, areaH - topH - space.s - (roomy ? 0 : LOGO_STRIP));
     return [Math.min(176, full), Math.min(Math.round(areaH * 0.52), full), full] as const;
-  }, [areaH, topH]);
+  }, [areaH, topH, roomy]);
+  // What the drawer (and the "near me" button riding on its edge) covers of the map's bottom edge:
+  // the map keeps its logo and attribution above it, in every drawer state.
+  const mapInset = roomy ? 0 : heights[snap] + (snap < 2 ? NEAR_ME_CLEAR : 0);
   // The sheet is always full height, pushed down: at peek or half, its bottom part is off the screen.
   // Lists end that much higher (plus the home indicator), so their last rows can still be scrolled to.
   const insets = useSafeAreaInsets();
@@ -267,7 +284,7 @@ export default function DiscoverScreen() {
   const seeRows = useMemo(() => {
     const q = fold(nameQuery.trim());
     return byDistance(
-      places.filter((p) => seeCats.has(p.cat) && (!q || fold(`${p.name} ${p.local ?? ''}`).includes(q))),
+      places.filter((p) => seeCats.has(p.cat) && (!q || fold(`${p.name} ${p.local ?? ''} ${placeName(p)}`).includes(q))),
       // nearest to the traveller, or to the Main Square: never alphabetical, which put a day trip third
       origin,
     );
@@ -302,7 +319,7 @@ export default function DiscoverScreen() {
 
   const nightPlaces = useMemo(() => {
     const q = fold(nameQuery.trim());
-    return places.filter((p) => p.cat === 'night' && (!q || fold(`${p.name} ${p.local ?? ''}`).includes(q)));
+    return places.filter((p) => p.cat === 'night' && (!q || fold(`${p.name} ${p.local ?? ''} ${placeName(p)}`).includes(q)));
   }, [nameQuery]);
   const doList = useMemo(() => {
     const q = fold(nameQuery.trim());
@@ -564,6 +581,18 @@ export default function DiscoverScreen() {
       </ScrollView>
     ) : null;
 
+  // "Found: 91" with the number in bold, and the order of the list on a line of its own
+  const [countBefore, countAfter = ''] = t('discover.count', { n: '' }).split('');
+  const countParts = { before: countBefore, n: String(count), after: countAfter };
+  const orderNote =
+    mode === 'eat' && eatSort !== 'near'
+      ? t(`discover.sort.${eatSort}` as StringKey)
+      : mode !== 'do'
+        ? here
+          ? t('discover.fromYou')
+          : t('discover.fromRynek')
+        : '';
+
   const header = (
     <View>
       {filterRow}
@@ -583,15 +612,15 @@ export default function DiscoverScreen() {
         </Text>
       ) : null}
       <View style={s.countRow}>
-        <Text style={s.count} accessibilityLiveRegion="polite">
-          {t('discover.count', { n: count })}
+        <View style={s.countText} accessibilityLiveRegion="polite">
+          <Text style={s.count}>
+            {countParts.before}
+            <Text style={s.countNum}>{countParts.n}</Text>
+            {countParts.after}
+          </Text>
           {/* the line says the order the list is in: nearest first, or the sort chosen for food */}
-          {mode === 'eat' && eatSort !== 'near'
-            ? ` · ${t(`discover.sort.${eatSort}` as StringKey)}`
-            : mode !== 'do'
-              ? ` · ${here ? t('discover.fromYou') : t('discover.fromRynek')}`
-              : ''}
-        </Text>
+          {orderNote ? <Text style={s.countOrder}>{orderNote}</Text> : null}
+        </View>
         {/* on the line under the filters, always in view: at the end of the sort row it sat off screen */}
         {mode === 'eat' ? (
           <Pressable accessibilityRole="button" accessibilityLabel={t('discover.shareFilters')} onPress={shareEat} hitSlop={6} style={({ pressed }) => [s.shareBtn, pressed && { opacity: 0.6 }]}>
@@ -606,7 +635,8 @@ export default function DiscoverScreen() {
             label={t('discover.stay.search')}
             onPress={() => openLink(stay22Link({ lat: origin.lat, lon: origin.lon }).url)}
           />
-          <Text style={s.fine}>{t('discover.stay.searchNote')}</Text>
+          {/* "partner link" only when it is one: without a Stay22 id the link earns nothing */}
+          {stay22Link({ lat: origin.lat, lon: origin.lon }).affiliate ? <Text style={s.fine}>{t('discover.stay.searchNote')}</Text> : null}
         </View>
       ) : null}
     </View>
@@ -761,7 +791,7 @@ export default function DiscoverScreen() {
             e.kind ? t(`exp.kind.${e.kind}` as StringKey) : null,
             e.minutes ? t('discover.do.minutes', { h: Math.round((e.minutes / 60) * 10) / 10 }) : null,
             e.pickup ? t('discover.do.pickup') : null,
-            e.season ?? null,
+            e.season ? expText(e.id, 'season', e.season) : null,
           ].filter(Boolean);
           return (
             <View style={s.expCard}>
@@ -769,6 +799,8 @@ export default function DiscoverScreen() {
               {meta.length ? <Eyebrow>{meta.join(' · ')}</Eyebrow> : null}
               <Text style={s.expNote}>{expText(e.id, 'note', e.note)}</Text>
               <Button label={t('discover.do.book')} kind="quiet" onPress={() => openLink(e.booking.url)} />
+              {/* a link that may earn a commission says so, next to it (UOKiK) */}
+              {e.booking.affiliate ? <Text style={s.fine}>{AFFILIATE_NOTE}</Text> : null}
             </View>
           );
         }}
@@ -783,7 +815,7 @@ export default function DiscoverScreen() {
       const r = picked.item;
       const now = nowInKrakow();
       const h = restaurantHoursOn(r, new Date());
-      const st = h ? openState(h, now.minutes) : null;
+      const st = h ? openState(h, now.minutes, restaurantHoursNextDay(r, new Date())) : null;
       const placeId = PLACE_BY_OSM.get(r.osm);
       return (
         <ScrollView contentContainerStyle={[s.detail, listPad]} keyboardShouldPersistTaps="handled">
@@ -821,7 +853,7 @@ export default function DiscoverScreen() {
           {safeWebUrl(st.website) ? <Button label={t('discover.website')} kind="quiet" onPress={() => openLink(safeWebUrl(st.website)!)} /> : null}
           <Button label={t('discover.navigate')} kind="quiet" onPress={() => openWalkingDirections(st)} />
         </View>
-        <Text style={s.fine}>{t('discover.stay.searchNote')}</Text>
+        {stay22Link({ lat: st.lat, lon: st.lon }).affiliate ? <Text style={s.fine}>{t('discover.stay.searchNote')}</Text> : null}
         <Text style={s.credit}>{t('discover.osmCredit')}</Text>
       </ScrollView>
     );
@@ -843,6 +875,7 @@ export default function DiscoverScreen() {
             fitTarget="points"
             threeD
             inactive={snap === 2}
+            bottomInset={mapInset}
             onSelect={select}
             onError={onError}
             onWarning={onWarning}
@@ -851,7 +884,7 @@ export default function DiscoverScreen() {
         </View>
 
         {/* the question, the four doors and what was understood, over the top of the map */}
-        <View style={s.top} onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
+        <View style={[s.top, { left: side, right: side }]} onLayout={(e) => setTopH(e.nativeEvent.layout.height)}>
           <View style={s.ask}>
             {/* the map is a tool opened from Today or Discover: one tap back */}
             <Pressable accessibilityRole="button" accessibilityLabel={t('ui.goBack')} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} hitSlop={8} style={s.iconBtn}>
@@ -876,15 +909,18 @@ export default function DiscoverScreen() {
                 <MaterialCommunityIcons name="close" size={20} color={colors.ink} aria-hidden />
               </Pressable>
             ) : null}
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={t('discover.askSubmit')}
-              onPress={submit}
-              disabled={!text.trim() || reading === 'busy'}
-              style={({ pressed }) => [s.go, (!text.trim() || reading === 'busy') && s.goOff, pressed && s.pressed]}
-            >
-              <MaterialCommunityIcons name="arrow-right" size={22} color={colors.white} aria-hidden />
-            </Pressable>
+            {/* nothing to send until something is typed: a greyed button on a grey field read as broken */}
+            {text.trim() || reading === 'busy' ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t('discover.askSubmit')}
+                onPress={submit}
+                disabled={!text.trim() || reading === 'busy'}
+                style={({ pressed }) => [s.go, (!text.trim() || reading === 'busy') && s.goOff, pressed && s.pressed]}
+              >
+                <MaterialCommunityIcons name="arrow-right" size={22} color={colors.white} aria-hidden />
+              </Pressable>
+            ) : null}
           </View>
 
           <View style={s.modes} accessibilityRole="tablist">
@@ -948,7 +984,7 @@ export default function DiscoverScreen() {
         </View>
 
         {mapError ? (
-          <View style={[s.error, { top: topH + space.s }]} accessibilityRole="alert">
+          <View style={[s.error, { top: topH + space.s, left: side, right: side }]} accessibilityRole="alert">
             <Text style={s.errorTitle}>{t('map.errorTitle')}</Text>
             <Text style={s.errorText}>
               {/* the map engine reports in English: the traveller gets the translated help only */}
@@ -958,13 +994,13 @@ export default function DiscoverScreen() {
           </View>
         ) : null}
         {mapWarning && !mapError ? (
-          <Text style={[s.warning, { top: topH + space.s }]} accessibilityRole="alert">
+          <Text style={[s.warning, { top: topH + space.s, left: side, right: side }]} accessibilityRole="alert">
             {t('map.warning')}
           </Text>
         ) : null}
 
         {/* the drawer: a handle to drag or tap, then the list or the chosen place */}
-        <Animated.View style={[s.drawer, { height: heights[2] }, sheetStyle]}>
+        <Animated.View style={[s.drawer, { height: heights[2], left: wide ? side : 0, right: wide ? side : 0 }, sheetStyle]}>
           {/* rides on the sheet's top edge, so it moves with it for free */}
           <View style={s.nearMe} pointerEvents="box-none">
             {snap < 2 ? (
@@ -995,7 +1031,7 @@ export default function DiscoverScreen() {
           cols={compareIds
             .map((id) => restaurantById(id))
             .filter((r) => r !== undefined)
-            .map((r) => compareFacts(r, origin, restaurantHoursOn(r, new Date()), nowInKrakow().minutes))}
+            .map((r) => compareFacts(r, origin, restaurantHoursOn(r, new Date()), nowInKrakow().minutes, restaurantHoursNextDay(r, new Date())))}
           now={nowInKrakow().minutes}
           onClose={() => setComparing(false)}
           onRemove={(id) => {
@@ -1027,6 +1063,11 @@ function DetailHead({ title, onClose }: { title: string; onClose: () => void }) 
   );
 }
 
+/** map left visible under the question when the drawer is full: room for the logo and attribution */
+const LOGO_STRIP = 44;
+/** the "near me" button on the drawer's edge: 48 px tall plus its margin above the sheet */
+const NEAR_ME_CLEAR = 48 + space.s;
+
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.stone },
   area: { flex: 1 },
@@ -1044,7 +1085,7 @@ const s = StyleSheet.create({
     paddingRight: 6,
     minHeight: 56,
   },
-  askInput: { flex: 1, fontFamily: fonts.body, fontSize: 17, color: colors.ink, paddingVertical: 12 },
+  askInput: { flex: 1, minWidth: 0, fontFamily: fonts.body, fontSize: 17, color: colors.ink, paddingVertical: 12, paddingRight: space.s },
   iconBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   go: { width: 44, height: 44, borderRadius: 12, backgroundColor: colors.ink, alignItems: 'center', justifyContent: 'center' },
   goOff: { opacity: 0.35 },
@@ -1080,8 +1121,9 @@ const s = StyleSheet.create({
     borderTopWidth: 1,
     borderColor: colors.line,
   },
-  handleZone: { alignItems: 'center', paddingTop: 4 },
-  handleBtn: { width: 88, height: 28, alignItems: 'center', justifyContent: 'center' },
+  handleZone: { alignItems: 'center' },
+  // 44 px tall: a thumb target, not just the 5 px bar
+  handleBtn: { width: 88, height: 44, alignItems: 'center', justifyContent: 'center' },
   handle: { width: 44, height: 5, borderRadius: 3, backgroundColor: colors.line },
   drawerBody: { flex: 1 },
   nearMe: { position: 'absolute', right: space.m, bottom: '100%', marginBottom: space.s },
@@ -1107,7 +1149,10 @@ const s = StyleSheet.create({
   shareNote: { fontFamily: fonts.body, fontSize: 14, color: colors.mute, marginHorizontal: space.m, marginTop: 4 },
   sortLabel: { alignSelf: 'center', fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.8, color: colors.mute, textTransform: 'uppercase' },
   countRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: space.s, paddingHorizontal: space.m, minHeight: 36 },
-  count: { flex: 1, fontFamily: fonts.monoBold, fontSize: 12, color: colors.mute, letterSpacing: 0.3 },
+  countText: { flex: 1, gap: 2, paddingVertical: space.xs },
+  count: { fontFamily: fonts.body, fontSize: 15, color: colors.ink },
+  countNum: { fontFamily: fonts.bodyBold },
+  countOrder: { fontFamily: fonts.body, fontSize: 13, color: colors.mute },
   stayCta: { paddingHorizontal: space.m, paddingBottom: space.s, gap: 4 },
   row: {
     flexDirection: 'row',

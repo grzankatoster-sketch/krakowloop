@@ -24,10 +24,14 @@ import { openLink } from '../../src/lib/openLink';
 import { useSaved } from '../../src/lib/saved';
 import { t } from '../../src/i18n';
 import type { StringKey } from '../../src/i18n/en';
-import { colors, fonts, space } from '../../src/theme';
+import { AFFILIATE_NOTE } from '../../src/config/affiliates';
+import { counted } from '../../src/lib/plural';
+import { colors, fonts, layout, space } from '../../src/theme';
 
 const RYNEK = { lat: CITY.mapCentre.lat, lon: CITY.mapCentre.lon };
 const COUNTS = cuisineCounts();
+/** how much of the next card a carousel shows at the right edge */
+const PEEK = 40;
 /** the sights in town, for the map at the top of Discover */
 const MAP_POINTS: MapPoint[] = places
   .filter((p) => p.zone !== 'out' && p.cat !== 'food' && p.cat !== 'night')
@@ -61,7 +65,15 @@ export default function DiscoverScreen() {
   const tabSpace = useTabBarSpace();
   const topSpace = useTopSpace();
   const { width } = useWindowDimensions();
-  const tileW = (width - space.l * 2 - space.s) / 2;
+  // everything sits in one reading column (layout.column) centred on a wide window; on a phone the column is the screen
+  const colW = Math.min(width, layout.column);
+  const tileW = (colW - space.l * 2 - space.s) / 2;
+  // carousel cards never grow past their design width, but shrink a little when that leaves the next card
+  // under PEEK px showing: the cut-off card is the sign that the row scrolls
+  const peekW = (base: number) => {
+    const n = Math.max(1, Math.round((colW - space.l - PEEK) / (base + space.s)));
+    return Math.min(base, (colW - space.l - PEEK - space.s * n) / n);
+  };
   // a fixed height, not aspectRatio: on iOS a tile sized by aspectRatio, holding only absolutely placed
   // children, took its place in the grid but was never drawn (seen on the simulator tour)
   const tileH = Math.round(tileW / 0.78);
@@ -84,6 +96,7 @@ export default function DiscoverScreen() {
     // scrolls to the top (Expo Router native tabs docs)
     <View style={s.root} collapsable={false}>
       <ScrollView style={s.root} contentContainerStyle={{ paddingTop: topSpace + space.m, paddingBottom: Math.max(insets.bottom, tabSpace) + space.xl }}>
+      <View style={s.col}>
       <View style={s.head}>
         <Text style={s.title} accessibilityRole="header">
           {t('discover.native.title')}
@@ -103,9 +116,12 @@ export default function DiscoverScreen() {
         <View style={StyleSheet.absoluteFill} pointerEvents="none">
           <LoopMap style={StyleSheet.absoluteFill} points={MAP_POINTS} fit inactive />
         </View>
-        <View style={s.mapCardChip} pointerEvents="none">
-          <MaterialCommunityIcons name="map-search-outline" size={18} color={colors.white} />
-          <Text style={s.mapCardText}>{t('discover.native.mapCta')}</Text>
+        {/* top left: the Mapbox logo (bottom left) and the (i) button (bottom right) must stay free */}
+        <View style={s.mapCardChipWrap} pointerEvents="none">
+          <View style={s.mapCardChip}>
+            <MaterialCommunityIcons name="map-search-outline" size={18} color={colors.white} />
+            <Text style={s.mapCardText}>{t('discover.native.mapCta')}</Text>
+          </View>
         </View>
       </Pressable>
 
@@ -116,7 +132,7 @@ export default function DiscoverScreen() {
           <Text style={s.h2} accessibilityRole="header">{t('saved.title')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.row}>
             {saved.map((p) => (
-              <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [s.savedTile, pressed && s.pressed]}>
+              <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [s.savedTile, { width: peekW(150) }, pressed && s.pressed]}>
                 {PLACE_MEDIA[p.id]?.image ? (
                   <View style={s.fill} pointerEvents="none"><Image source={PLACE_MEDIA[p.id]!.image!} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View>
                 ) : (
@@ -143,7 +159,7 @@ export default function DiscoverScreen() {
         {sights.map(({ item: p, metres }) => (
           <Pressable key={p.id} accessibilityRole="button" accessibilityLabel={placeName(p)} onPress={() => go(`/place/${p.id}`)} style={({ pressed }) => [{ width: tileW, height: tileH }, s.tile, pressed && s.pressed]}>
             <View style={s.fill} pointerEvents="none"><Image source={PLACE_MEDIA[p.id]!.image!} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View>
-            <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.85)']} locations={[0.4, 1]} style={s.fill} />
+            <LinearGradient colors={['rgba(8,11,30,0)', 'rgba(8,11,30,0.6)', 'rgba(8,11,30,0.92)']} locations={[0.3, 0.62, 1]} style={s.fill} />
             <View style={s.tileWords}>
               <Text style={s.tileMeta} numberOfLines={1}>
                 {t('story.walk', { n: walkMinutes(metres ?? 0) })}
@@ -169,7 +185,7 @@ export default function DiscoverScreen() {
             key={c}
             accessibilityRole="button"
             onPress={() => go({ pathname: '/map', params: { mode: 'eat', cuisine: c } })}
-            style={({ pressed }) => [s.food, { backgroundColor: TILE_COLORS[i % TILE_COLORS.length] }, pressed && s.pressed]}
+            style={({ pressed }) => [s.food, { width: peekW(150), backgroundColor: TILE_COLORS[i % TILE_COLORS.length] }, pressed && s.pressed]}
           >
             <Text style={s.foodName} numberOfLines={3} adjustsFontSizeToFit minimumFontScale={0.6}>
               {t(`cuisine.${c}` as StringKey)}
@@ -187,7 +203,7 @@ export default function DiscoverScreen() {
           const e = x as Experience & { kind?: string; minutes?: number; pickup?: boolean };
           const meta = [e.minutes ? t('discover.do.minutes', { h: Math.round((e.minutes / 60) * 10) / 10 }) : null, e.pickup ? t('discover.do.pickup') : null].filter(Boolean).join(' · ');
           return (
-            <View key={x.id} style={[s.exp, e.kind === 'extreme' && s.expHot]}>
+            <View key={x.id} style={[s.exp, { width: peekW(230) }, e.kind === 'extreme' && s.expHot]}>
               <MaterialCommunityIcons name={KIND_ICON[e.kind ?? 'sightseeing'] ?? 'star-outline'} size={30} color={colors.white} />
               <Text style={s.expName} numberOfLines={2}>
                 {expText(x.id, 'name', x.name)}
@@ -202,6 +218,8 @@ export default function DiscoverScreen() {
           );
         })}
       </ScrollView>
+      {/* booking links that may earn a commission say so (UOKiK), as on the plan and the place page */}
+      {experiences.some((x) => x.booking.affiliate) ? <Text style={s.affNote}>{AFFILIATE_NOTE}</Text> : null}
 
       {/* the city in the past */}
       <Text style={s.eyebrow}>{t('discover.native.pastEyebrow')}</Text>
@@ -212,7 +230,7 @@ export default function DiscoverScreen() {
           <View style={s.fill} pointerEvents="none"><Image source={lens[0].old!.image} style={s.photo} resizeMode="cover" accessibilityIgnoresInvertColors /></View>
           <LinearGradient colors={['rgba(8,11,30,0.15)', 'rgba(8,11,30,0.88)']} style={s.fill} />
           <Text style={s.pastYear}>{lens[0].old!.year}</Text>
-          <Text style={s.pastName}>{t('discover.native.pastDoor', { n: lens.length })}</Text>
+          <Text style={s.pastName}>{t('discover.native.pastDoor', { n: counted(lens.length, { one: t('plan.place.one'), few: t('plan.place.few'), many: t('plan.place.many') }) })}</Text>
         </Pressable>
       ) : null}
 
@@ -248,6 +266,7 @@ export default function DiscoverScreen() {
           <MaterialCommunityIcons name="information-outline" size={20} color={colors.ink} />
           <Text style={s.moreText}>{t('home.about')}</Text>
         </Pressable>
+      </View>
       </ScrollView>
       {/* the page scrolls under the phone's clock: a strip of paper keeps the two apart */}
       <View style={[s.statusStrip, { height: topSpace }]} pointerEvents="none" />
@@ -258,8 +277,10 @@ export default function DiscoverScreen() {
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.paper },
   mapCard: { height: 210, marginHorizontal: space.l, marginTop: space.m, borderRadius: 24, overflow: 'hidden', backgroundColor: colors.stone },
-  mapCardChip: { position: 'absolute', left: space.m, bottom: space.m, flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 40, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(14,19,48,0.85)' },
-  mapCardText: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.white },
+  col: { width: '100%', maxWidth: layout.column, alignSelf: 'center' },
+  mapCardChipWrap: { position: 'absolute', top: space.m, left: space.m, right: space.m, alignItems: 'flex-start' },
+  mapCardChip: { flexDirection: 'row', alignItems: 'center', gap: 8, maxWidth: '100%', minHeight: 40, paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20, backgroundColor: 'rgba(14,19,48,0.85)' },
+  mapCardText: { flexShrink: 1, fontFamily: fonts.bodyBold, fontSize: 14, lineHeight: 18, color: colors.white },
   statusStrip: { position: 'absolute', top: 0, left: 0, right: 0, backgroundColor: colors.paper, opacity: 0.96 },
   pressed: { transform: [{ scale: 0.97 }] },
   // a frame pinned to all four edges (on iOS a 100% size leaves out the card's padding), and the
@@ -288,8 +309,8 @@ const s = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, paddingHorizontal: space.l },
   tile: { borderRadius: 22, overflow: 'hidden', backgroundColor: colors.stone },
   tileWords: { position: 'absolute', left: 12, right: 12, bottom: 12, gap: 2 },
-  tileMeta: { fontFamily: fonts.monoBold, fontSize: 10, letterSpacing: 0.6, color: 'rgba(255,255,255,0.85)', textTransform: 'uppercase' },
-  tileName: { fontFamily: fonts.display, fontSize: 22, lineHeight: 24, color: colors.white },
+  tileMeta: { fontFamily: fonts.monoBold, fontSize: 11, letterSpacing: 0.6, color: colors.white, textTransform: 'uppercase', textShadowColor: 'rgba(8,11,30,0.75)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
+  tileName: { fontFamily: fonts.display, fontSize: 22, lineHeight: 24, color: colors.white, textShadowColor: 'rgba(8,11,30,0.5)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   more: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginHorizontal: space.l, marginTop: space.m, minHeight: 44 },
   moreText: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.ink, textDecorationLine: 'underline' },
   row: { gap: space.s, paddingHorizontal: space.l },
@@ -305,6 +326,7 @@ const s = StyleSheet.create({
   expNote: { fontFamily: fonts.body, fontSize: 14, lineHeight: 19, color: 'rgba(255,255,255,0.85)', minHeight: 38 },
   expBtn: { alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: 16, borderRadius: 22, backgroundColor: colors.white, justifyContent: 'center' },
   expBtnText: { fontFamily: fonts.bodyBold, fontSize: 15, color: colors.ink },
+  affNote: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18, color: colors.mute, marginTop: space.s },
   past: { width: 220, height: 290, borderRadius: 22, overflow: 'hidden', backgroundColor: colors.stone, justifyContent: 'flex-end', padding: space.m },
   pastDoor: { height: 200, marginHorizontal: space.l, borderRadius: 24, overflow: 'hidden', justifyContent: 'flex-end', padding: space.l, backgroundColor: colors.ink },
   pastYear: { fontFamily: fonts.display, fontSize: 44, color: colors.white },

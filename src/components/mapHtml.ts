@@ -126,7 +126,17 @@ const view = { center: [CITY.mapCentre.lon, CITY.mapCentre.lat], zoom: CITY.mapZ
 export const MAP_HTML = `<!doctype html>
 <html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<style>html,body,#m{margin:0;height:100%;background:${colors.stone}}</style>
+<style>html,body,#m{margin:0;height:100%;background:${colors.stone}}
+/* The logo and the attribution control (a licence requirement) sit above whatever covers the map's
+   bottom edge: the app sends that height as --krk-inset (window.__inset). */
+:root{--krk-inset:0px}
+.mapboxgl-ctrl-bottom-left,.mapboxgl-ctrl-bottom-right,.maplibregl-ctrl-bottom-left,.maplibregl-ctrl-bottom-right{
+  bottom:var(--krk-inset)!important}
+/* moves glide once the map is up; the first placing is instant (no logo sliding in at every start) */
+.krk-inset-ready .mapboxgl-ctrl-bottom-left,.krk-inset-ready .mapboxgl-ctrl-bottom-right,.krk-inset-ready .maplibregl-ctrl-bottom-left,.krk-inset-ready .maplibregl-ctrl-bottom-right{transition:bottom .3s ease}
+.calm .mapboxgl-ctrl-bottom-left,.calm .mapboxgl-ctrl-bottom-right,.calm .maplibregl-ctrl-bottom-left,.calm .maplibregl-ctrl-bottom-right{transition:none}
+@media (prefers-reduced-motion:reduce){.mapboxgl-ctrl-bottom-left,.mapboxgl-ctrl-bottom-right,.maplibregl-ctrl-bottom-left,.maplibregl-ctrl-bottom-right{transition:none}}
+</style>
 </head><body><div id="m"></div><script>
 (function(){
   var CFG=${JSON.stringify(config)}, C=${JSON.stringify(palette)}, VIEW=${JSON.stringify(view)};
@@ -272,7 +282,7 @@ export const MAP_HTML = `<!doctype html>
   }
   function apply(d){
     if(!ready){pending=d;return}
-    calm=d.calm;
+    calm=d.calm;document.documentElement.classList.toggle('calm',calm);
     map.getSource('pts').setData(fc(d));debug.points=d.points.length;
     var drawn=line(d);map.getSource('route').setData(drawn);debug.route=drawn.geometry.coordinates.length;
     // animate only what changed: a new set of pins, a new route, a new chosen pin
@@ -315,6 +325,10 @@ export const MAP_HTML = `<!doctype html>
     }
   }
   window.__apply=function(d){var c=clean(d);if(c)apply(c)};
+  // px of the bottom edge covered by the app's drawer; the controls rise above it (see the style above)
+  window.__inset=function(n){if(typeof n!=='number'||!isFinite(n)||n<0)n=0;n=Math.min(4000,Math.round(n));
+    var root=document.documentElement;root.style.setProperty('--krk-inset',n+'px');
+    if(!root.classList.contains('krk-inset-ready'))requestAnimationFrame(function(){root.classList.add('krk-inset-ready')})};
 
   function start(){
     lib=window[CFG.global];
@@ -327,6 +341,16 @@ export const MAP_HTML = `<!doctype html>
       opts.config={basemap:basemap}}
     else{opts.attributionControl={compact:true}}
     try{map=new lib.Map(opts)}catch(err){fail('The map could not start: '+(err&&err.message));return}
+    // MapLibre opens its compact attribution as a text line (and reopens it on style load), which wraps to
+    // several lines on a phone. Keep it as the (i) button, as Mapbox does, until the traveller taps it: one
+    // small control that always fits above the drawer.
+    if(CFG.provider!=='mapbox'){try{
+      var at=document.querySelector('.maplibregl-ctrl-attrib'),btn=at&&at.querySelector('.maplibregl-ctrl-attrib-button'),asked=false;
+      if(at&&btn){
+        btn.addEventListener('click',function(){asked=true},true);
+        var fold=function(){if(!asked&&at.classList.contains('maplibregl-compact-show')){at.classList.remove('maplibregl-compact-show');at.removeAttribute('open')}};
+        new MutationObserver(fold).observe(at,{attributes:true,attributeFilter:['class']});fold()}
+    }catch(e){}}
 
     // Before the first load an error is only remembered (a single missing tile is not fatal);
     // afterwards the app hears about the first one as a warning.
@@ -488,6 +512,7 @@ export const MAP_HTML = `<!doctype html>
     if(window.parent===window||e.source!==window.parent)return;
     var m=null;try{m=JSON.parse(e.data)}catch(err){return}
     if(m&&m.type==='data')window.__apply(m.payload);
+    else if(m&&m.type==='inset')window.__inset(m.value);
   });
 })();
 </script></body></html>`;

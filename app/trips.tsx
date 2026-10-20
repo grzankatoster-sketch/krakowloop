@@ -12,6 +12,9 @@ import { openLink } from '../src/lib/openLink';
 import { LANG, t } from '../src/i18n';
 import { colors, fonts, space, typeScale } from '../src/theme';
 
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../src/components/ScreenError';
+
 const fmt = (m: number) => (m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`);
 
 /** Every place outside the city, most important first, then nearest. */
@@ -40,7 +43,7 @@ export default function Trips() {
                 <View style={s.body}>
                   <Text style={s.meta}>{t('trips.eyebrow', { travel: fmt(travel), stay: fmt(place.minutes) })}</Text>
                   <Link href={`/place/${place.id}`} asChild>
-                    <Pressable accessibilityRole="link" accessibilityLabel={t('trips.openLabel', { name })}>
+                    <Pressable accessibilityRole="link" accessibilityLabel={t('trips.openLabel', { name })} hitSlop={{ top: 10, bottom: 10 }} style={{ minHeight: 44, justifyContent: 'center' }}>
                       <Text style={s.name}>{name}</Text>
                     </Pressable>
                   </Link>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
-import { dispatchMapMessage, parseMapMessage } from '../src/components/mapMessages';
+import { MAP_HTML } from '../src/components/mapHtml';
+import { MAX_INSET, clampInset, dispatchMapMessage, insetMessage, insetScript, parseMapMessage } from '../src/components/mapMessages';
 import { places } from '../src/data/places';
 import { parseActivities, paramsToPlan, planToParams, shareUrl, shareableParams } from '../src/lib/planParams';
 import { PlanOptions } from '../src/lib/planner';
@@ -134,6 +135,37 @@ describe('map messages', () => {
     expect(parseMapMessage('{"type":"select","id":42}')).toBeNull();
     expect(parseMapMessage('{"type":"eval"}')).toBeNull();
     expect(parseMapMessage('x'.repeat(3000))).toBeNull();
+  });
+});
+
+describe('map bottom inset (logo and attribution above the drawer)', () => {
+  it('accepts whole, finite, non-negative pixel counts and clamps the rest', () => {
+    expect(clampInset(176)).toBe(176);
+    expect(clampInset(176.6)).toBe(177);
+    expect(clampInset(0)).toBe(0);
+    expect(clampInset(-5)).toBe(0);
+    expect(clampInset(1e9)).toBe(MAX_INSET);
+    for (const bad of [NaN, Infinity, -Infinity, '120', null, undefined, {}, []]) expect(clampInset(bad)).toBe(0);
+  });
+
+  it('builds the iframe message and the WebView script from a clamped value', () => {
+    expect(JSON.parse(insetMessage(224))).toEqual({ type: 'inset', value: 224 });
+    expect(JSON.parse(insetMessage('x'))).toEqual({ type: 'inset', value: 0 });
+    expect(insetScript(224)).toBe('window.__inset && window.__inset(224); true;');
+    // a hostile value never reaches the injected script as code
+    expect(insetScript('1);alert(1);(')).toBe('window.__inset && window.__inset(0); true;');
+  });
+
+  it('is not an incoming message: the map never sends it to the app', () => {
+    expect(parseMapMessage(JSON.stringify({ type: 'inset', value: 10 }))).toBeNull();
+  });
+
+  it('is handled by the map document, which lifts the logo and the attribution above the covered edge', () => {
+    expect(MAP_HTML).toContain('window.__inset=');
+    expect(MAP_HTML).toContain("m.type==='inset'");
+    for (const cls of ['mapboxgl-ctrl-bottom-left', 'mapboxgl-ctrl-bottom-right', 'maplibregl-ctrl-bottom-left', 'maplibregl-ctrl-bottom-right'])
+      expect(MAP_HTML).toContain(cls);
+    expect(MAP_HTML).toContain('bottom:var(--krk-inset)!important');
   });
 });
 

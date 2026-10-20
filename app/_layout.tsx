@@ -13,6 +13,9 @@ import { colors } from '../src/theme';
 // the language comes from the phone (src/i18n): tell the browser too, for screen readers and translation offers
 if (Platform.OS === 'web' && typeof document !== 'undefined') document.documentElement.lang = LANG;
 
+// a screen that throws shows a way on instead of a white screen: every route, not only the tabs that export their own
+export { ScreenError as ErrorBoundary } from '../src/components/ScreenError';
+
 // open on the tabs, whatever screen a deep link or a restored session names first
 export const unstable_settings = { initialRouteName: '(tabs)' };
 

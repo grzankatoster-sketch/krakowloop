@@ -14,6 +14,9 @@ import { closingSoon, groupOpenNow, OpenRow, statusLabel } from '../src/lib/open
 import { t } from '../src/i18n';
 import { colors, fonts, space, typeScale } from '../src/theme';
 
+// a failure in this screen stays in it, with the navigator still there to leave by
+export { ScreenError as ErrorBoundary } from '../src/components/ScreenError';
+
 type Filter = 'all' | Category;
 
 /** The categories that have opening hours at all, in the order of CATEGORY_LABEL: only those get a chip. */
