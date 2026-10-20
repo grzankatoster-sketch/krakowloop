@@ -1,7 +1,7 @@
 // "Now" cards: the few things worth doing within a short walk at this moment. Pure, so the rules
 // are tested (__tests__/moments.test.ts): sights and museums open now, the nearest Time Lens view,
 // and a recommended place to eat that is open, nearest first, never more than one of a kind in a row.
-import { distance, LatLon } from './geo';
+import { distance, LatLon, walkingMinutesFor } from './geo';
 
 export type MomentKind = 'sight' | 'lens' | 'eat' | 'event';
 
@@ -23,7 +23,11 @@ export interface Moment extends MomentSource {
 }
 
 /** Walking at an easy 4.5 km/h, rounded up: what a visitor feels, not what a runner does. */
-export const walkMinutes = (metres: number) => Math.max(1, Math.ceil(metres / 75));
+/**
+ * Minutes on foot for a straight-line distance: the same estimate as the plan and the place page
+ * (with the detour of real streets), so one place never shows 8 min on one screen and 10 on another.
+ */
+export const walkMinutes = walkingMinutesFor;
 
 /**
  * Up to `max` moments within `radius` metres of `here`: closed places are left out, anything closing

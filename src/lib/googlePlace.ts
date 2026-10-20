@@ -84,10 +84,13 @@ export async function fetchGooglePlace(
   const value = (async () => {
     try {
       // a proxy that never answers must not leave the card waiting: give up after 8 s
+      let timer: ReturnType<typeof setTimeout> | undefined;
       const res = await Promise.race([
         fetcher(`${proxyUrl}/place?id=${encodeURIComponent(placeId)}`),
-        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000)),
-      ]);
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('timeout')), 8000);
+        }),
+      ]).finally(() => clearTimeout(timer));
       return res.ok ? parseGooglePlace(await res.json()) : null;
     } catch {
       return null;

@@ -22,14 +22,19 @@ const parts = (() => {
  * Use it only for reading the calendar and the clock, never to measure time between instants.
  * Without time zone support it falls back to the device clock.
  */
+// the last minute read: lists of 2000 restaurants ask for "now" once per row, all in the same minute
+let last: { minute: number; time: number } | null = null;
+
 export function krakowWallClock(instant: Date): Date {
   if (!parts) return instant;
-  const get = (type: string) => Number(parts.formatToParts(instant).find((p) => p.type === type)?.value);
-  const year = get('year');
-  const month = get('month');
-  const day = get('day');
-  const hour = get('hour');
-  const minute = get('minute');
-  if ([year, month, day, hour, minute].some((v) => Number.isNaN(v))) return instant;
-  return new Date(year, month - 1, day, hour, minute);
+  const minute = Math.floor(instant.getTime() / 60000);
+  if (last && last.minute === minute) return new Date(last.time);
+  // one formatting for all five fields (it was five, one per field)
+  const read: Record<string, number> = {};
+  for (const p of parts.formatToParts(instant)) read[p.type] = Number(p.value);
+  const { year, month, day, hour, minute: min } = read;
+  if ([year, month, day, hour, min].some((v) => v === undefined || Number.isNaN(v))) return instant;
+  const wall = new Date(year, month - 1, day, hour, min);
+  last = { minute, time: wall.getTime() };
+  return wall;
 }

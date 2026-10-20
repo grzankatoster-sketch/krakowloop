@@ -2,8 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import type { Place } from '../src/data/places';
 import type { Interval } from '../src/lib/hours';
 import { krakowWallClock } from '../src/lib/cityTime';
-import { closingSoon, groupOpenNow, openState, statusLabel } from '../src/lib/openNow';
-import { nextOpening, nextOpeningLabel } from '../src/lib/openNow';
+import { closingSoon, groupOpenNow, nextOpening, nextOpeningLabel, openState, statusLabel } from '../src/lib/openNow';
 
 const H = (h: number, m = 0) => h * 60 + m;
 
@@ -128,3 +127,25 @@ describe('when a closed place opens next', () => {
     expect(nextOpeningLabel({ days: 3, at: 570 }, 4)).toMatch(/9:30/);
   });
 });
+
+describe('hours that run past midnight', () => {
+  // a bar open 18:00-02:00 is stored as 18:00-24:00 today and 00:00-02:00 tomorrow
+  const today: Interval[] = [[H(18), H(24)]];
+  const tomorrow: Interval[] = [[0, H(2)], [H(18), H(24)]];
+  it('closes at 02:00 the next day, not at midnight', () => {
+    expect(openState(today, H(23, 30), tomorrow)).toEqual({ state: 'open', closesAt: H(26) });
+    expect(statusLabel(openState(today, H(23, 30), tomorrow), H(23, 30))).toBe('Closes 2:00');
+  });
+  it('closes at midnight when the next day does not start at 00:00', () => {
+    const st = openState(today, H(23, 30), [[H(18), H(24)]]);
+    expect(st).toEqual({ state: 'open', closesAt: H(24) });
+    expect(statusLabel(st, H(23, 30))).toBe('Closes at midnight, in 30 min');
+  });
+  it('open round the clock today and tomorrow stays "until midnight", not "closes 00:00"', () => {
+    expect(openState([[0, H(24)]], H(12), [[0, H(24)]])).toEqual({ state: 'open', closesAt: H(24) });
+  });
+  it('without the next day it stays as before', () => {
+    expect(openState(today, H(23, 30))).toEqual({ state: 'open', closesAt: H(24) });
+  });
+});
+

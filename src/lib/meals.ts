@@ -1,7 +1,7 @@
 // Meals in a plan: breakfast, lunch, a coffee and dinner at the right time of the day, each at a
 // real place near the stop the day is at by then, open at that hour. Nothing is invented: the
 // places come from the OpenStreetMap list (src/data/restaurants.ts) with their own opening hours.
-import { RESTAURANTS, Restaurant, restaurantHoursOn } from '../data/restaurants';
+import { RESTAURANTS, Restaurant, restaurantHoursOnDate } from '../data/restaurants';
 import type { Interval } from './hours';
 import { LatLon, distance } from './geo';
 import { DAY_START, PlanDay, openFrom } from './planner';
@@ -66,7 +66,7 @@ const openFor = (hours: Interval[], at: number, minutes: number) => hours.some((
 function openness(r: Restaurant, meal: Meal, at: number, date: Date | null): 'open' | 'unknown' | 'closed' {
   const { minutes } = MEAL_TIME[meal];
   if (date) {
-    const h = restaurantHoursOn(r, date);
+    const h = restaurantHoursOnDate(r, date);
     if (h === null) return 'unknown';
     return openFor(h, at, minutes) ? 'open' : 'closed';
   }
@@ -91,10 +91,11 @@ export function mealOptions(meal: Meal, near: LatLon, at: number, date: Date | n
 }
 
 /**
- * The clock of a city day: when each stop is finished, walking and visiting from DAY_START.
- * ends[i] = minutes after midnight when stop i is done.
+ * The clock of a city day: when each stop is finished, walking and visiting from the day's start
+ * (DAY_START, or later for the afternoon after a trip). ends[i] = minutes after midnight when
+ * stop i is done.
  */
-export function stopEnds(day: PlanDay, start = DAY_START): number[] {
+export function stopEnds(day: PlanDay, start = day.startMinute ?? DAY_START): number[] {
   let clock = start;
   return day.stops.map((st) => {
     clock += (st.leg?.minutes ?? 0) + st.place.minutes;
@@ -106,12 +107,18 @@ export function stopEnds(day: PlanDay, start = DAY_START): number[] {
  * The meals asked for, placed in a city day: breakfast before the first stop, dinner after the
  * last, lunch and coffee after the stop that ends closest to their time. A meal with no open place
  * near its stop is left out rather than sent across town. Each place is used once a day.
+ *
+ * On a dated day a lunch or a coffee never goes where it would push the next stop past its
+ * closing time (the planner ordered the day without meals): the next best stop is tried, and
+ * at worst the meal waits for the end of the day. `start` is when the day's clock starts: the
+ * day's own startMinute (an afternoon after a trip) or DAY_START.
  */
-export function planMeals(day: PlanDay, meals: readonly Meal[], date: Date | null, list: readonly Restaurant[] = RESTAURANTS, start = DAY_START): MealStop[] {
+export function planMeals(day: PlanDay, meals: readonly Meal[], date: Date | null, list: readonly Restaurant[] = RESTAURANTS, start = day.startMinute ?? DAY_START): MealStop[] {
   if (!day.stops.length || !meals.length) return [];
   const ends = stopEnds(day, start);
   const last = day.stops.length - 1;
   const taken = new Set<string>();
+  const placed: Placement[] = [];
   const out: MealStop[] = [];
   for (const meal of MEAL_KEYS.filter((m) => meals.includes(m))) {
     let after: number;
@@ -119,17 +126,23 @@ export function planMeals(day: PlanDay, meals: readonly Meal[], date: Date | nul
     else if (meal === 'dinner') after = last;
     else {
       const target = MEAL_TIME[meal].at;
-      after = ends.reduce((best, end, i) => (Math.abs(end - target) < Math.abs(ends[best] - target) ? i : best), 0);
+      const byDistance = ends.map((end, i) => i).sort((a, b) => Math.abs(ends[a] - target) - Math.abs(ends[b] - target) || a - b);
       // a short day ends before lunch or coffee time: have it after the last stop, not at noon on stop 1
-      if (ends[last] < target - 60) after = last;
+      const wished = ends[last] < target - 60 ? last : byDistance[0];
+      // meals keep their order in the day: not before the lunch placed already
+      const from = Math.max(-1, ...placed.filter((p) => p.meal !== 'breakfast').map((p) => p.after));
+      const candidates = [wished, ...byDistance.filter((i) => i !== wished), last].filter((i, k, all) => i >= from && all.indexOf(i) === k);
+      after = candidates.find((i) => schedule(day, [...placed, { meal, after: i }], date, start).fits) ?? wished;
     }
     const near = after < 0 ? (day.start ?? day.stops[0].place) : day.stops[after].place;
-    // "about 13:30", not "about 13:17": the time is a suggestion, rounded up to a quarter
-    const at = meal === 'breakfast' ? Math.min(MEAL_TIME.breakfast.at, start - MEAL_TIME.breakfast.minutes) : Math.ceil(Math.max(MEAL_TIME[meal].at, after >= 0 ? ends[after] : start) / 15) * 15;
+    // "about 13:30", not "about 13:17": the time is a suggestion, rounded up to a quarter; it is the
+    // time the day's clock gives it (a door waited at, an earlier meal), so the place is open then
+    const at = schedule(day, [...placed, { meal, after }], date, start).meal[meal] ?? MEAL_TIME[meal].at;
     const close = mealOptions(meal, near, at, date, taken, list);
     const options = close.length ? close : mealOptions(meal, near, at, date, taken, list, MEAL_RADIUS_WIDE_METRES);
     if (!options.length) continue;
     taken.add(options[0].place.id);
+    placed.push({ meal, after });
     out.push({ meal, at, after, near, options });
   }
   return out;
@@ -154,21 +167,30 @@ export interface DayTimes {
 
 const quarter = (m: number) => Math.ceil(m / 15) * 15;
 
+/** a meal and the stop it follows (-1 = before the first) */
+type Placement = { meal: Meal; after: number };
+
 /**
- * The day on a clock, meals included: from DAY_START (or later, when the first place opens later),
- * each walk, each visit and each meal in turn, so a lunch pushes the afternoon on by its hour.
- * On a dated day a place is met when it is open, as the planner ordered it.
+ * The day on a clock: each walk, each visit and each meal in turn. `fits` says that no dated stop
+ * was left without a time it is open for its whole visit.
  */
-export function dayTimes(day: PlanDay, meals: readonly MealStop[], date: Date | null): DayTimes {
-  const start: number[] = [];
+function schedule(day: PlanDay, meals: readonly Placement[], date: Date | null, start: number): DayTimes & { fits: boolean } {
+  const startAt: number[] = [];
   const end: number[] = [];
   const meal: Partial<Record<Meal, number>> = {};
-  let clock = DAY_START;
+  let fits = true;
+  let clock = start;
   day.stops.forEach((st, i) => {
     const arrive = clock + (st.leg?.minutes ?? 0);
-    const begin = date ? (openFrom(st.place, date, arrive, i === 0 ? Infinity : 45) ?? arrive) : arrive;
+    // The planner keeps waits at a door short (MAX_WAIT_MINUTES) while it orders the day, counting
+    // every leg on foot; the clock shown uses the real legs, and a tram can bring the traveller
+    // there earlier than the planner counted. Then the visit starts when the place opens: the clock
+    // never shows a visit before opening, and only a place that cannot be fitted at all breaks `fits`.
+    const opens = date ? openFrom(st.place, date, arrive, Infinity) : arrive;
+    if (opens === null) fits = false;
+    const begin = opens ?? arrive;
     if (i === 0 && meals.some((m) => m.meal === 'breakfast')) meal.breakfast = Math.min(MEAL_TIME.breakfast.at, begin - (st.leg?.minutes ?? 0) - MEAL_TIME.breakfast.minutes);
-    start.push(begin);
+    startAt.push(begin);
     clock = begin + st.place.minutes;
     end.push(clock);
     for (const m of meals.filter((x) => x.after === i && x.meal !== 'breakfast')) {
@@ -177,5 +199,17 @@ export function dayTimes(day: PlanDay, meals: readonly MealStop[], date: Date | 
       clock = at + MEAL_TIME[m.meal].minutes;
     }
   });
-  return { start, end, meal };
+  return { start: startAt, end, meal, fits };
+}
+
+/**
+ * The day on a clock, meals included: from the day's start (DAY_START, or later when the first
+ * place opens later; the afternoon after a trip starts when the traveller is back), each walk,
+ * each visit and each meal in turn, so a lunch pushes the afternoon on by its hour. On a dated
+ * day a place is met when it is open, as the planner ordered it; planMeals puts the meals where
+ * that stays true.
+ */
+export function dayTimes(day: PlanDay, meals: readonly MealStop[], date: Date | null, start = day.startMinute ?? DAY_START): DayTimes {
+  const { start: begins, end, meal } = schedule(day, meals, date, start);
+  return { start: begins, end, meal };
 }

@@ -55,6 +55,20 @@ describe('today, tomorrow, the weekend', () => {
   });
 });
 
+describe('one card per event', () => {
+  it('keeps the first of two events with the same id', () => {
+    expect(readEvents({ events: [good, { ...good, title: 'Again' }] }).map((e) => e.title)).toEqual(['Metallica']);
+  });
+});
+
+describe('only events in Kraków', () => {
+  it('drops an event placed outside the city, such as a 0,0 from a feed', () => {
+    expect(readEvent({ ...good, lat: 0, lon: 0 })).toBeNull();
+    expect(readEvent({ ...good, lat: 52.2297, lon: 21.0122 })).toBeNull(); // Warsaw
+    expect(readEvent(good)).not.toBeNull();
+  });
+});
+
 describe('choosing and ordering', () => {
   const now = new Date('2026-10-13T08:00:00Z');
   const list = [
@@ -66,6 +80,13 @@ describe('choosing and ordering', () => {
   ];
   it('the day asked for, in time order, an event with only a day last, one long over left out', () => {
     expect(pickEvents(list, ['2026-10-13'], [], 'time', RYNEK, now).map((e) => e.id)).toEqual(['b', 'a', 'c']);
+  });
+  it('orders by the moment, not the text, when the times carry different offsets', () => {
+    const mixed = [
+      ev({ id: 'z', title: 'Z', at: '2026-10-13T17:00:00Z' }), // 19:00 in Kraków
+      ev({ id: 'o', title: 'O', at: '2026-10-13T18:30:00+02:00' }), // 18:30 in Kraków
+    ];
+    expect(pickEvents(mixed, ['2026-10-13'], [], 'time', RYNEK, now).map((e) => e.id)).toEqual(['o', 'z']);
   });
   it('categories filter, none means all', () => {
     expect(pickEvents(list, ['2026-10-13'], ['sport'], 'time', RYNEK, now).map((e) => e.id)).toEqual(['b']);

@@ -15,28 +15,37 @@ export function useLiveLocation() {
   const mounted = useRef(true);
 
   const [problem, setProblem] = useState<'services' | null>(null);
+  // the start under way: a tap on "Turn on" while the screen's own start is still waiting must join
+  // it, or two watches start and the first is never removed (GPS left running in the background)
+  const starting = useRef<Promise<boolean> | null>(null);
 
-  const start = useCallback(async () => {
-    if (sub.current) return true;
-    try {
-      const watch = await Location.watchPositionAsync(
-        // every ~20 m of walking is enough to notice a place 60 m away, and kind to the battery
-        { accuracy: Location.Accuracy.High, distanceInterval: 20, timeInterval: 5000 },
-        (p) => setHere({ lat: p.coords.latitude, lon: p.coords.longitude }),
-      );
-      if (!mounted.current) {
-        watch.remove();
+  const start = useCallback((): Promise<boolean> => {
+    if (sub.current) return Promise.resolve(true);
+    const begin = async (): Promise<boolean> => {
+      try {
+        const watch = await Location.watchPositionAsync(
+          // every ~20 m of walking is enough to notice a place 60 m away, and kind to the battery
+          { accuracy: Location.Accuracy.High, distanceInterval: 20, timeInterval: 5000 },
+          (p) => setHere({ lat: p.coords.latitude, lon: p.coords.longitude }),
+        );
+        if (!mounted.current) {
+          watch.remove();
+          return false;
+        }
+        sub.current = watch;
+      } catch {
+        // permission given, but location is switched off in the phone's settings
+        setProblem('services');
         return false;
       }
-      sub.current = watch;
-    } catch {
-      // permission given, but location is switched off in the phone's settings
-      setProblem('services');
-      return false;
-    }
-    setProblem(null);
-    setOn(true);
-    return true;
+      setProblem(null);
+      setOn(true);
+      return true;
+    };
+    starting.current ??= begin().finally(() => {
+      starting.current = null;
+    });
+    return starting.current;
   }, []);
 
   /** asks for permission (a tap by the traveller), then follows the position */

@@ -36,13 +36,19 @@ export async function openWalkingDirections(d: Destination): Promise<void> {
     openLink(isAppleMobile(nav?.userAgent ?? '', nav?.maxTouchPoints ?? 0) ? appleWalking(d) : googleWalking(d));
     return;
   }
-  if (Platform.OS === 'ios') {
-    // canOpenURL answers only for schemes listed in the app's LSApplicationQueriesSchemes (app.json)
-    const hasGoogle = await Linking.canOpenURL(googleAppWalking(d)).catch(() => false);
-    await Linking.openURL(hasGoogle ? googleAppWalking(d) : appleWalking(d));
-    return;
+  // a phone without a maps app (or one that refuses the link) still gets the route, in the browser
+  // or copied by openLink, instead of a tap that does nothing
+  try {
+    if (Platform.OS === 'ios') {
+      // canOpenURL answers only for schemes listed in the app's LSApplicationQueriesSchemes (app.json)
+      const hasGoogle = await Linking.canOpenURL(googleAppWalking(d)).catch(() => false);
+      await Linking.openURL(hasGoogle ? googleAppWalking(d) : appleWalking(d));
+      return;
+    }
+    await Linking.openURL(googleWalking(d));
+  } catch {
+    openLink(googleWalking(d));
   }
-  await Linking.openURL(googleWalking(d));
 }
 
 /** Google Maps takes at most this many stops between the start and the end of a route. */

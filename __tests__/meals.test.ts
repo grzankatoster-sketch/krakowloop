@@ -1,5 +1,5 @@
 import { describe, expect, it } from '@jest/globals';
-import { RESTAURANTS, Restaurant, restaurantHoursOn } from '../src/data/restaurants';
+import { RESTAURANTS, Restaurant, restaurantHoursOnDate } from '../src/data/restaurants';
 import { parseISODate } from '../src/lib/dates';
 import { distance } from '../src/lib/geo';
 import { DAY_START, MEAL_KEYS, MEAL_RADIUS_METRES, MEAL_RADIUS_WIDE_METRES, MEAL_TIME, dayTimes, mealOptions, mealsToParam, parseMeals, planMeals, stopEnds, suitsMeal } from '../src/lib/meals';
@@ -39,7 +39,7 @@ describe('meals in a plan', () => {
     const d = day({ startDate: '2026-10-13' });
     for (const m of planMeals(d, MEAL_KEYS, TUESDAY)) {
       for (const o of m.options) {
-        const h = restaurantHoursOn(o.place, TUESDAY);
+        const h = restaurantHoursOnDate(o.place, TUESDAY);
         if (h === null) continue;
         expect(h.some(([from, to]) => from <= m.at && m.at + MEAL_TIME[m.meal].minutes <= to)).toBe(true);
       }
@@ -48,7 +48,7 @@ describe('meals in a plan', () => {
 
   it('puts places known to be open before places with unknown hours', () => {
     const opts = mealOptions('lunch', RYNEK, 13 * 60, TUESDAY);
-    const known = opts.map((o) => restaurantHoursOn(o.place, TUESDAY) !== null);
+    const known = opts.map((o) => restaurantHoursOnDate(o.place, TUESDAY) !== null);
     expect(known.indexOf(false) === -1 || known.slice(known.indexOf(false)).every((k) => !k)).toBe(true);
   });
 

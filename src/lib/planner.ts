@@ -28,7 +28,8 @@ export interface PlanOptions {
   exclude?: string[];
   /**
    * Shuffles places of similar importance, so "Build" and "Show me another plan" give different
-   * days. The same seed always gives the same plan (it travels in shared links); none = no shuffle.
+   * days. The same seed always gives the same plan (it travels in shared links); none = no shuffle
+   * of the other places (the must-sees of a steady or full stay still get the full shuffle bonus, seed or not).
    */
   seed?: number;
   /**
@@ -58,6 +59,11 @@ export interface PlanDay {
   date?: string;
   start?: LatLon;
   stops: Stop[];
+  /**
+   * Minutes after midnight when the day's clock starts, when it is not DAY_START: the afternoon
+   * after a day trip starts when the traveller is back (DAY_START + the trip's total minutes).
+   */
+  startMinute?: number;
   /** leg back to the start point, or to stop 1, closing the loop */
   returnLeg: Leg | null;
   walkMinutes: number;
@@ -145,7 +151,7 @@ const DINNER_RESERVE_MINUTES = 75;
 export const DAY_START = 9 * 60;
 
 /** The longest a traveller is asked to wait at a door that is not open yet. */
-const MAX_WAIT_MINUTES = 45;
+export const MAX_WAIT_MINUTES = 45;
 
 /**
  * The first minute from `arrive` at which the place is open for its whole visit, on that date;
@@ -167,10 +173,10 @@ export function openFrom(p: Place, date: Date, arrive: number, maxWait = MAX_WAI
  * important place), always the nearest place that is open when the traveller gets there; if none
  * is, the one that opens soonest. Null when some place cannot be fitted in its opening hours.
  */
-function orderByClock(stops: Place[], start: LatLon | undefined, date: Date): Place[] | null {
+function orderByClock(stops: Place[], start: LatLon | undefined, date: Date, startMinute = DAY_START): Place[] | null {
   const left = [...stops];
   const out: Place[] = [];
-  let clock = DAY_START;
+  let clock = startMinute;
   let at: LatLon | undefined = start;
   while (left.length) {
     const near = at ? [...left].sort((a, b) => distance(at!, a) - distance(at!, b)) : left;
@@ -179,8 +185,9 @@ function orderByClock(stops: Place[], start: LatLon | undefined, date: Date): Pl
     for (const p of near) {
       const arrive = clock + (at ? walkingMinutes(at, p) : 0);
       // the first place sets when the day starts (a museum opening at 10 makes a 10 o'clock start);
-      // later ones may keep the traveller waiting at the door only a little
-      const s = openFrom(p, date, arrive, out.length ? MAX_WAIT_MINUTES : Infinity);
+      // later ones may keep the traveller waiting at the door only a little. A day that starts
+      // at a fixed time (back from a trip) has no start to move.
+      const s = openFrom(p, date, arrive, out.length || startMinute !== DAY_START ? MAX_WAIT_MINUTES : Infinity);
       if (s === null) continue;
       if (s === arrive) {
         chosen = p;
@@ -202,8 +209,8 @@ function orderByClock(stops: Place[], start: LatLon | undefined, date: Date): Pl
 }
 
 /** The day's order: by the clock when it has a date, else a plain loop by distance. Null = does not fit. */
-function orderDay(stops: Place[], start: LatLon | undefined, date: Date | null): Place[] | null {
-  return date ? orderByClock(stops, start, date) : orderAsLoop(stops, start);
+function orderDay(stops: Place[], start: LatLon | undefined, date: Date | null, startMinute = DAY_START): Place[] | null {
+  return date ? orderByClock(stops, start, date, startMinute) : orderAsLoop(stops, start);
 }
 
 /** Places this close are one stop on foot (the Main Square, the Cloth Hall, St Mary's): they share a stop. */
@@ -307,7 +314,7 @@ function pickCityDay(
   /** wishes that change how a day is built, not which places exist */
   wish: { walking?: 'low' | 'normal'; dinner?: boolean } = {},
   /** a part of a day instead of a whole one: its minutes (breaks already taken out) and stops */
-  limit?: { minutes: number; stops: number },
+  limit?: { minutes: number; stops: number; /** when the part starts (minutes after midnight); DAY_START when absent */ startMinute?: number },
 ): Place[] {
   const maxStops = limit ? Math.min(limit.stops, PACE_LIMITS[pace].maxStops) : PACE_LIMITS[pace].maxStops;
   const budgetMinutes = PACE_LIMITS[pace].budgetMinutes;
@@ -324,6 +331,7 @@ function pickCityDay(
     .filter((p) => !zones.includes(p.zone) && distance(c, p) <= BORROW_WITHIN_METRES)
     .sort(byScore);
 
+  const startMinute = limit?.startMinute ?? DAY_START;
   const available = limit ? limit.minutes : budgetMinutes - BREAK_MINUTES[pace];
   // with a meal wanted, the day is filled to less than its budget and the meal takes the rest
   const fill = wish.dinner ? available - DINNER_RESERVE_MINUTES : available;
@@ -332,7 +340,7 @@ function pickCityDay(
   for (const candidate of [...inOrder, ...borrowed]) {
     // keep a day in one part of town: nothing too far from its first chosen stop
     if (anchor && distance(anchor, candidate) > MAX_DAY_SPREAD_METRES) continue;
-    const trial = orderDay([...chosen, candidate], start, date);
+    const trial = orderDay([...chosen, candidate], start, date, startMinute);
     // a place that cannot be met open at the time the day would reach it is left for another day
     if (!trial) continue;
     // places a few steps apart share a stop, so they don't use up the day's stops
@@ -345,7 +353,7 @@ function pickCityDay(
       anchor ??= candidate;
     }
   }
-  if (wish.dinner) chosen = withDinner(chosen, pool, start, date, available, wish);
+  if (wish.dinner) chosen = withDinner(chosen, pool, start, date, available, wish, startMinute);
   return chosen;
 }
 
@@ -361,6 +369,7 @@ function withDinner(
   date: Date | null,
   available: number,
   wish: { walking?: 'low' | 'normal' },
+  startMinute = DAY_START,
 ): Place[] {
   if (!chosen.length || chosen.some(suitsDinner)) return chosen;
   const near = centre(chosen);
@@ -370,7 +379,7 @@ function withDinner(
     return !(wish.walking === 'low' && m.onFootMinutes > LOW_WALK_MINUTES) && m.totalMinutes <= available;
   };
   for (const place of food.slice(0, 6)) {
-    const trial = orderDay([...chosen, place], start, date);
+    const trial = orderDay([...chosen, place], start, date, startMinute);
     if (trial && fits(trial)) return trial;
   }
   // no room left: the dinner takes the place of the day's least important stop, never the first one
@@ -379,14 +388,14 @@ function withDinner(
   for (const out of drop) {
     const rest = chosen.filter((p) => p !== out);
     for (const place of food.slice(0, 6)) {
-      const trial = orderDay([...rest, place], start, date);
+      const trial = orderDay([...rest, place], start, date, startMinute);
       if (trial && fits(trial)) return trial;
     }
   }
   return chosen;
 }
 
-function cityDay(index: number, ordered: Place[], pace: Pace, start: LatLon | undefined, date: Date | null, closed: Place[]): PlanDay {
+function cityDay(index: number, ordered: Place[], pace: Pace, start: LatLon | undefined, date: Date | null, closed: Place[], startMinute?: number): PlanDay {
   const m = measure(ordered, start, date);
   const route: [number, number][] = [
     ...(start ? [[start.lon, start.lat] as [number, number]] : []),
@@ -406,6 +415,7 @@ function cityDay(index: number, ordered: Place[], pace: Pace, start: LatLon | un
     date: date ? toISODate(date) : undefined,
     start,
     stops: ordered.map((place, i) => ({ place, leg: m.legs[i] })),
+    ...(startMinute !== undefined && { startMinute }),
     returnLeg: m.returnLeg,
     walkMinutes: m.walkMinutes,
     onFootMinutes: m.onFootMinutes,
@@ -459,7 +469,25 @@ function chooseTrips(source: Place[], days: number, opts: PlanOptions): Place[] 
   return wanted.filter((p): p is Place => p !== undefined).slice(0, days - 2);
 }
 
+/** One shuffle value per place for the whole plan, so every day of it sees the same order. */
+function planJitter(opts: PlanOptions, usable: Place[], days: number): (p: Place) => number {
+  const rand = opts.seed ? seeded(opts.seed) : null;
+  const shuffle = new Map(rand ? usable.map((p) => [p.id, rand() * SHUFFLE] as const) : []);
+  const keepMustSees = days >= 2 && opts.pace !== 'easy';
+  return (p: Place) => (keepMustSees && MUST_SEE.includes(p.id) ? SHUFFLE : shuffle.get(p.id) ?? 0);
+}
+
+/** The places a city day may be built from (no day trips, no bars, remembrance only when asked for). */
+const cityPool = (places: Place[], remembrance: boolean) =>
+  places.filter((p) => CITY_ZONES.includes(p.zone) && !p.trip && p.cat !== 'night' && (p.cat !== 'remembrance' || remembrance));
+
 export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanDay[] {
+  // "Skip this stop" takes that place out of the plan the traveller is looking at; it does not make a
+  // new plan. The shuffle is drawn over the places left, so leaving one out would reshuffle every
+  // day: the plan is built without the skipped places first and they are then taken out of it.
+  // A skipped day trip gives its day another trip, or a day in the city.
+  if (opts.exclude?.length) return withoutStops(buildPlan({ ...opts, exclude: [] }, source), new Set(opts.exclude), opts, source);
+
   const days = Math.max(1, Math.min(MAX_PLAN_DAYS, Math.round(opts.days)));
   const wanted = new Set(opts.interests.flatMap((i) => INTEREST_CATS[i]));
   const remembrance = opts.interests.includes('remembrance');
@@ -467,18 +495,13 @@ export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanD
   const usable = source.filter((p) => !exclude.has(p.id));
   const firstDate = parseISODate(opts.startDate);
   const dateOf = (i: number) => (firstDate ? addDays(firstDate, i) : null);
-
-  // one shuffle value per place for the whole plan, so every day of it sees the same order
-  const rand = opts.seed ? seeded(opts.seed) : null;
-  const shuffle = new Map(rand ? usable.map((p) => [p.id, rand() * SHUFFLE] as const) : []);
-  const keepMustSees = days >= 2 && opts.pace !== 'easy';
-  const jitter = (p: Place) => (keepMustSees && MUST_SEE.includes(p.id) ? SHUFFLE : shuffle.get(p.id) ?? 0);
+  const jitter = planJitter(opts, usable, days);
 
   const trips = chooseTrips(usable, days, opts);
   const slots = tripSlots(days, trips.length);
   const cityDays = days - trips.length;
 
-  let pool = usable.filter((p) => CITY_ZONES.includes(p.zone) && !p.trip && p.cat !== 'night' && (p.cat !== 'remembrance' || remembrance));
+  let pool = cityPool(usable, remembrance);
   const plan: PlanDay[] = [];
   // Day trips take their slots in the middle of the stay; city days fill the other dates in order.
   // A date with nothing open is skipped, and the following days keep their real dates.
@@ -505,16 +528,122 @@ export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanD
   // Afterwards, and only from what the city days left: a short trip gets its afternoon back in town.
   // (Done last, so an afternoon never takes a must-see from the day built around it.)
   for (const day of plan) {
-    if (day.kind !== 'trip' || !pool.length) continue;
-    // the break of a trip day is taken on the trip (lunch in Wieliczka), so the rest of the budget is free
-    const free = day.budgetMinutes - day.totalMinutes;
-    if (free < AFTER_TRIP_MIN_MINUTES) continue;
-    const date = day.date ? parseISODate(day.date) : null;
-    const open = date ? pool.filter((p) => opensLongEnough(p.id, date, p.minutes)) : pool;
-    const stops = pickCityDay(open, AFTER_TRIP_ZONES, wanted, opts.pace, opts.start, date, jitter, { walking: opts.walking }, { minutes: free, stops: AFTER_TRIP_MAX_STOPS });
-    if (!stops.length) continue;
-    day.after = cityDay(day.index, stops, opts.pace, opts.start, date, []);
-    pool = pool.filter((p) => !stops.includes(p));
+    const after = afternoonFor(day, pool, wanted, opts, jitter);
+    if (!after) continue;
+    day.after = after;
+    pool = pool.filter((p) => !after.stops.some((st) => st.place === p));
+  }
+  return plan;
+}
+
+/** The afternoon in town after a short day trip, from what the city days left; none when there is no time for one. */
+function afternoonFor(day: PlanDay, pool: Place[], wanted: Set<Category>, opts: PlanOptions, jitter: (p: Place) => number): PlanDay | undefined {
+  if (day.kind !== 'trip' || !pool.length) return undefined;
+  // the break of a trip day is taken on the trip (lunch in Wieliczka), so the rest of the budget is free
+  const free = day.budgetMinutes - day.totalMinutes;
+  if (free < AFTER_TRIP_MIN_MINUTES) return undefined;
+  const date = day.date ? parseISODate(day.date) : null;
+  const open = date ? pool.filter((p) => opensLongEnough(p.id, date, p.minutes)) : pool;
+  // the afternoon starts when the traveller is back: the trip's visit and both drives
+  const back = DAY_START + day.totalMinutes;
+  const stops = pickCityDay(open, AFTER_TRIP_ZONES, wanted, opts.pace, opts.start, date, jitter, { walking: opts.walking }, { minutes: free, stops: AFTER_TRIP_MAX_STOPS, startMinute: back });
+  return stops.length ? cityDay(day.index, stops, opts.pace, opts.start, date, [], back) : undefined;
+}
+
+/**
+ * The plan with some of its stops skipped: each day keeps the rest of its stops, in an order that
+ * meets them open, and for each place taken out it may get one stand-in close to what it kept, from
+ * places no other day uses, when the day still has the time and the stops for it. Days without a
+ * skipped place stay exactly as they were.
+ */
+function withoutStops(base: PlanDay[], skipped: Set<string>, opts: PlanOptions, source: Place[]): PlanDay[] {
+  const days = Math.max(1, Math.min(MAX_PLAN_DAYS, Math.round(opts.days)));
+  const wanted = new Set(opts.interests.flatMap((i) => INTEREST_CATS[i]));
+  // the same shuffle as the base plan, so stand-ins are chosen the way its days were
+  const jitter = planJitter(opts, source, days);
+  const byScore = (a: Place, b: Place) => score(b, wanted) + jitter(b) - (score(a, wanted) + jitter(a));
+  const used = new Set(base.flatMap((d) => [...d.stops, ...(d.after?.stops ?? [])].map((st) => st.place.id)));
+  let spare = cityPool(source, opts.interests.includes('remembrance'))
+    .filter((p) => !used.has(p.id) && !skipped.has(p.id))
+    .sort(byScore);
+
+  const redo = (part: PlanDay, limit: { minutes: number; stops: number }, after: boolean): PlanDay | undefined => {
+    const before = part.stops.map((st) => st.place);
+    const kept = before.filter((p) => !skipped.has(p.id));
+    if (kept.length === before.length) return part;
+    const date = part.date ? parseISODate(part.date) : null;
+    const startMinute = part.startMinute ?? DAY_START;
+    // the stops left, met open; if a stop now comes too early for its door, the old order stays
+    // (the day's clock then shows the wait)
+    let ordered = orderDay(kept, opts.start, date, startMinute) ?? kept;
+    const fits = (cand: Place) => {
+      const anchor = ordered[0];
+      if (anchor && distance(anchor, cand) > MAX_DAY_SPREAD_METRES) return false;
+      if (date && !opensLongEnough(cand.id, date, cand.minutes)) return false;
+      const trial = orderDay([...ordered, cand], opts.start, date, startMinute);
+      if (!trial || spots(trial) > limit.stops) return false;
+      const m = measure(trial, opts.start, date);
+      if (opts.walking === 'low' && m.onFootMinutes > LOW_WALK_MINUTES) return false;
+      return m.totalMinutes <= limit.minutes;
+    };
+    // the dinner place was the one skipped: the first stand-in is another place for dinner
+    const dinnerGone = opts.dinner && !after && before.some(suitsDinner) && !kept.some(suitsDinner);
+    for (let n = before.length - kept.length, first = true; n > 0; n--, first = false) {
+      const near = ordered.length ? centre(ordered) : undefined;
+      const dinners = near ? spare.filter(suitsDinner).sort((a, b2) => distance(near, a) - distance(near, b2)) : spare.filter(suitsDinner);
+      const stand = (first && dinnerGone ? dinners.find(fits) : undefined) ?? spare.find(fits);
+      if (!stand) break;
+      ordered = orderDay([...ordered, stand], opts.start, date, startMinute)!;
+      spare = spare.filter((p) => p !== stand);
+    }
+    if (!ordered.length) return undefined;
+    return after
+      ? cityDay(part.index, ordered, opts.pace, opts.start, date, [], part.startMinute)
+      : cityDay(part.index, ordered, opts.pace, opts.start, date, part.closed);
+  };
+
+  const plan: PlanDay[] = [];
+  for (const day of base) {
+    if (day.kind === 'city') {
+      const limit = { minutes: PACE_LIMITS[opts.pace].budgetMinutes - BREAK_MINUTES[opts.pace], stops: PACE_LIMITS[opts.pace].maxStops };
+      const next = redo(day, limit, false);
+      if (next) plan.push(next);
+      continue;
+    }
+    if (skipped.has(day.stops[0].place.id)) {
+      // another trip the stay would take, not used on another day; else a day in the city
+      const date = day.date ? parseISODate(day.date) : null;
+      const inPlan = new Set(base.filter((d) => d.kind === 'trip').map((d) => d.stops[0].place.id));
+      const other = chooseTrips(source.filter((p) => !skipped.has(p.id) && !inPlan.has(p.id)), days, opts)[0];
+      // the old trip's afternoon is free again
+      const freed = (day.after?.stops ?? []).map((st) => st.place).filter((p) => !skipped.has(p.id));
+      spare = [...spare, ...freed].sort(byScore);
+      if (other) {
+        const next = tripDay(day.index, other, opts.pace, opts.start, date);
+        const afternoon = afternoonFor(next, spare, wanted, opts, jitter);
+        if (afternoon) {
+          next.after = afternoon;
+          spare = spare.filter((p) => !afternoon.stops.some((st) => st.place === p));
+        }
+        plan.push(next);
+        continue;
+      }
+      const open = date ? spare.filter((p) => opensLongEnough(p.id, date, p.minutes)) : spare;
+      const stops = pickCityDay(open, CITY_ZONES, wanted, opts.pace, opts.start, date, jitter, { walking: opts.walking, dinner: opts.dinner });
+      if (stops.length) {
+        plan.push(cityDay(day.index, stops, opts.pace, opts.start, date, []));
+        spare = spare.filter((p) => !stops.includes(p));
+      }
+      continue;
+    }
+    const trip = { ...day };
+    if (day.after) {
+      const free = day.budgetMinutes - day.totalMinutes;
+      const after = redo(day.after, { minutes: free, stops: Math.min(AFTER_TRIP_MAX_STOPS, PACE_LIMITS[opts.pace].maxStops) }, true);
+      if (after) trip.after = after;
+      else delete trip.after;
+    }
+    plan.push(trip);
   }
   return plan;
 }

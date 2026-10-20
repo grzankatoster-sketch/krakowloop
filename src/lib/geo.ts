@@ -23,8 +23,13 @@ export const METRES_PER_MINUTE_ON_FOOT = 75;
 const ROAD_DETOUR = 1.4;
 const METRES_PER_MINUTE_BY_ROAD = 900;
 
+/** Minutes on foot for a straight-line distance in metres: the one estimate every screen shows. */
+export function walkingMinutesFor(metres: number): number {
+  return Math.max(1, Math.round((metres * DETOUR) / METRES_PER_MINUTE_ON_FOOT));
+}
+
 export function walkingMinutes(a: LatLon, b: LatLon): number {
-  return Math.max(1, Math.round((distance(a, b) * DETOUR) / METRES_PER_MINUTE_ON_FOOT));
+  return walkingMinutesFor(distance(a, b));
 }
 
 /** Estimated one-way travel time by car or coach, for day trips. */

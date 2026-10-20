@@ -1,6 +1,7 @@
 // Events in Kraków (concerts, sport, theatre) from our events Worker (proxy/events). The app does
 // not trust the answer blindly: every event is checked again here, and a bad one is dropped.
 import { useEffect, useState } from 'react';
+import { CITY } from '../config/city';
 import { EVENTS_URL } from '../config/events';
 import { krakowWallClock } from './cityTime';
 import { LatLon, distance } from './geo';
@@ -40,6 +41,8 @@ export function readEvent(raw: unknown): CityEvent | null {
   const lat = typeof e.lat === 'number' && Math.abs(e.lat) <= 90 ? e.lat : null;
   const lon = typeof e.lon === 'number' && Math.abs(e.lon) <= 180 ? e.lon : null;
   if (!title || !id || !day || lat === null || lon === null || !httpsOnly(e.url)) return null;
+  // a place outside the city (a feed's 0,0 for "unknown", or another town) is not "tonight in Kraków"
+  if (distance(CITY.centre, { lat, lon }) > CITY.maxStartMetres) return null;
   const category = (EVENT_CATEGORIES as string[]).includes(e.category as string) ? (e.category as EventCategory) : 'other';
   return {
     id,
@@ -58,7 +61,10 @@ export function readEvent(raw: unknown): CityEvent | null {
 
 export function readEvents(body: unknown): CityEvent[] {
   const list = (body as { events?: unknown })?.events;
-  return Array.isArray(list) ? list.map(readEvent).filter((e): e is CityEvent => e !== null) : [];
+  if (!Array.isArray(list)) return [];
+  // one card per event: the same id twice in a feed (two sources) would be two cards with one key
+  const seen = new Set<string>();
+  return list.map(readEvent).filter((e): e is CityEvent => e !== null && !seen.has(e.id) && !!seen.add(e.id));
 }
 
 /** Which days a chip means, as YYYY-MM-DD in Kraków: today, tomorrow, or the coming weekend. */
@@ -84,10 +90,12 @@ export function daysFor(when: EventWhen, now: Date = new Date()): string[] {
 export function pickEvents(list: readonly CityEvent[], days: readonly string[], categories: readonly EventCategory[], sort: 'time' | 'near', from: LatLon, now: Date = new Date()): CityEvent[] {
   const started = (e: CityEvent) => e.at !== null && Date.parse(e.at) < now.getTime() - 2 * 3600 * 1000;
   const out = list.filter((e) => days.includes(e.day) && (!categories.length || categories.includes(e.category)) && !started(e));
-  const time = (e: CityEvent) => e.at ?? `${e.day}T23:59`;
+  // as instants, not as text: "17:00Z" and "18:30+02:00" sort by when they happen; an event with only
+  // a day goes after that day's timed ones (23:59 UTC is past midnight in Kraków)
+  const time = (e: CityEvent) => (e.at ? Date.parse(e.at) : Date.parse(`${e.day}T23:59:00Z`));
   return sort === 'near'
-    ? out.sort((a, b) => distance(from, a) - distance(from, b) || time(a).localeCompare(time(b)))
-    : out.sort((a, b) => time(a).localeCompare(time(b)) || a.title.localeCompare(b.title));
+    ? out.sort((a, b) => distance(from, a) - distance(from, b) || time(a) - time(b))
+    : out.sort((a, b) => time(a) - time(b) || a.title.localeCompare(b.title));
 }
 
 /** The start in Kraków time, "20:00", or null when only the day is known. */

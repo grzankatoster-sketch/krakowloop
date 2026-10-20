@@ -1,5 +1,6 @@
 import { describe, expect, it } from '@jest/globals';
 import { pickMoments, standingAt, walkMinutes } from '../src/lib/moments';
+import { walkingMinutes } from '../src/lib/geo';
 
 const RYNEK = { lat: 50.0617, lon: 19.9373 };
 const src = [
@@ -24,9 +25,11 @@ describe('now cards', () => {
     const kinds = pickMoments(src, RYNEK).map((m) => m.kind);
     for (let i = 1; i < kinds.length - 1; i++) expect(kinds[i] === kinds[i - 1] && kinds[i] === 'sight' && kinds.slice(i).some((k) => k !== 'sight')).toBe(false);
   });
-  it('counts walking minutes at an easy pace, never zero', () => {
+  it('counts walking minutes with the detour of real streets, never zero, the same as the plan', () => {
     expect(walkMinutes(0)).toBe(1);
-    expect(walkMinutes(750)).toBe(10);
+    // 750 m in a straight line is about 975 m of streets at 75 m a minute
+    expect(walkMinutes(750)).toBe(13);
+    expect(walkMinutes(600)).toBe(walkingMinutes(RYNEK, { lat: RYNEK.lat + 600 / 111195, lon: RYNEK.lon }));
   });
   it('respects the maximum', () => {
     expect(pickMoments(src, RYNEK, 2)).toHaveLength(2);

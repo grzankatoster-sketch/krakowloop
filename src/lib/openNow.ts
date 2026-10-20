@@ -18,11 +18,18 @@ export const CLOSING_SOON_MINUTES = 60;
 /**
  * @param hours that day's [open, close] intervals, minutes after midnight
  * @param minutes the moment, minutes after midnight
+ * @param nextDay the next day's intervals, when known: a bar open "18:00-02:00" is stored as 18:00-24:00
+ *   today and 00:00-02:00 tomorrow, and it closes at 02:00 (closesAt 1560), not at midnight
  */
-export function openState(hours: Interval[], minutes: number): OpenState {
+export function openState(hours: Interval[], minutes: number, nextDay?: Interval[] | null): OpenState {
   if (!hours.length) return { state: 'closed' };
   const current = hours.find(([open, close]) => open <= minutes && minutes < close);
-  if (current) return { state: 'open', closesAt: current[1] };
+  if (current) {
+    // carried over only when tomorrow's first hours end that night (02:00), not when tomorrow is open
+    // round the clock as well: that place stays "open until midnight" as before
+    const carry = current[1] >= 1440 ? nextDay?.find(([open, close]) => open === 0 && close < 1440) : undefined;
+    return { state: 'open', closesAt: carry ? 1440 + carry[1] : current[1] };
+  }
   const next = hours.filter(([open]) => open > minutes).sort((a, b) => a[0] - b[0])[0];
   return next ? { state: 'later', opensAt: next[0] } : { state: 'done' };
 }
@@ -36,9 +43,11 @@ export function closingSoon(status: OpenState, minutes: number): boolean {
 export function statusLabel(status: OpenState, minutes: number): string {
   if (status.state === 'open') {
     const left = status.closesAt - minutes;
-    const at = status.closesAt >= 1440 ? t('open.atMidnight') : formatTime(status.closesAt);
+    const midnight = status.closesAt === 1440;
+    // past midnight (a bar until 02:00) it is the next day's clock
+    const at = midnight ? t('open.atMidnight') : formatTime(status.closesAt % 1440);
     if (left <= CLOSING_SOON_MINUTES) return t('open.closesSoon', { time: at, minutes: left });
-    return status.closesAt >= 1440 ? t('open.untilMidnight') : t('open.closes', { time: at });
+    return midnight ? t('open.untilMidnight') : t('open.closes', { time: at });
   }
   if (status.state === 'later') return t('open.opens', { time: formatTime(status.opensAt) });
   if (status.state === 'done') return t('open.doneToday');

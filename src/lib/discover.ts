@@ -68,7 +68,7 @@ export function byDistance<T extends LatLon & { name: string; pick?: boolean }>(
     .sort((a, b) =>
       a.metres !== null && b.metres !== null
         ? a.metres - b.metres
-        : Number(b.item.pick === true) - Number(a.item.pick === true) || a.item.name.localeCompare(b.item.name),
+        : Number(b.item.pick === true) - Number(a.item.pick === true) || a.item.name.localeCompare(b.item.name, 'pl'),
     );
 }
 

@@ -23,6 +23,8 @@ export function parseSaved(raw: string | null): string[] {
 
 let current: string[] = [];
 let loaded = false;
+// taps made before the stored list was read: replayed on top of it, never lost under it
+let pending: string[] | null = [];
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -34,10 +36,15 @@ function load() {
   loaded = true;
   AsyncStorage.getItem(SAVED_KEY)
     .then((raw) => {
-      current = parseSaved(raw);
+      const taps = pending ?? [];
+      pending = null;
+      current = taps.reduce(toggled, parseSaved(raw));
       emit();
+      if (taps.length) AsyncStorage.setItem(SAVED_KEY, JSON.stringify(current)).catch(() => {});
     })
-    .catch(() => {});
+    .catch(() => {
+      pending = null;
+    });
 }
 
 function subscribe(l: () => void) {
@@ -47,9 +54,12 @@ function subscribe(l: () => void) {
 }
 
 export function toggleSaved(id: string) {
+  load();
   current = toggled(current, id);
   emit();
-  AsyncStorage.setItem(SAVED_KEY, JSON.stringify(current)).catch(() => {});
+  // still reading: writing now would replace the stored list with this one tap
+  if (pending) pending.push(id);
+  else AsyncStorage.setItem(SAVED_KEY, JSON.stringify(current)).catch(() => {});
 }
 
 /** The saved places' ids, newest first; every screen that shows them updates together. */

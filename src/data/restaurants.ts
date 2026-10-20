@@ -73,19 +73,95 @@ function fromRow(r: Row): Restaurant {
 export const RESTAURANTS_SOURCE = data.source;
 export const RESTAURANTS_EXPORTED = data.exported;
 
-export const RESTAURANTS: Restaurant[] = (data.items as Row[]).map(fromRow);
+/** Places with the same name this close are one place mapped twice in OSM. */
+const SAME_PLACE_METRES = 40;
 
-const byId = new Map(RESTAURANTS.map((r) => [r.id, r]));
-export const restaurantById = (id: string) => byId.get(id);
+const nameKey = (name: string) =>
+  name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+/** How much a row tells a traveller: the one kept when OSM has the same place twice. */
+const richness = (r: Restaurant) =>
+  (r.pick ? 100 : 0) + (r.week ? 8 : 0) + (r.hoursRaw ? 2 : 0) + (r.website ? 2 : 0) + (r.phone ? 1 : 0) + (r.address ? 1 : 0) + r.cuisines.length;
+
+function metresApart(a: Restaurant, b: Restaurant): number {
+  const dLat = (a.lat - b.lat) * 111195;
+  const dLon = (a.lon - b.lon) * 111195 * Math.cos((a.lat * Math.PI) / 180);
+  return Math.hypot(dLat, dLon);
+}
 
 /**
- * Opening intervals on the Kraków calendar day of `date` (minutes after midnight, Kraków time),
- * [] when closed that day, or null when OSM gives no hours we could read.
+ * The catalogue as a traveller should see it. A week with no opening on any day is a tag we could not
+ * read, not a place that never opens: its hours become unknown. One place mapped twice (same name,
+ * a few metres apart) is listed once, as its richer row; `alias` sends the other id to it, so an old
+ * link or saved meal still finds it.
+ */
+export function cleanCatalogue(list: Restaurant[]): { items: Restaurant[]; alias: Map<string, string> } {
+  const alias = new Map<string, string>();
+  const groups = new Map<string, Restaurant[]>();
+  for (const r0 of list) {
+    const r = r0.week && r0.week.every((day) => day.length === 0) ? { ...r0, week: undefined } : r0;
+    const key = nameKey(r.name);
+    const same = groups.get(key);
+    const twin = same?.find((o) => metresApart(o, r) <= SAME_PLACE_METRES);
+    if (!twin) {
+      if (same) same.push(r);
+      else groups.set(key, [r]);
+      continue;
+    }
+    const [keep, drop] = richness(r) > richness(twin) ? [r, twin] : [twin, r];
+    if (keep !== twin) same!.splice(same!.indexOf(twin), 1, keep);
+    alias.set(drop.id, keep.id);
+  }
+  const kept = new Map([...groups.values()].flat().map((r) => [r.id, r]));
+  // a twin dropped for a row that was itself dropped later points on to the one that stayed
+  for (const [from, to0] of alias) {
+    let to = to0;
+    for (let hops = 0; !kept.has(to) && alias.has(to) && hops < 10; hops++) to = alias.get(to)!;
+    alias.set(from, to);
+  }
+  // keep the build's order (it is sorted), only without the dropped twins
+  return { items: list.map((r) => kept.get(r.id)).filter((r): r is Restaurant => !!r), alias };
+}
+
+const cleaned = cleanCatalogue((data.items as Row[]).map(fromRow));
+export const RESTAURANTS: Restaurant[] = cleaned.items;
+
+const byId = new Map(RESTAURANTS.map((r) => [r.id, r]));
+export const restaurantById = (id: string) => byId.get(id) ?? byId.get(cleaned.alias.get(id) ?? '');
+
+/** Opening intervals on a weekday (0 = Monday), [] when closed, null when OSM gives no hours we could read. */
+export function restaurantHoursOnWeekday(r: Restaurant, weekday: number): Interval[] | null {
+  if (!r.week) return null;
+  return r.week[weekday] ?? null;
+}
+
+/**
+ * Opening intervals on the Kraków calendar day of the instant `date` (minutes after midnight,
+ * Kraków time): for "now" and "in n days". [] when closed that day, or null when OSM gives no
+ * hours we could read. For a day of a plan use restaurantHoursOnDate: its date is a calendar
+ * day, not an instant.
  */
 export function restaurantHoursOn(r: Restaurant, date: Date): Interval[] | null {
-  if (!r.week) return null;
-  const weekday = (krakowWallClock(date).getDay() + 6) % 7;
-  return r.week[weekday] ?? null;
+  return restaurantHoursOnWeekday(r, (krakowWallClock(date).getDay() + 6) % 7);
+}
+
+/**
+ * Opening intervals on a calendar day such as a plan's (parseISODate: midnight of that day on the
+ * device). The weekday is the date's own, whatever time zone the phone is on: Kraków's clock would
+ * name the day before on a phone that is ahead of Kraków (Kyiv, Dubai, Sydney).
+ */
+export function restaurantHoursOnDate(r: Restaurant, date: Date): Interval[] | null {
+  return restaurantHoursOnWeekday(r, (date.getDay() + 6) % 7);
+}
+
+/** The next Kraków day's intervals after the instant `date`: where tonight's "until 24:00" goes on. */
+export function restaurantHoursNextDay(r: Restaurant, date: Date): Interval[] | null {
+  return restaurantHoursOnWeekday(r, (krakowWallClock(date).getDay() + 7) % 7);
 }
 
 /** How many places serve each cuisine group (a place with two groups counts in both). */

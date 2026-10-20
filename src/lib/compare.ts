@@ -2,7 +2,7 @@
 // Only what the app knows from its own data (OpenStreetMap): no prices or ratings, as next to the map.
 import type { Diet } from '../data/foodInfo';
 import type { Restaurant } from '../data/restaurants';
-import { DETOUR, distance, LatLon } from './geo';
+import { distance, LatLon } from './geo';
 import { walkMinutes } from './moments';
 import type { Interval } from './hours';
 import { openState } from './openNow';
@@ -32,12 +32,12 @@ export interface CompareFacts {
 }
 
 /** One column of the comparison; `hours` are today's, `now` minutes after midnight in Kraków. */
-export function compareFacts(r: Restaurant, from: LatLon, hours: Interval[] | null, now: number): CompareFacts {
-  const st = hours ? openState(hours, now) : null;
+export function compareFacts(r: Restaurant, from: LatLon, hours: Interval[] | null, now: number, nextDay?: Interval[] | null): CompareFacts {
+  const st = hours ? openState(hours, now, nextDay) : null;
   return {
     id: r.id,
     name: r.name,
-    walk: walkMinutes(distance(from, r) * DETOUR),
+    walk: walkMinutes(distance(from, r)),
     open: st ? st.state === 'open' : null,
     left: st && st.state === 'open' ? st.closesAt - now : null,
     cuisines: r.cuisines,
