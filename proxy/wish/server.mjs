@@ -13,6 +13,10 @@ const MAX_BODY = 8 * 1024;
 export { rateLimiter };
 
 export function makeHandler({ provider, allowedOrigins = [], limit = rateLimiter(20) }) {
+  // one warm-up at a time: Discover opened by many people must not queue many model calls; warm-ups
+  // have their own brake, so they never use up what the real readings may ask for
+  let warming = null;
+  const warmLimit = rateLimiter(60);
   return async (req, res) => {
     const origin = req.headers.origin;
     // no Origin = not a browser (the phone app): CORS only protects browsers, the rate limit does the rest
@@ -30,7 +34,8 @@ export function makeHandler({ provider, allowedOrigins = [], limit = rateLimiter
     // the app calls this when Discover opens: a cold model starts loading before anyone types
     if (req.method === 'POST' && req.url === '/v1/warm') {
       if (!allowed) return send(403, { error: 'origin' });
-      interpret(provider, 'pl', 'sushi').catch(() => {});
+      if (!warmLimit(req.socket.remoteAddress ?? '?')) return send(429, { error: 'rate_limited' });
+      warming ??= interpret(provider, 'pl', 'sushi').catch(() => {}).finally(() => { warming = null; });
       return send(202, { warming: true });
     }
     if (req.method !== 'POST' || req.url !== '/v1/interpret-wish') return send(404, { error: 'not_found' });

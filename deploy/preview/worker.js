@@ -10,6 +10,25 @@ async function sha256(text) {
   return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** HMAC-SHA-256 of text under the secret, as hex. */
+async function hmac(secret, text) {
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const bytes = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(text));
+  return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** The cookie is "<expiry in ms>.<signature>": it ends on its own, and a copied cookie is never the token. */
+async function makePass(secret, now) {
+  const exp = String(now + DAYS * 86400 * 1000);
+  return `${exp}.${await hmac(secret, exp)}`;
+}
+
+async function passOk(secret, value, now) {
+  const [exp, sig] = value.split('.');
+  if (!exp || !sig || !/^\d+$/.test(exp) || Number(exp) < now) return false;
+  return same(sig, await hmac(secret, exp));
+}
+
 /** Equal strings in constant time, so the token cannot be guessed from response times. */
 function same(a, b) {
   if (a.length !== b.length) return false;
@@ -31,6 +50,9 @@ const SHIELD = {
   'X-Robots-Tag': 'noindex, nofollow',
   'Referrer-Policy': 'no-referrer',
   'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'Strict-Transport-Security': 'max-age=31536000',
 };
 
 const GATE = `<!doctype html><html lang="pl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -55,17 +77,19 @@ export default {
         return new Response(GATE, { status: 401, headers: { ...SHIELD, 'Content-Type': 'text/html; charset=utf-8' } });
       }
       url.searchParams.delete('k');
+      // "//host/..." would be read by the browser as another site: always one leading slash
+      const path = '/' + url.pathname.replace(/^\/+/, '');
       return new Response(null, {
         status: 302,
         headers: {
           ...SHIELD,
-          Location: url.pathname + (url.search || ''),
-          'Set-Cookie': `${COOKIE}=${expected}; Max-Age=${DAYS * 86400}; Path=/; HttpOnly; Secure; SameSite=Lax`,
+          Location: path + (url.search || ''),
+          'Set-Cookie': `${COOKIE}=${await makePass(secret, Date.now())}; Max-Age=${DAYS * 86400}; Path=/; HttpOnly; Secure; SameSite=Lax`,
         },
       });
     }
 
-    if (!same(cookieValue(request, COOKIE), expected)) {
+    if (!(await passOk(secret, cookieValue(request, COOKIE), Date.now()))) {
       return new Response(GATE, { status: 401, headers: { ...SHIELD, 'Content-Type': 'text/html; charset=utf-8' } });
     }
     if (url.pathname === '/robots.txt') return new Response('User-agent: *\nDisallow: /\n', { headers: SHIELD });

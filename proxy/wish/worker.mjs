@@ -45,6 +45,8 @@ export default {
     if (!cors.allowed) return json(403, { error: 'origin' });
     if (!limit(request.headers.get('CF-Connecting-IP') ?? '?')) return json(429, { error: 'rate_limited' }, cors.headers);
 
+    // a declared size over the limit is refused before the body is read at all
+    if (Number(request.headers.get('Content-Length') || 0) > MAX_BODY) return json(413, { error: 'too_large' }, cors.headers);
     const raw = await request.text();
     if (raw.length > MAX_BODY) return json(413, { error: 'too_large' }, cors.headers);
     let body;

@@ -7,6 +7,8 @@ node_modules/
 .expo/
 dist/
 dist-e2e/
+# every other export (dist-preview, a local e2e build)
+dist-*/
 
 # Playwright
 test-results/

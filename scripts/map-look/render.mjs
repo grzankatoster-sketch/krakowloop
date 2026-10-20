@@ -64,7 +64,10 @@ async function portAnswers() {
 async function serve(dir) {
   // a server already on the port would answer instead of ours, and its build would be photographed
   if (await portAnswers()) throw new Error(`port ${PORT} is already in use: stop that server first`);
-  const child = spawn('npx', ['--yes', 'serve', '-s', dir, '-l', String(PORT)], { shell: true, stdio: 'ignore' });
+  // a shell only on Windows, where npx is a .cmd file Node will not start without one; the arguments
+  // are this script's own constants, nothing from outside
+  // nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true
+  const child = spawn('npx', ['--yes', 'serve', '-s', dir, '-l', String(PORT)], { shell: process.platform === 'win32', stdio: 'ignore' });
   for (let i = 0; i < 60; i++) {
     if (await portAnswers()) return child;
     await sleep(500);

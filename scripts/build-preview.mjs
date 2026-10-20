@@ -4,6 +4,8 @@
 import { spawnSync } from 'node:child_process';
 
 const env = { ...process.env, EXPO_PUBLIC_WISH_PROXY_URL: process.env.PREVIEW_WISH_PROXY_URL ?? '' };
+// a shell only on Windows (npx is a .cmd file there); the arguments are constants, nothing from outside
+// nosemgrep: javascript.lang.security.audit.spawn-shell-true.spawn-shell-true
 const r = spawnSync('npx', ['expo', 'export', '--platform', 'web', '--output-dir', 'dist-preview', '--clear'], {
   env,
   stdio: 'inherit',
