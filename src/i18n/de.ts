@@ -108,6 +108,7 @@ export const de: Strings = {
   'place.unknown': 'Dieser Ort ist nicht in KrakowLoop. Geh zurück und wähle einen Ort auf der Karte.',
   'place.photoAlt': 'Foto: {name}',
   'place.about': 'etwa {time}',
+  'place.noVisits': 'Das Innere kann derzeit nicht besichtigt werden (Jüdische Gemeinde Krakau, geprüft am {date}).',
   'place.hours': 'Öffnungszeiten',
   'place.today': 'heute',
   'place.hoursNote': 'Öffnungszeiten für diesen Monat aus OpenStreetMap, ohne Feiertage. Bitte vor dem Besuch prüfen.',

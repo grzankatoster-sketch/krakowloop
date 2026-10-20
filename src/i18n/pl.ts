@@ -108,6 +108,7 @@ export const pl: Strings = {
   'place.unknown': 'Tego miejsca nie ma w KrakowLoop. Wróć i wybierz miejsce na mapie.',
   'place.photoAlt': 'Zdjęcie: {name}',
   'place.about': 'około {time}',
+  'place.noVisits': 'Wnętrza obecnie nie można zwiedzać (Gmina Wyznaniowa Żydowska w Krakowie, sprawdzone {date}).',
   'place.hours': 'Godziny otwarcia',
   'place.today': 'dziś',
   'place.hoursNote': 'Godziny na ten miesiąc z OpenStreetMap, bez świąt. Sprawdź przed wyjściem.',

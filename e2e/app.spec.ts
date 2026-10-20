@@ -868,8 +868,8 @@ test.describe('Time Lens', () => {
     await page.getByRole('button', { name: /^Cloth Hall/ }).click();
     // the list screen stays mounted underneath on web, so the viewer's caption is the last match
     await expect(page.getByText('Stand at: Main Square, facing the Cloth Hall').last()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Photo from 1870' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.getByLabel('Cloth Hall with cabs and market stalls').last()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Photo from c.1870' })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByLabel('Cloth Hall from the north-east, with the stalls built along its walls').last()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Compare with my camera' })).toBeVisible();
   });
 

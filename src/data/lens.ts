@@ -87,12 +87,13 @@ export const lensPoints: LensPoint[] = [
     layers: [
       {
         key: 'sukiennice-1870', // gitleaks:allow (a layer id, not a secret)
-        year: '1870',
-        title: 'Cloth Hall with cabs and market stalls',
-        credit: 'Ignacy Krieger, 1870 (cropped)',
+        year: 'c.1870',
+        // the scan of the Polish National Library (Polona), before the rebuilding of 1875–1879
+        title: 'Cloth Hall from the north-east, with the stalls built along its walls',
+        credit: 'Ignacy Krieger, c. 1870 (cropped)',
         license: 'Public domain',
-        sourceUrl: 'https://commons.wikimedia.org/wiki/File:1870_Sukiennice,_doro%C5%BCki_i_Kramy_Bogate,_Fot._Ignacy_Krieger,_BPK.jpg',
-        image: require('../../assets/lens/sukiennice_1870_crop.jpg'),
+        sourceUrl: 'https://commons.wikimedia.org/wiki/File:Krakow,_Sukiennice_od_strony_polnocno-wschodniej_ca_1870_(5167147).jpg',
+        image: require('../../assets/lens/sukiennice_ne_1870.jpg'),
         kind: 'photo',
       },
       {

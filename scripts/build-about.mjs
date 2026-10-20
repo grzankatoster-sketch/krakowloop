@@ -141,6 +141,8 @@ const FIXES = {
   'galicia-museum/en': ['in Kazimierz the historic', 'in Kazimierz, the historic'],
   'blonia/en': ['historic city park, meadow with an area of 48 hectares, located in the former quarter Półwsie Zwierzynieckie, of 700 meters', 'historic city park, a meadow with an area of 48 hectares, located in the former quarter Półwsie Zwierzynieckie, 700 meters'],
   'plac-nowy/pl': ['Żydowskim. – plac', 'Żydowskim – plac'],
+  // 1902 is when the collection began; the museum opened in 1911 (museum's website, 03_research/MUZEA_ZRODLA.md)
+  'ethnographic-museum/en': [' It was established in 1902.', ''],
 };
 
 /** Removes the marks left behind when the API cut out brackets and references. */

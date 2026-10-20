@@ -80,8 +80,8 @@ describe('Time Lens captions in Polish and German', () => {
     const cloth = lensPoints.find((p) => p.id === 'cloth-hall')!;
     const layer = cloth.layers[0];
     expect(lensCaption(cloth, layer, 'en')).toEqual({ title: layer.title, credit: layer.credit });
-    expect(lensCaption(cloth, layer, 'pl')).toEqual({ title: 'Sukiennice z dorożkami i kramami', credit: 'Ignacy Krieger, 1870 (wycinek)' });
-    expect(lensCaption(cloth, layer, 'de').title).toBe('Die Tuchhallen mit Droschken und Marktständen');
+    expect(lensCaption(cloth, layer, 'pl')).toEqual({ title: 'Sukiennice od północnego wschodu, z kramami przy murach', credit: 'Ignacy Krieger, ok. 1870 (wycinek)' });
+    expect(lensCaption(cloth, layer, 'de').title).toBe('Die Tuchhallen von Nordosten, mit den Buden an ihren Mauern');
     expect(lensCaption(cloth, cloth.reference!, 'de').title).toBe('Die Tuchhallen und der Hauptmarkt heute, von oben gesehen');
     // credit with only a name and a year: the original
     expect(lensCaption(cloth, cloth.reference!, 'de').credit).toBe(cloth.reference!.credit);

@@ -118,6 +118,7 @@ export const en = {
   'place.unknown': 'This place isn’t in KrakowLoop. Go back and pick one from the map.',
   'place.photoAlt': 'Photo of {name}',
   'place.about': 'about {time}',
+  'place.noVisits': 'The inside cannot be visited at the moment (Jewish Community of Kraków, checked {date}).',
   'place.hours': 'Opening hours',
   'place.today': 'today',
   'place.hoursNote': 'Hours for this month from OpenStreetMap, without public holidays. Check before you go.',

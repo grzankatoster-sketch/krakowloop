@@ -210,6 +210,11 @@ function PlaceDetails({ place }: { place: Place }) {
           {place.address ? <Text style={s.local}>{place.address}</Text> : null}
           <Text style={s.blurb}>{text.text}</Text>
           {text.lang !== LANG ? <Text style={s.langTag}>{t('ui.inEnglish')}</Text> : null}
+          {place.noVisits ? (
+            <Pressable accessibilityRole="link" onPress={() => openLink(place.noVisits!.source)} style={s.linkHit}>
+              <Text style={s.noVisits}>{t('place.noVisits', { date: place.noVisits.checked })}</Text>
+            </Pressable>
+          ) : null}
           {text.url ? (
             <Pressable accessibilityRole="link" onPress={() => openLink(text.url!)} style={s.linkHit}>
               <Text style={s.aboutCredit}>{t('place.aboutCredit')}</Text>
@@ -423,6 +428,7 @@ const s = StyleSheet.create({
   aboutCredit: { fontFamily: fonts.body, fontSize: 15, color: colors.vistula, textDecorationLine: 'underline' },
   // a short text link with a full finger's height to tap (44 pt)
   linkHit: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' },
+  noVisits: { fontFamily: fonts.bodyBold, fontSize: 15, lineHeight: 21, color: colors.brick },
   blurb: { fontFamily: fonts.body, fontSize: 16, lineHeight: 24, color: colors.ink, marginTop: space.s },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: space.s, marginTop: space.m },
   grow: { flexGrow: 1 },

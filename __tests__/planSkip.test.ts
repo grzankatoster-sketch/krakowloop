@@ -234,4 +234,9 @@ describe('skipping one stop', () => {
       }
     expect(lost).toEqual([]);
   });
+
+  it('a place that cannot be visited at the moment is never planned (Kupa Synagogue)', () => {
+    for (const o of CONFIGS) expect(allIds(buildPlan(o))).not.toContain('kupa-synagogue');
+    expect(places.find((p) => p.id === 'kupa-synagogue')?.noVisits?.source).toMatch(/^https:/);
+  });
 });

@@ -479,7 +479,7 @@ function planJitter(opts: PlanOptions, usable: Place[], days: number): (p: Place
 
 /** The places a city day may be built from (no day trips, no bars, remembrance only when asked for). */
 const cityPool = (places: Place[], remembrance: boolean) =>
-  places.filter((p) => CITY_ZONES.includes(p.zone) && !p.trip && p.cat !== 'night' && (p.cat !== 'remembrance' || remembrance));
+  places.filter((p) => CITY_ZONES.includes(p.zone) && !p.trip && !p.noVisits && p.cat !== 'night' && (p.cat !== 'remembrance' || remembrance));
 
 export function buildPlan(opts: PlanOptions, source: Place[] = allPlaces): PlanDay[] {
   // "Skip this stop" takes that place out of the plan the traveller is looking at; it does not make a

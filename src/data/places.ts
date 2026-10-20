@@ -41,6 +41,9 @@ export interface Place {
   booking?: Booking;
   /** food places for a coffee or a snack (cafés, markets): never offered as the day's dinner */
   noDinner?: true;
+  /** its inside cannot be visited at the moment (with the source and when it was checked): it stays on
+   * the map and has its page, but a plan never sends anyone there */
+  noVisits?: { source: string; checked: string };
 }
 
 /** In the session's language (src/i18n). */
@@ -163,7 +166,7 @@ export const places: Place[] = [
   { id: 'skalka', name: 'Skałka Church', local: 'Kościół na Skałce', cat: 'history', zone: 'kazimierz', lat: 50.04823, lon: 19.93763, address: 'Skałeczna 15, Kraków', minutes: 30, priority: 1, blurb: 'The Pauline Fathers’ church “on the Rock”, on Skałeczna Street in Kazimierz.' },
   { id: 'szeroka-street', name: 'Szeroka Street', local: 'ul. Szeroka', cat: 'jewish', zone: 'kazimierz', lat: 50.05159, lon: 19.94823, address: 'Szeroka, Kraków', minutes: 20, priority: 1, blurb: 'The broad street at the heart of Jewish Kazimierz, with the Old Synagogue and the Remuh Synagogue on it.' },
   { id: 'isaac-synagogue', name: 'Isaac Synagogue', local: 'Synagoga Izaaka', cat: 'jewish', zone: 'kazimierz', lat: 50.05167, lon: 19.94665, address: 'Kupa 18, Kraków', minutes: 20, priority: 1, blurb: 'A Baroque synagogue completed in 1644, named after its founder, the merchant Izaak Jakubowicz.' },
-  { id: 'kupa-synagogue', name: 'Kupa Synagogue', local: 'Synagoga Kupa', cat: 'jewish', zone: 'kazimierz', lat: 50.05261, lon: 19.94574, address: 'Warszauera 8, Kraków', minutes: 20, priority: 1, blurb: 'A 17th-century synagogue, also called the Synagogue of the Poor.' },
+  { id: 'kupa-synagogue', name: 'Kupa Synagogue', local: 'Synagoga Kupa', cat: 'jewish', zone: 'kazimierz', lat: 50.05261, lon: 19.94574, address: 'Warszauera 8, Kraków', minutes: 20, priority: 1, blurb: 'A 17th-century synagogue, also called the Synagogue of the Poor.', noVisits: { source: 'https://gwzkrakow.pl/synagogi/', checked: '2026-10-19' } },
   { id: 'high-synagogue', name: 'High Synagogue', local: 'Synagoga Wysoka', cat: 'jewish', zone: 'kazimierz', lat: 50.05136, lon: 19.94738, address: 'Józefa 38, Kraków', minutes: 20, priority: 1, blurb: 'Built in 1556–1563. Its name comes from the prayer hall on the upper floor.' },
   { id: 'new-jewish-cemetery', name: 'New Jewish Cemetery', local: 'Nowy Cmentarz Żydowski', cat: 'jewish', zone: 'kazimierz', lat: 50.05335, lon: 19.95238, address: 'Miodowa 55, Kraków', minutes: 45, priority: 1, blurb: 'A Jewish cemetery of about three hectares on Miodowa Street, a registered heritage monument since 1999.' },
   { id: 'judah-square', name: 'Judah Square food trucks', local: 'Skwer Judah', cat: 'food', zone: 'kazimierz', lat: 50.05028, lon: 19.94815, address: 'Świętego Wawrzyńca, Kraków', minutes: 30, priority: 1, blurb: 'Food trucks and outdoor tables on św. Wawrzyńca Street, under the large Judah mural.' },
