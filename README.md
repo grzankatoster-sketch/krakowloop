@@ -4,7 +4,7 @@ Expo SDK 57 z expo-router; działa na iOS, Androidzie i w przeglądarce (podglą
 
 ## Pierwsze uruchomienie
 ```bash
-cd Desktop/strona/app
+cd C:/Projekty/strona/app
 npm install
 cp .env.example .env      # uzupełnij tokeny, patrz „Klucze”
 npx expo start --web      # http://localhost:8081

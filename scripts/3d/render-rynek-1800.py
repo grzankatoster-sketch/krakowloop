@@ -19,6 +19,7 @@ NOT known, only suggested: the plan has no scale bar (its tower is taken as 10 m
 window counts, colours of each part. Labelled in the app as a reconstruction, not a view.
 """
 import math
+import os
 import sys
 
 import bpy
@@ -27,7 +28,8 @@ from mathutils import Vector
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 OUT = argv[0] if argv else "."
 SAMPLES = int(argv[1]) if len(argv) > 1 else 64
-GLB = r"C:\Users\grzan\Desktop\strona\02_dane\gugik_3d\modele\rynek-area.glb"
+# next to the app, wherever the project folder lives (it moved off the Desktop on 16.10.2026)
+GLB = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "02_dane", "gugik_3d", "modele", "rynek-area.glb"))
 
 # scene: metres, +X east, +Y north, +Z up in Blender (the glTF importer turns glTF's Y-up)
 bpy.ops.wm.read_factory_settings(use_empty=True)
