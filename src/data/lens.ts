@@ -86,7 +86,7 @@ export const lensPoints: LensPoint[] = [
     },
     layers: [
       {
-        key: 'sukiennice-1870',
+        key: 'sukiennice-1870', // gitleaks:allow (a layer id, not a secret)
         year: '1870',
         title: 'Cloth Hall with cabs and market stalls',
         credit: 'Ignacy Krieger, 1870 (cropped)',

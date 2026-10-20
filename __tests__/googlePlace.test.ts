@@ -114,7 +114,13 @@ describe('food info data', () => {
   });
 
   it('describes OSM cuisine and diets in words', () => {
-    expect(cuisineLabel('coffee_shop')).toBe('Coffee shop');
+    // a value of one known group is named by that group (in the app's language)
+    expect(cuisineLabel('coffee_shop')).toBe('Coffee');
+    // a value the app has no name for stays in plain words
+    expect(cuisineLabel('molecular_gastronomy')).toBe('Molecular gastronomy');
+    // a cuisine the app knows is named in the app's language, not as the English OSM value
+    const pl = ((k: string) => ({ 'cuisine.polish': 'Polska', 'food.cuisine': 'Kuchnia: {list}' })[k] ?? k) as unknown as typeof en;
+    expect(cuisineLabel('polish', pl)).toBe('Polska');
     const en = (k: StringKey, v?: Record<string, string | number>) => translate('en', k, v);
     expect(osmFoodLines({ osm: 'node/1', cuisine: ['polish'], diet: ['vegan', 'gluten_free'] }, en)).toEqual(['Cuisine: Polish', 'Vegan options · Gluten-free options']);
     expect(osmFoodLines(undefined)).toEqual([]);

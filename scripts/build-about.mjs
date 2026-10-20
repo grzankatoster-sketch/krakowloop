@@ -1,7 +1,13 @@
 // Builds src/data/placeAbout.json: a short description of each place in English, German and Polish,
 // taken from the lead of its Wikipedia article (CC BY-SA 4.0), with the article's address for credit.
 //
-//   node scripts/build-about.mjs
+//   node scripts/build-about.mjs            fetches everything again (network)
+//   node scripts/build-about.mjs --repair   only re-cleans the texts already in placeAbout.json (offline)
+//
+// The Wikipedia summary API strips parentheses and <ref> tags out of the lead and leaves their
+// punctuation behind ("The Cloth Hall, is a", "Plac Kupa,, od", "Kazimierz ; befindet"). cleanLead()
+// repairs exactly that and nothing else: it never adds a fact, only removes stray marks or restores a
+// comma/verb that the removal swallowed. Cases a rule cannot guess are listed in FIXES.
 //
 // The article comes from the place's Wikidata item: the one in placeMedia.ts, or else one found by
 // name and accepted only if its coordinates lie within MAX_METRES of the place. Nothing is written
@@ -102,6 +108,72 @@ async function findItem(place) {
   return null;
 }
 
+
+// --- cleaning of the lead -------------------------------------------------------------------------
+
+/** Verbs after which a lone comma is stray: "The Cloth Hall, is a ..." (English only: a German "..., ist es" is correct). */
+const COPULA = '(?:is|are|was|were)';
+/** Where "St." and friends do not end a sentence. */
+const ABBREVIATION = /(?:\b(?:St|Dr|Hl|Nr|ul|im|pl|al|św|r|ok|tzw|oo|ks|ww|Mr|Mrs|Ms|Prof|Sts|Str)|\b[A-ZŁŚŻ])\.$/;
+
+/** Sentences of a lead, not cut after an abbreviation or an initial. */
+function sentences(text) {
+  const parts = [];
+  let start = 0;
+  for (const m of text.matchAll(/[.!?]\s+(?=[A-ZÄÖÜŁŚŻŹĆĄĘÓ„"“])/g)) {
+    const end = m.index + 1;
+    if (ABBREVIATION.test(text.slice(start, end))) continue;
+    parts.push(text.slice(start, end));
+    start = m.index + m[0].length;
+  }
+  parts.push(text.slice(start));
+  return parts;
+}
+
+/**
+ * Exceptions the generic rules cannot decide: `id/lang` -> [what the API gave, what the sentence was].
+ * Each one is checked: when the API text changes and no longer matches, the script says so.
+ */
+const FIXES = {
+  'main-square/en': ['Market Square a historic', 'Market Square is a historic'],
+  'krzysztofory/en': ['The Krzysztofory Palace or Pod Krzysztofory Palace also called, is a', 'The Krzysztofory Palace, also called Pod Krzysztofory Palace, is a'],
+  'tempel/en': ['The Tempel Synagogue also Progressive Synagogue is a', 'The Tempel Synagogue, also Progressive Synagogue, is a'],
+  'galicia-museum/en': ['in Kazimierz the historic', 'in Kazimierz, the historic'],
+  'blonia/en': ['historic city park, meadow with an area of 48 hectares, located in the former quarter Półwsie Zwierzynieckie, of 700 meters', 'historic city park, a meadow with an area of 48 hectares, located in the former quarter Półwsie Zwierzynieckie, 700 meters'],
+  'plac-nowy/pl': ['Żydowskim. – plac', 'Żydowskim – plac'],
+};
+
+/** Removes the marks left behind when the API cut out brackets and references. */
+function cleanLead(raw, id, lang) {
+  let text = raw
+    .replace(/\s*\[[^\]]*\]/g, '') // pronunciation or reference remains: "[t͡ʃartɔ'riski]"
+    .replace(/\s*\(\s*\)/g, '') // an emptied bracket
+    .replace(/\s+;(?=\s)/g, '') // "Galizien ; befindet"
+    .replace(/,(?:\s*,)+/g, ',') // "Plac Kupa,, od"
+    .replace(/\s+,/g, ',')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // a quotation that starts with its closing mark: "”Manggha” Museum" -> "Manggha Museum"
+  if (/^[”’»]/.test(text)) text = text.replace(/^[”’»]\s*/, '').replace(/[”’»]/, '');
+  const fix = FIXES[`${id}/${lang}`];
+  if (fix) {
+    if (text.includes(fix[0])) text = text.replace(fix[0], fix[1]);
+    else if (!text.includes(fix[1])) console.error(`FIXES ${id}/${lang}: the text no longer contains "${fix[0]}"`);
+  }
+  // a German '..., ist es' is correct: the stray-comma rules are for English
+  if (lang !== 'en') return text;
+  text = sentences(text)
+    .map((s) =>
+      s
+        // "The Cloth Hall, is a ..." : the comma opened a bracket that is gone
+        .replace(new RegExp(String.raw`^([^,]*?),\s+(${COPULA})\b`), '$1 $2')
+        // "..., known colloquially as the Dominicans Church is a ..." : the closing comma went with it
+        .replace(new RegExp(String.raw`(, (?:also |better )?(?:known|called)[^,.;]*?) (${COPULA})\b`), '$1, $2'),
+    )
+    .join(' ');
+  return text;
+}
+
 /** The first sentences of an article's lead, cut at a sentence end. */
 function trim(text) {
   const clean = text.replace(/\s+/g, ' ').trim();
@@ -111,12 +183,34 @@ function trim(text) {
   return end > 80 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(' '))}…`;
 }
 
-async function summary(lang, title) {
+async function summary(id, lang, title) {
   const url = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`;
   const data = await getJson(url);
   // disambiguation pages and empty leads say nothing about the place
   if (!data || data.type !== 'standard' || !data.extract) return null;
-  return { text: trim(data.extract), url: data.content_urls?.desktop?.page ?? `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}` };
+  return { text: trim(cleanLead(data.extract, id, lang)), url: data.content_urls?.desktop?.page ?? `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}` };
+}
+
+if (process.argv.includes('--repair')) {
+  const file = JSON.parse(readFileSync('src/data/placeAbout.json', 'utf8'));
+  let changed = 0;
+  for (const [id, entry] of Object.entries(file)) {
+    for (const lang of LANGS) {
+      if (!entry[lang]) continue;
+      const text = cleanLead(entry[lang].text, id, lang);
+      if (text !== entry[lang].text) {
+        console.log(`${id}/${lang}
+  - ${entry[lang].text}
+  + ${text}`);
+        entry[lang].text = text;
+        changed++;
+      }
+    }
+  }
+  writeFileSync('src/data/placeAbout.json', `${JSON.stringify(file, null, 1)}
+`);
+  console.log(`repaired ${changed} texts`);
+  process.exit(0);
 }
 
 const out = {};
@@ -154,7 +248,7 @@ for (const [id, qid] of Object.entries(qidOf)) {
   for (const lang of LANGS) {
     const title = items[qid]?.sitelinks?.[`${lang}wiki`]?.title;
     if (!title) continue;
-    const s = await summary(lang, title);
+    const s = await summary(id, lang, title);
     if (s) texts[lang] = s;
     await sleep(WIKIPEDIA_GAP_MS);
   }

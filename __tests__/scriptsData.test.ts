@@ -1,5 +1,8 @@
 import { describe, expect, it } from '@jest/globals';
 import OpeningHours from 'opening_hours';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { places } from '../src/data/places';
 import { buildTimetable, parseCsv, toMinutes } from '../scripts/lib/gtfs';
 import { sampleMonday, weekTables } from '../scripts/lib/openingHours';
 
@@ -105,5 +108,57 @@ describe('weekTables', () => {
   it('caps a day that runs past midnight at 24:00', () => {
     const months = weekTables('Mo 22:00-02:00', WHERE, OpeningHours);
     expect(months[9][0]).toEqual([[1320, 1440]]);
+  });
+});
+
+describe('hours.json (scripts/build-hours.mjs)', () => {
+  const file = JSON.parse(readFileSync(path.resolve(__dirname, '../src/data/hours.json'), 'utf8')) as {
+    places: Record<string, { osm?: string; raw: string; source?: string; checked?: string; months: number[][][][] }>;
+  };
+
+  it('links only places the app has, each to one OSM object or one official page, with a week for each of the 12 months', () => {
+    const ids = new Set(places.map((p) => p.id));
+    for (const [id, entry] of Object.entries(file.places)) {
+      expect({ id, known: ids.has(id) }).toEqual({ id, known: true });
+      // an entry comes either from one OSM object or from the institution's own site (OFFICIAL in build-hours.mjs)
+      if (entry.osm !== undefined) expect(entry.osm).toMatch(/^(node|way|relation)\/\d+$/);
+      else expect({ id, official: typeof entry.source }).toEqual({ id, official: 'string' });
+      expect(entry.raw.length).toBeGreaterThan(0);
+      expect(entry.months).toHaveLength(12);
+      for (const week of entry.months) expect(week).toHaveLength(7);
+    }
+  });
+
+  it('does not lose the places that already have hours (the number of places without them must not grow)', () => {
+    expect(Object.keys(file.places).length).toBeGreaterThanOrEqual(46);
+    // verified OSM objects added 19.10.2026
+    for (const id of ['st-marys', 'st-adalbert', 'wodka-bar']) expect(file.places[id]).toBeDefined();
+    // OSM and the museum's site disagree: left without hours on purpose (decision of 15.09.2026)
+    expect(file.places['stained-glass-museum']).toBeUndefined();
+  });
+
+  it('keeps the 46 OSM entries and adds official ones, each with an https page and a date', () => {
+    const osm = Object.entries(file.places).filter(([, e]) => e.osm !== undefined);
+    const official = Object.entries(file.places).filter(([, e]) => e.osm === undefined);
+    expect(osm.length).toBeGreaterThanOrEqual(46);
+    expect(official.length).toBeGreaterThanOrEqual(4);
+    for (const [id, e] of official) {
+      expect({ id, source: e.source }).toEqual({ id, source: expect.stringMatching(/^https:\/\/[^\s]+$/) });
+      expect({ id, checked: e.checked }).toEqual({ id, checked: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+      expect(osm.map(([k]) => k)).not.toContain(id);
+    }
+    for (const id of ['mocak', 'manggha', 'matejko-house', 'cricoteka']) expect(file.places[id].source).toBeDefined();
+  });
+
+  it('official hours: these museums are closed on Mondays and open on Tuesday (Monday first in a week)', () => {
+    for (const id of ['mocak', 'manggha', 'matejko-house', 'cricoteka']) {
+      for (const month of file.places[id].months) {
+        expect(month[0]).toEqual([]);
+        expect(month[1].length).toBe(1);
+      }
+    }
+    // Matejko House: Tuesday 10-18, Wednesday-Sunday 10-16 (MNK table)
+    expect(file.places['matejko-house'].months[9][1]).toEqual([[600, 1080]]);
+    expect(file.places['matejko-house'].months[9][2]).toEqual([[600, 960]]);
   });
 });

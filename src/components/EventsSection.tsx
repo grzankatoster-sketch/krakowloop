@@ -8,7 +8,7 @@ import { CityEvent, EVENT_CATEGORIES, EventCategory, EventWhen, daysFor, eventTi
 import { LatLon } from '../lib/geo';
 import { openLink } from '../lib/openLink';
 import { openWalkingDirections } from '../lib/navigate';
-import { t } from '../i18n';
+import { LANG, t } from '../i18n';
 import type { StringKey } from '../i18n/en';
 import { colors, fonts, space } from '../theme';
 
@@ -69,7 +69,7 @@ export function EventsSection({ from }: { from: LatLon }) {
 
 function EventCard({ e, showDay }: { e: CityEvent; showDay: boolean }) {
   const time = eventTime(e);
-  const day = showDay ? new Date(`${e.day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' }) : null;
+  const day = showDay ? new Date(`${e.day}T12:00:00`).toLocaleDateString(LANG, { weekday: 'short' }) : null;
   const when = [day, time ?? t('events.allDay')].filter(Boolean).join(' · ');
   return (
     <View style={s.card}>

@@ -1,22 +1,36 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { PLACES_PROXY_URL } from '../config/googlePlaces';
+import { cuisineGroups } from '../data/cuisines';
 import { FOOD_INFO, FoodInfo } from '../data/foodInfo';
 import { GooglePlaceInfo, fetchGooglePlace, googleRatingText } from '../lib/googlePlace';
 import { openLink } from '../lib/openLink';
 import { t } from '../i18n';
+import type { StringKey } from '../i18n/en';
 import { colors, fonts, space } from '../theme';
 
 const DIET_KEY = { vegan: 'food.vegan', vegetarian: 'food.vegetarian', gluten_free: 'food.gluten_free' } as const;
 
-/** OSM cuisine values in plain words: "coffee_shop" -> "Coffee shop" (the values are English) */
-export const cuisineLabel = (c: string) => (c.charAt(0).toUpperCase() + c.slice(1)).replace(/_/g, ' ');
+/**
+ * An OSM cuisine value in the app's language: the cuisine's own name when the app has it ("polish"
+ * -> "Polska"), else the name of the one group it belongs to, else the OSM value in plain words
+ * ("coffee_shop" -> "Coffee shop"; the values are English).
+ */
+export function cuisineLabel(c: string, tr: typeof t = t): string {
+  const own = `cuisine.${c}`;
+  const groups = cuisineGroups(c);
+  for (const key of [own, ...(groups.length === 1 ? [`cuisine.${groups[0]}`] : [])]) {
+    const v = tr(key as StringKey);
+    if (v && v !== key) return v;
+  }
+  return (c.charAt(0).toUpperCase() + c.slice(1)).replace(/_/g, ' ');
+}
 
 /** The lines taken from OpenStreetMap, empty when OSM says nothing. */
 export function osmFoodLines(info: FoodInfo | undefined, tr: typeof t = t): string[] {
   if (!info) return [];
   const lines: string[] = [];
-  if (info.cuisine?.length) lines.push(tr('food.cuisine', { list: info.cuisine.map(cuisineLabel).join(', ') }));
+  if (info.cuisine?.length) lines.push(tr('food.cuisine', { list: info.cuisine.map((c) => cuisineLabel(c, tr)).join(', ') }));
   if (info.diet?.length) lines.push(info.diet.map((d) => tr(DIET_KEY[d])).join(' · '));
   return lines;
 }
@@ -25,6 +39,14 @@ export function osmFoodLines(info: FoodInfo | undefined, tr: typeof t = t): stri
  * Food and bar facts for a place card: cuisine and diets from OpenStreetMap, and the live Google
  * rating when a proxy is configured and the place has a Google id. Renders nothing otherwise.
  */
+/**
+ * True when this place's card will carry a live Google rating. Google's EEA terms forbid showing
+ * Places ratings next to any map, so a screen that shows one leaves its map out.
+ */
+export function showsGoogleRating(placeId: string, proxyUrl = PLACES_PROXY_URL): boolean {
+  return !!(proxyUrl && FOOD_INFO[placeId]?.googlePlaceId);
+}
+
 export function FoodDetails({ placeId, proxyUrl = PLACES_PROXY_URL }: { placeId: string; proxyUrl?: string }) {
   const info = FOOD_INFO[placeId];
   const googleId = proxyUrl ? info?.googlePlaceId : undefined;

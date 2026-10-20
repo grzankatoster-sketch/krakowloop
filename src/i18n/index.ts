@@ -15,7 +15,7 @@ const DICTIONARIES: Record<Lang, Strings> = { en, de, pl };
 export function pickLanguage(tags: readonly string[]): Lang {
   for (const tag of tags) {
     const code = tag.toLowerCase().split(/[-_]/)[0];
-    if (code in DICTIONARIES) return code as Lang;
+    if (Object.hasOwn(DICTIONARIES, code)) return code as Lang;
   }
   return 'en';
 }

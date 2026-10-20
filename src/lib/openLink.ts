@@ -1,5 +1,6 @@
 import { Alert, Linking, Platform } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { t } from '../i18n';
 
 /** A web page address that is safe to open: http or https, no user name or password. Anything else is null. */
 export function safeWebUrl(value: unknown): string | null {
@@ -18,12 +19,12 @@ export async function openLink(url: string): Promise<void> {
     await Linking.openURL(url);
   } catch {
     if (Platform.OS === 'web') {
-      window.prompt('This link couldn’t be opened. Copy it from here:', url);
+      window.prompt(t('link.copyPrompt'), url);
       return;
     }
-    Alert.alert('Link not opened', `This link couldn’t be opened:\n${url}`, [
+    Alert.alert(t('link.failedTitle'), `${t('link.failedText')}\n${url}`, [
       {
-        text: 'Copy link',
+        text: t('link.copy'),
         onPress: () => {
           Clipboard.setStringAsync(url).catch(() => undefined);
         },
