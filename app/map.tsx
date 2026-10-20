@@ -612,7 +612,13 @@ export default function DiscoverScreen() {
         </Text>
       ) : null}
       <View style={s.countRow}>
-        <View style={s.countText} accessibilityLiveRegion="polite">
+        {/* one sentence for a screen reader (and the iOS tour): "Found: 91 · A–Z", though it shows on two lines */}
+        <View
+          style={s.countText}
+          accessibilityLiveRegion="polite"
+          accessible
+          accessibilityLabel={[`${countParts.before}${countParts.n}${countParts.after}`, orderNote].filter(Boolean).join(' · ')}
+        >
           <Text style={s.count}>
             {countParts.before}
             <Text style={s.countNum}>{countParts.n}</Text>
